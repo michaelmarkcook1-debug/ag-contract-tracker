@@ -39,3 +39,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# SQLite dev database (regenerated via migrations + seeds)
+dev.db
+dev.db-shm
+dev.db-wal
+prisma/dev.db
+prisma/dev.db-shm
+prisma/dev.db-wal
+
+# Large data assets — kept locally, not committed
+historical data_globaldata/
+old code/
+
+# Editor & local config
+.claude/
+.idea/
+.vscode/

@@ -1,0 +1,311 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ─── Entity Registry ─────────────────────────────────────────────────────────
+
+model Entity {
+  id            String   @id @default(cuid())
+  canonicalName String   @unique
+  displayName   String
+  slug          String   @unique
+  entityType    String   // vendor | client | both
+  parentId      String?
+  parent        Entity?  @relation("EntityHierarchy", fields: [parentId], references: [id])
+  children      Entity[] @relation("EntityHierarchy")
+  regions       String   @default("[]") // JSON
+  logoUrl       String?
+  websiteUrl    String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  aliases           EntityAlias[]
+  primaryEvents     CanonicalMarketEvent[] @relation("PrimaryEntity")
+  contractsAsVendor ContractDetails[]      @relation("ContractVendor")
+  contractsAsClient ContractDetails[]      @relation("ContractClient")
+  maAcquirer        MaDetails[]            @relation("MaAcquirer")
+  maTarget          MaDetails[]            @relation("MaTarget")
+  partnershipA      PartnershipDetails[]   @relation("PartnershipEntityA")
+  partnershipB      PartnershipDetails[]   @relation("PartnershipEntityB")
+  orgChangeEntity   OrgChangeDetails[]     @relation("OrgChangeEntity")
+}
+
+model EntityAlias {
+  id       String @id @default(cuid())
+  entityId String
+  alias    String
+  entity   Entity @relation(fields: [entityId], references: [id])
+
+  @@unique([entityId, alias])
+  @@index([alias])
+}
+
+// ─── Source Events (raw articles) ────────────────────────────────────────────
+
+model SourceEvent {
+  id                   String   @id @default(cuid())
+  sourceUrl            String   @unique
+  rawTextHash          String?
+  sourceTitle          String?
+  sourceName           String?
+  sourceType           String
+  publicationDate      DateTime?
+  retrievedAt          DateTime @default(now())
+  rawText              String?
+  extractedFamily      String   @default("UNKNOWN")
+  extractionConfidence Float    @default(0)
+  processingStatus     String   @default("pending")
+  processingError      String?
+  ingestionRunId       String?
+  ingestionRun         IngestionRun? @relation(fields: [ingestionRunId], references: [id])
+
+  canonicalEvents CanonicalMarketEvent[]
+  createdAt       DateTime @default(now())
+
+  @@index([processingStatus])
+  @@index([publicationDate])
+}
+
+// ─── Canonical Market Events ──────────────────────────────────────────────────
+
+model CanonicalMarketEvent {
+  id                       String   @id @default(cuid())
+  family                   String
+  eventType                String
+  canonicalTitle           String
+  announcementDate         DateTime?
+  announcementDateBasis    String   @default("unavailable")
+  effectiveDate            DateTime?
+  geography                String   @default("[]")
+  industry                 String?
+  industryBasis            String   @default("unavailable")
+  confidenceScore          Float    @default(0)
+  commercialRelevanceScore Float    @default(0)
+  humanReviewRequired      Boolean  @default(true)
+  publicationStatus        String   @default("published")
+  analystInsight           String?
+  analystInsightConfidence Float?
+  originalArticleUrl       String?
+
+  primaryEntityId String?
+  primaryEntity   Entity? @relation("PrimaryEntity", fields: [primaryEntityId], references: [id])
+
+  sourceEvents       SourceEvent[]
+  contractDetails    ContractDetails?
+  maDetails          MaDetails?
+  partnershipDetails PartnershipDetails?
+  orgChangeDetails   OrgChangeDetails?
+  offeringDetails    OfferingDetails?
+  dedupLinks         DedupDecision[] @relation("DedupEventA")
+  dedupLinkedBy      DedupDecision[] @relation("DedupEventB")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([family])
+  @@index([publicationStatus])
+  @@index([announcementDate])
+  @@index([primaryEntityId])
+}
+
+// ─── Family Detail Tables ─────────────────────────────────────────────────────
+
+model ContractDetails {
+  id               String               @id @default(cuid())
+  canonicalEventId String               @unique
+  canonicalEvent   CanonicalMarketEvent @relation(fields: [canonicalEventId], references: [id])
+
+  vendorId         String?
+  vendor           Entity? @relation("ContractVendor", fields: [vendorId], references: [id])
+  vendorRaw        String?
+  vendorConfidence Float   @default(0)
+
+  clientId         String?
+  client           Entity? @relation("ContractClient", fields: [clientId], references: [id])
+  clientRaw        String?
+  clientAnonymised Boolean @default(false)
+  clientDescriptor String?
+  clientIndustry   String?
+  clientConfidence Float   @default(0)
+
+  contractEventType  String?
+  previousVendorRaw  String?
+  incumbentDisplaced Boolean?
+
+  contractStartDate          DateTime?
+  contractStartDatePrecision String    @default("unknown")
+  contractEndDate            DateTime?
+  contractEndDatePrecision   String    @default("unknown")
+  contractLengthMonths       Int?
+  contractLengthDescriptor   String?
+
+  tcvCommittedUsd     Float?
+  tcvCeilingUsd       Float?
+  tcvFrameworkUsd     Float?
+  tcvEstimateLowUsd   Float?
+  tcvEstimateMidUsd   Float?
+  tcvEstimateHighUsd  Float?
+  tcvOriginalCurrency String?
+  tcvOriginalValue    Float?
+  tcvBasis            String  @default("undisclosed")
+  tcvIsEstimate       Boolean @default(false)
+  tcvConfidence       String  @default("do_not_estimate")
+
+  primaryMacroServiceLine    String?
+  primaryMicroServiceLine    String?
+  secondaryMacroServiceLines String  @default("[]")
+  secondaryMicroServiceLines String  @default("[]")
+  scopeSummary               String?
+  platformsUsed              String  @default("[]")
+
+  signingLocation               String?
+  clientServiceCoverageLocation String @default("[]")
+  vendorDeliveryCentreLocation  String @default("[]")
+}
+
+model MaDetails {
+  id               String               @id @default(cuid())
+  canonicalEventId String               @unique
+  canonicalEvent   CanonicalMarketEvent @relation(fields: [canonicalEventId], references: [id])
+
+  maEventType          String?
+  acquirerId           String?
+  acquirer             Entity? @relation("MaAcquirer", fields: [acquirerId], references: [id])
+  acquirerRaw          String?
+  targetId             String?
+  target               Entity? @relation("MaTarget", fields: [targetId], references: [id])
+  targetRaw            String?
+  dealValueUsd         Float?
+  dealValueBasis       String  @default("undisclosed")
+  stakePercent         Float?
+  statusAtAnnouncement String  @default("announced")
+  rationale            String?
+}
+
+model PartnershipDetails {
+  id               String               @id @default(cuid())
+  canonicalEventId String               @unique
+  canonicalEvent   CanonicalMarketEvent @relation(fields: [canonicalEventId], references: [id])
+
+  partnershipType String?
+  entityAId       String?
+  entityA         Entity? @relation("PartnershipEntityA", fields: [entityAId], references: [id])
+  entityARaw      String?
+  entityBId       String?
+  entityB         Entity? @relation("PartnershipEntityB", fields: [entityBId], references: [id])
+  entityBRaw      String?
+  scopeSummary    String?
+  platformFocus   String?
+}
+
+model OrgChangeDetails {
+  id               String               @id @default(cuid())
+  canonicalEventId String               @unique
+  canonicalEvent   CanonicalMarketEvent @relation(fields: [canonicalEventId], references: [id])
+
+  orgEventType    String?
+  entityId        String?
+  entity          Entity? @relation("OrgChangeEntity", fields: [entityId], references: [id])
+  personName      String?
+  roleName        String?
+  previousRole    String?
+  locationCity    String?
+  locationCountry String?
+  headcount       Int?
+  rationale       String?
+}
+
+model OfferingDetails {
+  id               String               @id @default(cuid())
+  canonicalEventId String               @unique
+  canonicalEvent   CanonicalMarketEvent @relation(fields: [canonicalEventId], references: [id])
+
+  offeringType  String?
+  vendorRaw     String?
+  offeringName  String?
+  scopeSummary  String?
+  targetMarket  String?
+  platformsUsed String @default("[]")
+}
+
+// ─── Dedup Decisions ──────────────────────────────────────────────────────────
+
+model DedupDecision {
+  id               String               @id @default(cuid())
+  eventAId         String
+  eventA           CanonicalMarketEvent @relation("DedupEventA", fields: [eventAId], references: [id])
+  eventBId         String
+  eventB           CanonicalMarketEvent @relation("DedupEventB", fields: [eventBId], references: [id])
+  decision         String
+  confidence       Float    @default(0)
+  mergeRecommended Boolean  @default(false)
+  linkRecommended  Boolean  @default(false)
+  reasonCodes      String   @default("[]")
+  riskFlags        String   @default("[]")
+  humanReviewRequired Boolean @default(true)
+  resolvedAt       DateTime?
+  resolvedBy       String?
+  createdAt        DateTime @default(now())
+
+  @@unique([eventAId, eventBId])
+}
+
+// ─── Source Registry ──────────────────────────────────────────────────────────
+
+model SourceRegistryItem {
+  id                String   @id @default(cuid())
+  name              String
+  provider          String
+  url               String   @unique
+  sourceType        String
+  tier              String   @default("tier_2_secondary")
+  fetchMethod       String   @default("rss")
+  isActive          Boolean  @default(true)
+  lastCrawledAt     DateTime?
+  nextDueAt         DateTime?
+  lastItemCount     Int      @default(0)
+  consecutiveErrors Int      @default(0)
+  lastError         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([nextDueAt])
+}
+
+model ReviewAction {
+  id             String   @id @default(cuid())
+  eventId        String
+  action         String   // approved | rejected | title_edited | family_changed
+  reviewerNote   String?
+  previousValue  String?
+  newValue       String?
+  createdAt      DateTime @default(now())
+
+  @@index([eventId])
+}
+
+// ─── Ingestion Infrastructure ─────────────────────────────────────────────────
+
+model IngestionRun {
+  id              String   @id @default(cuid())
+  runType         String
+  sourceFilter    String?
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  status          String   @default("running")
+  articlesFound   Int      @default(0)
+  articlesDuped   Int      @default(0)
+  eventsExtracted Int      @default(0)
+  eventsPublished Int      @default(0)
+  eventsQueued    Int      @default(0)
+  errors          String   @default("[]")
+
+  sourceEvents SourceEvent[]
+}
