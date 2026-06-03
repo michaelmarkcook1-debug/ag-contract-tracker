@@ -1,9 +1,12 @@
-import "dotenv/config";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import * as dotenv from "dotenv";
+dotenv.config({ path: ".env.local", override: true });
+dotenv.config({ path: ".env" });
+import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../src/generated/prisma/client";
 
-const url = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
-const adapter = new PrismaBetterSqlite3({ url });
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL not set — run `vercel env pull .env.local --yes`");
+const adapter = new PrismaNeon({ connectionString });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prisma = new PrismaClient({ adapter } as any);
 

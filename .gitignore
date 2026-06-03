@@ -54,6 +54,9 @@ prisma/dev.db-wal
 historical data_globaldata/
 old code/
 
+# SQLite backup before Neon migration
+dev.db.sqlite-backup*
+
 # Editor & local config
 .claude/
 .idea/

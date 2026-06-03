@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@prisma/adapter-better-sqlite3": "^7.8.0",
+    "@prisma/adapter-neon": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.1",

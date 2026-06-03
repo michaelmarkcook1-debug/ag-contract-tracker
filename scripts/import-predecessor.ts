@@ -4,17 +4,19 @@
  * Feeds each through the existing LLM extraction pipeline
  */
 import * as dotenv from "dotenv";
-dotenv.config({ path: ".env", override: true });
+dotenv.config({ path: ".env.local", override: true });
+dotenv.config({ path: ".env" });
 import { readFileSync } from "fs";
 import crypto from "crypto";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { extractArticle, ruleBasedExtract } from "../src/lib/ingestion/classifier";
 import type { RawArticle } from "../src/lib/ingestion/crawler";
 
 const PRED_PATH = "/Users/michaelcook/Documents/Dev Projects/byson/b-yson-training-nextjs-branded/data/contracts.json";
-const url = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
-const adapter = new PrismaBetterSqlite3({ url });
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) throw new Error("DATABASE_URL not set — run `vercel env pull .env.local --yes`");
+const adapter = new PrismaNeon({ connectionString });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const prisma = new PrismaClient({ adapter } as any);
 
