@@ -101,73 +101,73 @@ export async function GET() {
     }),
     // By year
     prisma.$queryRaw<{ yr: string; deals: bigint; tcv: number; avg: number }[]>`
-      SELECT strftime('%Y', cme.announcementDate) yr,
+      SELECT TO_CHAR(cme."announcementDate", 'YYYY') yr,
              COUNT(*) deals,
-             COALESCE(SUM(cd.tcvCommittedUsd),0)/1e9 tcv,
-             COALESCE(AVG(cd.tcvCommittedUsd),0)/1e6 avg
-      FROM CanonicalMarketEvent cme
-      LEFT JOIN ContractDetails cd ON cd.canonicalEventId = cme.id
-      WHERE cme.family='CONTRACT' AND cme.publicationStatus='published'
-        AND cme.announcementDate IS NOT NULL
+             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv,
+             COALESCE(AVG(cd."tcvCommittedUsd"),0)/1000000.0 avg
+      FROM "CanonicalMarketEvent" cme
+      LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
+      WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
+        AND cme."announcementDate" IS NOT NULL
       GROUP BY yr ORDER BY yr
     `,
     // Top vendors by TCV
     prisma.$queryRaw<{ name: string; slug: string; deals: bigint; tcv: number }[]>`
-      SELECT e.canonicalName name, e.slug, COUNT(*) deals,
-             COALESCE(SUM(cd.tcvCommittedUsd),0)/1e9 tcv
-      FROM Entity e
-      JOIN ContractDetails cd ON cd.vendorId = e.id
-      JOIN CanonicalMarketEvent cme ON cme.id = cd.canonicalEventId
-      WHERE cme.publicationStatus='published' AND cd.tcvCommittedUsd IS NOT NULL
-        AND cd.tcvCommittedUsd < 10000000000
+      SELECT e."canonicalName" name, e.slug, COUNT(*) deals,
+             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+      FROM "Entity" e
+      JOIN "ContractDetails" cd ON cd."vendorId" = e.id
+      JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
+      WHERE cme."publicationStatus"='published' AND cd."tcvCommittedUsd" IS NOT NULL
+        AND cd."tcvCommittedUsd" < 10000000000
       GROUP BY e.id ORDER BY tcv DESC LIMIT 20
     `,
     // Top vendors by deal count
     prisma.$queryRaw<{ name: string; slug: string; deals: bigint; tcv: number }[]>`
-      SELECT e.canonicalName name, e.slug, COUNT(*) deals,
-             COALESCE(SUM(cd.tcvCommittedUsd),0)/1e9 tcv
-      FROM Entity e
-      JOIN ContractDetails cd ON cd.vendorId = e.id
-      JOIN CanonicalMarketEvent cme ON cme.id = cd.canonicalEventId
-      WHERE cme.publicationStatus='published'
+      SELECT e."canonicalName" name, e.slug, COUNT(*) deals,
+             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+      FROM "Entity" e
+      JOIN "ContractDetails" cd ON cd."vendorId" = e.id
+      JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
+      WHERE cme."publicationStatus"='published'
       GROUP BY e.id ORDER BY deals DESC LIMIT 20
     `,
     // Service lines
     prisma.$queryRaw<{ line: string; deals: bigint; tcv: number }[]>`
-      SELECT cd.primaryMacroServiceLine line, COUNT(*) deals,
-             COALESCE(SUM(cd.tcvCommittedUsd),0)/1e9 tcv
-      FROM ContractDetails cd
-      JOIN CanonicalMarketEvent cme ON cme.id = cd.canonicalEventId
-      WHERE cme.publicationStatus='published' AND cd.primaryMacroServiceLine IS NOT NULL
-      GROUP BY cd.primaryMacroServiceLine ORDER BY deals DESC LIMIT 10
+      SELECT cd."primaryMacroServiceLine" line, COUNT(*) deals,
+             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+      FROM "ContractDetails" cd
+      JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
+      WHERE cme."publicationStatus"='published' AND cd."primaryMacroServiceLine" IS NOT NULL
+      GROUP BY cd."primaryMacroServiceLine" ORDER BY deals DESC LIMIT 10
     `,
     // Top industries
     prisma.$queryRaw<{ industry: string; deals: bigint; tcv: number }[]>`
       SELECT cme.industry, COUNT(*) deals,
-             COALESCE(SUM(cd.tcvCommittedUsd),0)/1e9 tcv
-      FROM CanonicalMarketEvent cme
-      LEFT JOIN ContractDetails cd ON cd.canonicalEventId = cme.id
-      WHERE cme.publicationStatus='published' AND cme.family='CONTRACT'
+             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+      FROM "CanonicalMarketEvent" cme
+      LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
+      WHERE cme."publicationStatus"='published' AND cme.family='CONTRACT'
         AND cme.industry IS NOT NULL
       GROUP BY cme.industry ORDER BY deals DESC LIMIT 12
     `,
     // Event types
     prisma.$queryRaw<{ etype: string; cnt: bigint }[]>`
-      SELECT COALESCE(cd.contractEventType,'unknown') etype, COUNT(*) cnt
-      FROM ContractDetails cd
-      JOIN CanonicalMarketEvent cme ON cme.id = cd.canonicalEventId
-      WHERE cme.publicationStatus='published'
-      GROUP BY cd.contractEventType ORDER BY cnt DESC
+      SELECT COALESCE(cd."contractEventType",'unknown') etype, COUNT(*) cnt
+      FROM "ContractDetails" cd
+      JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
+      WHERE cme."publicationStatus"='published'
+      GROUP BY cd."contractEventType" ORDER BY cnt DESC
     `,
     // Monthly momentum — last 24 months
     prisma.$queryRaw<{ month: string; deals: bigint; tcv: number }[]>`
-      SELECT strftime('%Y-%m', cme.announcementDate) month,
+      SELECT TO_CHAR(cme."announcementDate", 'YYYY-MM') month,
              COUNT(*) deals,
-             COALESCE(SUM(cd.tcvCommittedUsd),0)/1e9 tcv
-      FROM CanonicalMarketEvent cme
-      LEFT JOIN ContractDetails cd ON cd.canonicalEventId = cme.id
-      WHERE cme.family='CONTRACT' AND cme.publicationStatus='published'
-        AND cme.announcementDate >= date('now', '-24 months')
+             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+      FROM "CanonicalMarketEvent" cme
+      LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
+      WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
+        AND cme."announcementDate" >= NOW() - INTERVAL '24 months'
       GROUP BY month ORDER BY month
     `,
     getMedianTcv(),
@@ -188,16 +188,16 @@ export async function GET() {
   ];
   const sizeCounts = await prisma.$queryRaw<{ bucket: string; count: bigint }[]>`
     SELECT CASE
-      WHEN cd.tcvCommittedUsd < 10000000    THEN 'Under $10m'
-      WHEN cd.tcvCommittedUsd < 50000000    THEN '$10–50m'
-      WHEN cd.tcvCommittedUsd < 100000000   THEN '$50–100m'
-      WHEN cd.tcvCommittedUsd < 500000000   THEN '$100–500m'
-      WHEN cd.tcvCommittedUsd < 1000000000  THEN '$500m–$1bn'
+      WHEN cd."tcvCommittedUsd" < 10000000    THEN 'Under $10m'
+      WHEN cd."tcvCommittedUsd" < 50000000    THEN '$10–50m'
+      WHEN cd."tcvCommittedUsd" < 100000000   THEN '$50–100m'
+      WHEN cd."tcvCommittedUsd" < 500000000   THEN '$100–500m'
+      WHEN cd."tcvCommittedUsd" < 1000000000  THEN '$500m–$1bn'
       ELSE 'Over $1bn'
     END bucket, COUNT(*) count
-    FROM ContractDetails cd
-    JOIN CanonicalMarketEvent cme ON cme.id = cd.canonicalEventId
-    WHERE cme.publicationStatus='published' AND cd.tcvCommittedUsd IS NOT NULL
+    FROM "ContractDetails" cd
+    JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
+    WHERE cme."publicationStatus"='published' AND cd."tcvCommittedUsd" IS NOT NULL
     GROUP BY bucket
   `;
   const sizeMap = new Map(sizeCounts.map(r => [r.bucket, Number(r.count)]));
