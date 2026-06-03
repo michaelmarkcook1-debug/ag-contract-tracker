@@ -15,6 +15,7 @@
     "dedup": "npx tsx scripts/dedup-semantic.ts",
     "dedup:titles": "npx tsx scripts/dedup-titles.ts",
     "reextract": "npx tsx scripts/reextract-pending.ts",
+    "dedup:entities": "npx tsx scripts/dedup-entity-clusters.ts",
     "ingest": "curl -s http://localhost:3000/api/ingestion -X POST -H 'content-type: application/json' -d '{\"sourceFilter\":\"all\",\"maxSources\":15}' | python3 -m json.tool",
     "ingest:dry": "curl -s http://localhost:3000/api/ingestion -X POST -H 'content-type: application/json' -d '{\"sourceFilter\":\"vendor_rss\",\"maxSources\":6,\"dryRun\":true}' | python3 -m json.tool",
     "cron:setup": "bash scripts/setup-cron.sh http://localhost:3000"
