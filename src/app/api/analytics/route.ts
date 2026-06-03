@@ -100,16 +100,16 @@ export async function GET() {
       _avg: { tcvCommittedUsd: true },
     }),
     // By year
-    prisma.$queryRaw<{ yr: string; deals: bigint; tcv: number; avg: number }[]>`
+    prisma.$queryRaw<{ yr: string; deals: bigint; tcv: number; avgtcv: number }[]>`
       SELECT TO_CHAR(cme."announcementDate", 'YYYY') yr,
              COUNT(*) deals,
              COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv,
-             COALESCE(AVG(cd."tcvCommittedUsd"),0)/1000000.0 avg
+             COALESCE(AVG(cd."tcvCommittedUsd"),0)/1000000.0 avgtcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
       WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
         AND cme."announcementDate" IS NOT NULL
-      GROUP BY yr ORDER BY yr
+      GROUP BY 1 ORDER BY 1
     `,
     // Top vendors by TCV
     prisma.$queryRaw<{ name: string; slug: string; deals: bigint; tcv: number }[]>`
@@ -160,15 +160,15 @@ export async function GET() {
       GROUP BY cd."contractEventType" ORDER BY cnt DESC
     `,
     // Monthly momentum — last 24 months
-    prisma.$queryRaw<{ month: string; deals: bigint; tcv: number }[]>`
-      SELECT TO_CHAR(cme."announcementDate", 'YYYY-MM') month,
+    prisma.$queryRaw<{ ym: string; deals: bigint; tcv: number }[]>`
+      SELECT TO_CHAR(cme."announcementDate", 'YYYY-MM') ym,
              COUNT(*) deals,
              COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
       WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
         AND cme."announcementDate" >= NOW() - INTERVAL '24 months'
-      GROUP BY month ORDER BY month
+      GROUP BY 1 ORDER BY 1
     `,
     getMedianTcv(),
     getTopGeographies(),
@@ -186,7 +186,7 @@ export async function GET() {
     { bucket: "$500m–$1bn",   order: 5 },
     { bucket: "Over $1bn",    order: 6 },
   ];
-  const sizeCounts = await prisma.$queryRaw<{ bucket: string; count: bigint }[]>`
+  const sizeCounts = await prisma.$queryRaw<{ bucket: string; cnt: bigint }[]>`
     SELECT CASE
       WHEN cd."tcvCommittedUsd" < 10000000    THEN 'Under $10m'
       WHEN cd."tcvCommittedUsd" < 50000000    THEN '$10–50m'
@@ -194,13 +194,13 @@ export async function GET() {
       WHEN cd."tcvCommittedUsd" < 500000000   THEN '$100–500m'
       WHEN cd."tcvCommittedUsd" < 1000000000  THEN '$500m–$1bn'
       ELSE 'Over $1bn'
-    END bucket, COUNT(*) count
+    END bucket, COUNT(*) cnt
     FROM "ContractDetails" cd
     JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
     WHERE cme."publicationStatus"='published' AND cd."tcvCommittedUsd" IS NOT NULL
-    GROUP BY bucket
+    GROUP BY 1
   `;
-  const sizeMap = new Map(sizeCounts.map(r => [r.bucket, Number(r.count)]));
+  const sizeMap = new Map(sizeCounts.map(r => [r.bucket, Number(r.cnt)]));
 
   const data: AnalyticsData = {
     totalDeals,
@@ -208,7 +208,7 @@ export async function GET() {
     avgTcvM,
     medianTcvM,
     dealsWithTcv,
-    byYear: byYearRaw.map(r => ({ year: r.yr, deals: Number(r.deals), tcvBn: r.tcv, avgM: r.avg })),
+    byYear: byYearRaw.map(r => ({ year: r.yr, deals: Number(r.deals), tcvBn: r.tcv, avgM: r.avgtcv })),
     topVendorsByTcv: topVendorsByTcvRaw.map(r => ({ vendor: r.name, slug: r.slug, deals: Number(r.deals), tcvBn: r.tcv })),
     topVendorsByDeals: topVendorsByDealsRaw.map(r => ({ vendor: r.name, slug: r.slug, deals: Number(r.deals), tcvBn: r.tcv })),
     serviceLines: serviceLinesRaw.map(r => ({ line: r.line, deals: Number(r.deals), tcvBn: r.tcv, share: Number(r.deals) / totalDealLines })),
@@ -216,7 +216,7 @@ export async function GET() {
     topGeographies,
     topIndustries: topIndustriesRaw.map(r => ({ industry: r.industry, deals: Number(r.deals), tcvBn: r.tcv })),
     eventTypes: eventTypesRaw.map(r => ({ type: r.etype, count: Number(r.cnt) })),
-    monthlyMomentum: monthlyRaw.map(r => ({ month: r.month, deals: Number(r.deals), tcvBn: r.tcv })),
+    monthlyMomentum: monthlyRaw.map(r => ({ month: r.ym, deals: Number(r.deals), tcvBn: r.tcv })),
   };
 
   return NextResponse.json(data);
