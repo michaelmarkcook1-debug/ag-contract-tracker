@@ -13,6 +13,7 @@
     "db:studio": "npx prisma studio",
     "db:reset": "npx prisma migrate reset --force && npm run db:seed",
     "dedup": "npx tsx scripts/dedup-semantic.ts",
+    "dedup:titles": "npx tsx scripts/dedup-titles.ts",
     "ingest": "curl -s http://localhost:3000/api/ingestion -X POST -H 'content-type: application/json' -d '{\"sourceFilter\":\"all\",\"maxSources\":15}' | python3 -m json.tool",
     "ingest:dry": "curl -s http://localhost:3000/api/ingestion -X POST -H 'content-type: application/json' -d '{\"sourceFilter\":\"vendor_rss\",\"maxSources\":6,\"dryRun\":true}' | python3 -m json.tool",
     "cron:setup": "bash scripts/setup-cron.sh http://localhost:3000"
