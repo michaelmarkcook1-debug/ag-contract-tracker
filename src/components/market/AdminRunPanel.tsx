@@ -24,9 +24,12 @@ interface RunResult {
   success: boolean;
   error?: string;
   result?: {
-    phase: string; sourcesProcessed: number; sourcesTotal: number;
-    articlesFound: number; articlesDuped: number; eventsExtracted: number;
-    eventsPublished: number; eventsQueued: number; errors: string[];
+    runId?: string;
+    status?: string;
+    message?: string;
+    phase?: string; sourcesProcessed?: number; sourcesTotal?: number;
+    articlesFound?: number; articlesDuped?: number; eventsExtracted?: number;
+    eventsPublished?: number; eventsQueued?: number; errors?: string[];
   };
 }
 
@@ -54,12 +57,28 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
       });
       const data: RunResult = await res.json();
       setLastResult(data);
-      await refreshStatus();
+
+      // Pipeline runs in background — poll for completion
+      if (data.success && data.result?.status === "started") {
+        const poll = setInterval(async () => {
+          try {
+            await refreshStatus();
+            const s = await fetch("/api/ingestion").then(r => r.json());
+            if (s.lastRun?.status !== "running") {
+              clearInterval(poll);
+              setRunning(false);
+              setLastResult({ success: true, result: { message: `Pipeline ${s.lastRun?.status ?? "done"}. Published: ${s.lastRun?.eventsPublished ?? 0}, Queued: ${s.lastRun?.eventsQueued ?? 0}` } });
+            }
+          } catch { /* ignore poll errors */ }
+        }, 5000);
+        // Safety: stop polling after 10 min
+        setTimeout(() => { clearInterval(poll); setRunning(false); }, 600000);
+        return; // Don't setRunning(false) yet
+      }
     } catch (err) {
       setLastResult({ success: false, error: String(err) });
-    } finally {
-      setRunning(false);
     }
+    setRunning(false);
   }, [sourceFilter, maxSources, refreshStatus]);
 
   const statusColor = (s: string) => {
@@ -139,14 +158,18 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
             <div className={`p-3 rounded-md text-xs space-y-1 ${lastResult.success ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-red-500/10 border border-red-500/20"}`}>
               {lastResult.success && lastResult.result ? (
                 <>
-                  <p className="font-medium text-emerald-400">Run complete</p>
-                  <div className="grid grid-cols-3 gap-2 mt-2 text-emerald-400/80">
-                    <div><div className="font-mono font-bold text-base text-emerald-400">{lastResult.result.articlesFound}</div>articles found</div>
-                    <div><div className="font-mono font-bold text-base text-emerald-400">{lastResult.result.eventsPublished}</div>published</div>
-                    <div><div className="font-mono font-bold text-base text-amber-400">{lastResult.result.eventsQueued}</div>needs review</div>
-                  </div>
-                  {lastResult.result.errors.length > 0 && (
-                    <p className="text-yellow-400 mt-1">{lastResult.result.errors.length} source errors</p>
+                  <p className="font-medium text-emerald-400">
+                    {lastResult.result.message ?? "Run complete"}
+                  </p>
+                  {lastResult.result.articlesFound != null && (
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-emerald-400/80">
+                      <div><div className="font-mono font-bold text-base text-emerald-400">{lastResult.result.articlesFound}</div>articles found</div>
+                      <div><div className="font-mono font-bold text-base text-emerald-400">{lastResult.result.eventsPublished}</div>published</div>
+                      <div><div className="font-mono font-bold text-base text-amber-400">{lastResult.result.eventsQueued}</div>needs review</div>
+                    </div>
+                  )}
+                  {(lastResult.result.errors?.length ?? 0) > 0 && (
+                    <p className="text-yellow-400 mt-1">{lastResult.result.errors!.length} source errors</p>
                   )}
                 </>
               ) : (
