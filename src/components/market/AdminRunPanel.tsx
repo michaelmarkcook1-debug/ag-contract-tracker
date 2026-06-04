@@ -34,8 +34,8 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
   const [status, setStatus] = useState(initialStatus);
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState<RunResult | null>(null);
-  const [sourceFilter, setSourceFilter] = useState<string>("vendor_rss");
-  const [maxSources, setMaxSources] = useState<string>("8");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [maxSources, setMaxSources] = useState<string>("0");
 
   const refreshStatus = useCallback(async () => {
     const res = await fetch("/api/ingestion");
@@ -103,10 +103,11 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
               <Select value={sourceFilter} onValueChange={v => v && setSourceFilter(v)}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="vendor_rss">Vendor newsrooms (RSS)</SelectItem>
-                  <SelectItem value="procurement">Government procurement</SelectItem>
-                  <SelectItem value="wire">Wire services</SelectItem>
                   <SelectItem value="all">All sources</SelectItem>
+                  <SelectItem value="vendor_rss">Vendor newsrooms</SelectItem>
+                  <SelectItem value="investor_relations">Investor relations</SelectItem>
+                  <SelectItem value="wire">Wire + Google News</SelectItem>
+                  <SelectItem value="procurement">Government procurement</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -115,10 +116,10 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
               <Select value={maxSources} onValueChange={v => v && setMaxSources(v)}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="3">3 sources (quick test)</SelectItem>
-                  <SelectItem value="8">8 sources</SelectItem>
-                  <SelectItem value="15">15 sources</SelectItem>
-                  <SelectItem value="20">20 sources (full run)</SelectItem>
+                  <SelectItem value="0">All sources (full run)</SelectItem>
+                  <SelectItem value="5">5 sources (quick test)</SelectItem>
+                  <SelectItem value="20">20 sources</SelectItem>
+                  <SelectItem value="50">50 sources</SelectItem>
                 </SelectContent>
               </Select>
             </div>

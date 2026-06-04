@@ -5,8 +5,8 @@ import { runPipeline, syncSourceRegistry } from "@/lib/ingestion/pipeline";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { sourceFilter = "vendor_rss", maxSources = 5, dryRun = false } = body as {
-      sourceFilter?: "vendor_rss" | "procurement" | "wire" | "all";
+    const { sourceFilter = "vendor_rss", maxSources = 0, dryRun = false } = body as {
+      sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
       maxSources?: number;
       dryRun?: boolean;
     };
@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
 
     const result = await runPipeline({
       sourceFilter,
-      maxSourcesPerRun: Math.min(maxSources, 20),
+      // 0 = all sources (no cap); otherwise respect the caller's limit
+      maxSourcesPerRun: maxSources > 0 ? maxSources : 999,
       dryRun,
     });
 

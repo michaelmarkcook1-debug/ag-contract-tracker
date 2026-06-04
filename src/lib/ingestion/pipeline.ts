@@ -1,11 +1,11 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
-import { ALL_SOURCES, VENDOR_RSS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES } from "./sources";
+import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES } from "./sources";
 import { crawlSource, RawArticle } from "./crawler";
 import { extractArticle, ExtractionResult } from "./classifier";
 
 export interface PipelineOptions {
-  sourceFilter?: "vendor_rss" | "procurement" | "wire" | "all";
+  sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
   maxSourcesPerRun?: number;
   dryRun?: boolean;
 }
@@ -29,8 +29,9 @@ function hashArticle(url: string): string {
 
 function pickSources(filter: PipelineOptions["sourceFilter"]) {
   if (filter === "vendor_rss") return VENDOR_RSS_SOURCES;
+  if (filter === "investor_relations") return INVESTOR_RELATIONS_SOURCES;
   if (filter === "procurement") return PROCUREMENT_SOURCES;
-  if (filter === "wire") return WIRE_SOURCES;
+  if (filter === "wire") return [...WIRE_SOURCES, ...GOOGLE_NEWS_SOURCES];
   return ALL_SOURCES;
 }
 
@@ -135,20 +136,29 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
 // ── Sync source registry from definitions ─────────────────────────────────────
 export async function syncSourceRegistry(): Promise<void> {
   for (const src of ALL_SOURCES) {
-    await prisma.sourceRegistryItem.upsert({
-      where: { url: src.url },
-      update: { name: src.name, provider: src.provider, sourceType: src.sourceType, tier: src.tier, fetchMethod: src.fetchMethod, isActive: true },
-      create: {
-        id: src.id,
-        name: src.name,
-        provider: src.provider,
-        url: src.url,
-        sourceType: src.sourceType,
-        tier: src.tier,
-        fetchMethod: src.fetchMethod,
-        isActive: true,
-      },
+    // Check if exists by URL first to avoid unique constraint issues on id
+    const existing = await prisma.sourceRegistryItem.findFirst({
+      where: { OR: [{ url: src.url }, { id: src.id }] },
     });
+    if (existing) {
+      await prisma.sourceRegistryItem.update({
+        where: { id: existing.id },
+        data: { name: src.name, provider: src.provider, url: src.url, sourceType: src.sourceType, tier: src.tier, fetchMethod: src.fetchMethod, isActive: true },
+      });
+    } else {
+      await prisma.sourceRegistryItem.create({
+        data: {
+          id: src.id,
+          name: src.name,
+          provider: src.provider,
+          url: src.url,
+          sourceType: src.sourceType,
+          tier: src.tier,
+          fetchMethod: src.fetchMethod,
+          isActive: true,
+        },
+      });
+    }
   }
 }
 
