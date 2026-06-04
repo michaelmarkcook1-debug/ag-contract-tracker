@@ -80,6 +80,7 @@ export interface EventFilters {
   vendor?: string;
   industry?: string;
   geography?: string;
+  serviceLine?: string;
   status?: PublicationStatus | "all";
   search?: string;
   dateFrom?: string;

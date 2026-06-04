@@ -109,7 +109,7 @@ const eventInclude = {
 } as const;
 
 export async function getEvents(filters: EventFilters = {}): Promise<EventsResponse> {
-  const { family, vendor, industry, geography, status, search, dateFrom, dateTo, page = 1, pageSize = 25 } = filters;
+  const { family, vendor, industry, geography, serviceLine, status, search, dateFrom, dateTo, page = 1, pageSize = 25 } = filters;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = { publicationStatus: { not: "excluded_noise" } };
@@ -123,6 +123,7 @@ export async function getEvents(filters: EventFilters = {}): Promise<EventsRespo
     if (dateTo) where.announcementDate.lte = new Date(dateTo);
   }
   if (geography) where.geography = { contains: geography };
+  if (serviceLine) where.contractDetails = { ...((where.contractDetails as Record<string, unknown>) ?? {}), primaryMacroServiceLine: { contains: serviceLine } };
   if (search) {
     where.OR = [
       { canonicalTitle: { contains: search } },
@@ -282,4 +283,34 @@ export async function getAllVendors() {
     select: { canonicalName: true, displayName: true, slug: true },
     orderBy: { canonicalName: "asc" },
   });
+}
+
+export async function getFilterOptions() {
+  const [vendors, industries, serviceLines] = await Promise.all([
+    prisma.entity.findMany({
+      where: { entityType: { in: ["vendor", "both"] }, isActive: true, primaryEvents: { some: { publicationStatus: "published" } } },
+      select: { canonicalName: true, slug: true },
+      orderBy: { canonicalName: "asc" },
+    }),
+    prisma.canonicalMarketEvent.groupBy({
+      by: ["industry"],
+      where: { publicationStatus: "published", industry: { not: null } },
+      _count: { id: true },
+      orderBy: { _count: { id: "desc" } },
+      take: 50,
+    }),
+    prisma.contractDetails.groupBy({
+      by: ["primaryMacroServiceLine"],
+      where: { primaryMacroServiceLine: { not: null }, canonicalEvent: { publicationStatus: "published" } },
+      _count: { canonicalEventId: true },
+      orderBy: { _count: { canonicalEventId: "desc" } },
+      take: 30,
+    }),
+  ]);
+
+  return {
+    vendors: vendors.map(v => ({ name: v.canonicalName, slug: v.slug })),
+    industries: industries.filter(i => i.industry).map(i => ({ name: i.industry!, count: i._count.id })),
+    serviceLines: serviceLines.filter(s => s.primaryMacroServiceLine).map(s => ({ name: s.primaryMacroServiceLine!, count: s._count.canonicalEventId })),
+  };
 }

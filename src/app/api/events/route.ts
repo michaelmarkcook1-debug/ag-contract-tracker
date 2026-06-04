@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
     vendor: sp.get("vendor") ?? undefined,
     industry: sp.get("industry") ?? undefined,
     geography: sp.get("geography") ?? undefined,
+    serviceLine: sp.get("serviceLine") ?? undefined,
     status: (sp.get("status") ?? "all") as PublicationStatus | "all",
     search: sp.get("search") ?? undefined,
     dateFrom: sp.get("dateFrom") ?? undefined,
