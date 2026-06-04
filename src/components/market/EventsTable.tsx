@@ -209,10 +209,10 @@ function EventValueCell({ event }: { event: EventSummary }) {
 export function EventsTable() {
   const [filters, setFilters] = useState<EventFilters>({ family: "all", status: "all", page: 1, pageSize: PAGE_SIZE });
   const [data, setData] = useState<EventsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<EventSummary | null>(null);
   const [search, setSearch] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -241,7 +241,10 @@ export function EventsTable() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchEvents(filters); }, [fetchEvents, filters]);
+  // Only fetch when user has actively searched or filtered
+  useEffect(() => {
+    if (hasSearched) fetchEvents(filters);
+  }, [fetchEvents, filters, hasSearched]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -252,6 +255,7 @@ export function EventsTable() {
   }, []);
 
   const setFilter = (key: keyof EventFilters, value: string | number) => {
+    setHasSearched(true);
     setFilters((f) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const next: any = { ...f, [key]: value || undefined, page: key !== "page" ? 1 : (value as number) };
@@ -261,6 +265,7 @@ export function EventsTable() {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setHasSearched(true);
     setFilter("search", search);
   };
 
@@ -278,46 +283,30 @@ export function EventsTable() {
   const clearAllFilters = () => {
     setFilters({ family: "all", status: "all", page: 1, pageSize: PAGE_SIZE });
     setSearch("");
+    setHasSearched(false);
+    setData(null);
   };
 
   return (
     <div className="space-y-0">
-      {/* Search + filter bar */}
+      {/* Search + filter bar — always visible */}
       <div className="sticky top-14 z-30 bg-background/80 backdrop-blur-xl border-b border-border/40">
-        <div className="px-6 py-3">
-          <form onSubmit={handleSearchSubmit} className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
-              <Input
-                ref={searchRef}
-                placeholder="Search events, vendors, clients, industries…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 h-10 bg-foreground/[0.04] border-border/40 text-sm placeholder:text-muted-foreground/40 focus-visible:ring-emerald-500/30"
-              />
-              <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline text-[10px] text-muted-foreground/40 bg-foreground/[0.06] px-1.5 py-0.5 rounded font-mono">⌘K</kbd>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className={`gap-1.5 h-10 px-3 ${showFilters ? "bg-foreground/[0.08]" : ""}`}
-              onClick={() => setShowFilters(!showFilters)}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filters
-              {activeFilterCount > 0 && (
-                <span className="ml-1 h-4 min-w-4 flex items-center justify-center rounded-full bg-emerald-500 text-[10px] text-white font-bold px-1">
-                  {activeFilterCount}
-                </span>
-              )}
-            </Button>
+        <div className="px-6 pt-4 pb-3">
+          <form onSubmit={handleSearchSubmit} className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/50" />
+            <Input
+              ref={searchRef}
+              placeholder="Search events, vendors, clients, industries…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-12 h-12 bg-foreground/[0.05] border-border/50 text-base font-medium placeholder:text-muted-foreground/40 focus-visible:ring-emerald-500/30 rounded-xl"
+            />
+            <kbd className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:inline text-[10px] text-muted-foreground/30 bg-foreground/[0.06] px-1.5 py-0.5 rounded font-mono">⌘K</kbd>
           </form>
         </div>
 
-        {/* Expanded filter panel */}
-        {showFilters && (
-          <div className="px-6 pb-4 space-y-3 border-t border-border/20 pt-3">
+        {/* Filters — always shown */}
+        <div className="px-6 pb-4 space-y-3">
             {/* Type chips */}
             <div className="flex items-center gap-1 flex-wrap">
               {FAMILIES.map(({ value, label, color }) => (
@@ -432,11 +421,29 @@ export function EventsTable() {
               </div>
             )}
           </div>
-        )}
       </div>
 
       {/* Results */}
       <div className="px-6 pt-4 pb-8">
+        {!hasSearched ? (
+          <div className="text-center py-28">
+            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 mb-4">
+              <Search className="h-8 w-8 text-emerald-500/50" />
+            </div>
+            <h2 className="text-lg font-semibold mb-1">Search IT Services Market Events</h2>
+            <p className="text-sm text-muted-foreground/60 max-w-md mx-auto">
+              Search across {data?.total ? data.total.toLocaleString() : "7,000+"} events — contracts, M&A, partnerships, and org changes — or use the filters above to narrow results.
+            </p>
+            <div className="flex items-center justify-center gap-4 mt-6 text-xs text-muted-foreground/40">
+              <span>63 tracked vendors</span>
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/20" />
+              <span>Public sources only</span>
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/20" />
+              <span>AI-extracted insights</span>
+            </div>
+          </div>
+        ) : (
+        <>
         {data && (
           <div className="flex items-center justify-between mb-4">
             <p className="text-xs text-muted-foreground">
@@ -446,7 +453,6 @@ export function EventsTable() {
           </div>
         )}
 
-        {/* Event list */}
         <div className="space-y-1.5">
           {loading ? (
             Array.from({ length: 8 }).map((_, i) => (
@@ -533,6 +539,8 @@ export function EventsTable() {
               </Button>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
 
