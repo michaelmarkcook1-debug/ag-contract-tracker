@@ -7,11 +7,13 @@ import { extractArticle, ExtractionResult } from "./classifier";
 export interface PipelineOptions {
   sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
   maxSourcesPerRun?: number;
+  sourceOffset?: number;
   dryRun?: boolean;
 }
 
 export interface PipelineProgress {
   phase: "crawling" | "classifying" | "storing" | "done";
+  sourcesAvailable: number;
   sourcesProcessed: number;
   sourcesTotal: number;
   articlesFound: number;
@@ -171,7 +173,7 @@ export async function runPipeline(
   onProgress?: (p: PipelineProgress) => void,
   existingRunId?: string,
 ): Promise<PipelineProgress> {
-  const { sourceFilter = "all", maxSourcesPerRun = 10, dryRun = false } = options;
+  const { sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false } = options;
 
   // Use existing run record if provided (from after() pattern), otherwise create one
   const run = existingRunId
@@ -180,9 +182,11 @@ export async function runPipeline(
         data: { runType: dryRun ? "dry_run" : "manual", sourceFilter: sourceFilter ?? null },
       });
 
-  const sources = pickSources(sourceFilter).slice(0, maxSourcesPerRun);
+  const allPickedSources = pickSources(sourceFilter);
+  const sources = allPickedSources.slice(sourceOffset, sourceOffset + maxSourcesPerRun);
   const progress: PipelineProgress = {
     phase: "crawling",
+    sourcesAvailable: allPickedSources.length,
     sourcesProcessed: 0,
     sourcesTotal: sources.length,
     articlesFound: 0,

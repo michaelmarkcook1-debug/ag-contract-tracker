@@ -27,7 +27,7 @@ interface RunResult {
     runId?: string;
     status?: string;
     message?: string;
-    phase?: string; sourcesProcessed?: number; sourcesTotal?: number;
+    phase?: string; sourcesAvailable?: number; sourcesProcessed?: number; sourcesTotal?: number;
     articlesFound?: number; articlesDuped?: number; eventsExtracted?: number;
     eventsPublished?: number; eventsQueued?: number; errors?: string[];
   };
@@ -46,36 +46,90 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
     setStatus(data);
   }, []);
 
+  const [batchProgress, setBatchProgress] = useState("");
+
   const triggerRun = useCallback(async (dryRun = false) => {
     setRunning(true);
     setLastResult(null);
+    setBatchProgress("");
+
+    const BATCH_SIZE = 10; // sources per API call — fits in 60s timeout
+    const limit = maxSources === "all" ? 999 : parseInt(maxSources);
+    let offset = 0;
+    let totalArticles = 0;
+    let totalPublished = 0;
+    let totalQueued = 0;
+    let totalErrors: string[] = [];
+    let sourcesAvailable = 0;
+    let batchNum = 0;
+
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 590000); // 9.8 min
-      const res = await fetch("/api/ingestion", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sourceFilter, maxSources: maxSources === "all" ? 0 : parseInt(maxSources), dryRun }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      const text = await res.text();
-      try {
-        const data: RunResult = JSON.parse(text);
-        setLastResult(data);
-      } catch {
-        setLastResult({ success: false, error: `Server returned non-JSON: ${text.slice(0, 200)}` });
+      while (offset < limit) {
+        batchNum++;
+        const batchLimit = Math.min(BATCH_SIZE, limit - offset);
+        setBatchProgress(`Batch ${batchNum}: processing sources ${offset + 1}–${offset + batchLimit}…`);
+
+        const res = await fetch("/api/ingestion", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sourceFilter,
+            maxSources: batchLimit,
+            sourceOffset: offset,
+            dryRun,
+          }),
+        });
+
+        const text = await res.text();
+        let data: RunResult;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          setLastResult({ success: false, error: `Batch ${batchNum} returned non-JSON: ${text.slice(0, 150)}` });
+          break;
+        }
+
+        if (!data.success) {
+          setLastResult({ success: false, error: data.error ?? `Batch ${batchNum} failed` });
+          break;
+        }
+
+        const r = data.result;
+        if (r) {
+          totalArticles += r.articlesFound ?? 0;
+          totalPublished += r.eventsPublished ?? 0;
+          totalQueued += r.eventsQueued ?? 0;
+          totalErrors = totalErrors.concat(r.errors ?? []);
+          sourcesAvailable = r.sourcesAvailable ?? 0;
+        }
+
+        offset += batchLimit;
+
+        // Stop if we've processed all available sources
+        if (sourcesAvailable > 0 && offset >= sourcesAvailable) break;
+        // Stop if this batch had no sources (past the end)
+        if (r && (r.sourcesTotal ?? 0) === 0) break;
+
+        setBatchProgress(`Batch ${batchNum} done. ${totalArticles} articles found so far…`);
       }
-      await refreshStatus();
+
+      setLastResult({
+        success: true,
+        result: {
+          message: `Pipeline complete — ${batchNum} batches.`,
+          articlesFound: totalArticles,
+          eventsPublished: totalPublished,
+          eventsQueued: totalQueued,
+          errors: totalErrors,
+        },
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("abort")) {
-        setLastResult({ success: false, error: "Request timed out. Try with fewer sources." });
-      } else {
-        setLastResult({ success: false, error: msg });
-      }
+      setLastResult({ success: false, error: msg });
     } finally {
       setRunning(false);
+      setBatchProgress("");
+      await refreshStatus();
     }
   }, [sourceFilter, maxSources, refreshStatus]);
 
@@ -145,7 +199,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
           <div className="flex gap-2">
             <Button onClick={() => triggerRun(false)} disabled={running} className="gap-2 flex-1">
               {running ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {running ? "Running pipeline…" : "Run pipeline"}
+              {running ? (batchProgress || "Running pipeline…") : "Run pipeline"}
             </Button>
             <Button variant="outline" onClick={() => triggerRun(true)} disabled={running} className="text-xs">
               Dry run

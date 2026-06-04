@@ -1,25 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runPipeline, syncSourceRegistry } from "@/lib/ingestion/pipeline";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 // POST /api/ingestion — trigger a pipeline run
-// Processes sources directly (no after() — compatible with Hobby plan)
+// Supports sourceOffset for batched processing (avoids 60s Hobby timeout)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { sourceFilter = "vendor_rss", maxSources = 0, dryRun = false } = body as {
+    const {
+      sourceFilter = "vendor_rss",
+      maxSources = 10,
+      sourceOffset = 0,
+      dryRun = false,
+    } = body as {
       sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
       maxSources?: number;
+      sourceOffset?: number;
       dryRun?: boolean;
     };
 
-    // Sync source registry (tolerates failures)
-    try { await syncSourceRegistry(); } catch { /* tolerate */ }
+    // Only sync registry on first batch (offset 0)
+    if (sourceOffset === 0) {
+      try { await syncSourceRegistry(); } catch { /* tolerate */ }
+    }
 
     const result = await runPipeline({
       sourceFilter,
-      maxSourcesPerRun: maxSources > 0 ? maxSources : 999,
+      maxSourcesPerRun: maxSources > 0 ? maxSources : 10,
+      sourceOffset,
       dryRun,
     });
 
