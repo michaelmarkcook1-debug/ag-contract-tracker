@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runPipeline, syncSourceRegistry } from "@/lib/ingestion/pipeline";
 
+export const maxDuration = 300; // 5 min function timeout
+
 // POST /api/ingestion — trigger a pipeline run
 export async function POST(req: NextRequest) {
   try {
@@ -11,8 +13,12 @@ export async function POST(req: NextRequest) {
       dryRun?: boolean;
     };
 
-    // Sync source registry on each run (idempotent)
-    await syncSourceRegistry();
+    // Sync source registry (idempotent, tolerates failures on individual sources)
+    try {
+      await syncSourceRegistry();
+    } catch (e) {
+      console.warn("syncSourceRegistry partial failure:", e);
+    }
 
     const result = await runPipeline({
       sourceFilter,

@@ -136,28 +136,31 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
 // ── Sync source registry from definitions ─────────────────────────────────────
 export async function syncSourceRegistry(): Promise<void> {
   for (const src of ALL_SOURCES) {
-    // Check if exists by URL first to avoid unique constraint issues on id
-    const existing = await prisma.sourceRegistryItem.findFirst({
-      where: { OR: [{ url: src.url }, { id: src.id }] },
-    });
-    if (existing) {
-      await prisma.sourceRegistryItem.update({
-        where: { id: existing.id },
-        data: { name: src.name, provider: src.provider, url: src.url, sourceType: src.sourceType, tier: src.tier, fetchMethod: src.fetchMethod, isActive: true },
+    try {
+      const existing = await prisma.sourceRegistryItem.findFirst({
+        where: { OR: [{ url: src.url }, { id: src.id }] },
       });
-    } else {
-      await prisma.sourceRegistryItem.create({
-        data: {
-          id: src.id,
-          name: src.name,
-          provider: src.provider,
-          url: src.url,
-          sourceType: src.sourceType,
-          tier: src.tier,
-          fetchMethod: src.fetchMethod,
-          isActive: true,
-        },
-      });
+      if (existing) {
+        await prisma.sourceRegistryItem.update({
+          where: { id: existing.id },
+          data: { name: src.name, provider: src.provider, url: src.url, sourceType: src.sourceType, tier: src.tier, fetchMethod: src.fetchMethod, isActive: true },
+        });
+      } else {
+        await prisma.sourceRegistryItem.create({
+          data: {
+            id: src.id,
+            name: src.name,
+            provider: src.provider,
+            url: src.url,
+            sourceType: src.sourceType,
+            tier: src.tier,
+            fetchMethod: src.fetchMethod,
+            isActive: true,
+          },
+        });
+      }
+    } catch {
+      // Skip individual source sync failures — don't block the pipeline
     }
   }
 }
