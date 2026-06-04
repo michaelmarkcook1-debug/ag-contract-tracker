@@ -119,7 +119,7 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
           tcvIsEstimate: result.tcvIsEstimate,
           contractLengthMonths: result.contractLengthMonths,
           primaryMacroServiceLine: result.primaryMacroServiceLine,
-          scopeSummary: article.snippet?.slice(0, 500) ?? null,
+          scopeSummary: result.summary ?? article.snippet?.slice(0, 500) ?? null,
           platformsUsed: "[]",
           clientServiceCoverageLocation: JSON.stringify(result.geography),
           secondaryMacroServiceLines: "[]",

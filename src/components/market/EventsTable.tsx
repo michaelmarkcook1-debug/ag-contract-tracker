@@ -113,14 +113,22 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
         </div>
       </div>
 
+      {/* Summary */}
+      {event.scopeSummary && (
+        <div className="space-y-1.5">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Summary</h3>
+          <p className="text-sm text-foreground/80 leading-relaxed">{event.scopeSummary}</p>
+        </div>
+      )}
+
       {/* Analyst Insight */}
       {event.analystInsight && (
-        <div className="rounded-xl border border-violet-500/20 bg-violet-500/[0.05] p-4">
-          <h3 className="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4">
+          <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <FileText className="h-3 w-3" />
-            AI Analyst Insight
+            Analyst Insight
           </h3>
-          <p className="text-sm text-foreground/80 leading-relaxed">{event.analystInsight}</p>
+          <p className="text-sm text-foreground/80 leading-relaxed italic">{event.analystInsight}</p>
         </div>
       )}
 

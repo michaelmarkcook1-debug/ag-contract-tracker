@@ -54,6 +54,7 @@ export interface ExtractionResult {
   industry: string | null;
   confidenceScore: number;
   extractionMethod: "llm" | "rules" | "rule_fallback";
+  summary: string | null;
   analystInsight: string | null;
   missingCritical: string[];
 }
@@ -70,7 +71,7 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
       vendorRaw: null, clientRaw: null, tcvUsd: null, tcvIsEstimate: false,
       contractLengthMonths: null, primaryMacroServiceLine: null, geography: [],
       industry: null, confidenceScore: 0.1, extractionMethod: "rules",
-      analystInsight: null, missingCritical: [],
+      summary: null, analystInsight: null, missingCritical: [],
     };
   }
 
@@ -163,35 +164,45 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
     vendorRaw, clientRaw: null, tcvUsd, tcvIsEstimate,
     contractLengthMonths, primaryMacroServiceLine, geography: geos,
     industry, confidenceScore: Math.min(confidenceScore, 0.89),
-    extractionMethod: "rules", analystInsight: null, missingCritical,
+    extractionMethod: "rules", summary: null, analystInsight: null, missingCritical,
   };
 }
 
 // ── LLM extraction (requires ANTHROPIC_API_KEY) ───────────────────────────────
 
-const EXTRACTION_SYSTEM = `You are coding an IT services market event for a market intelligence product.
-Use only the supplied text. Do not invent missing data. Return JSON only — no prose, no markdown.
-Hard rules:
-- Do not infer TCV unless explicitly stated with a number and currency.
-- Null is preferred over a guess.
-- Do not treat a partnership as a contract unless there is evidence of a signed deal with a client.
-- Do not include financial results or earnings announcements.`;
+const EXTRACTION_SYSTEM = `You are a senior IT services market analyst coding events for a competitive intelligence platform used by enterprise sales teams. Your output must be thorough and commercially actionable.
+
+Rules:
+1. Extract ALL available structured data from the text.
+2. TCV ESTIMATION: If TCV is not explicitly stated, ESTIMATE it based on deal characteristics:
+   - Use industry benchmarks: avg IT outsourcing deal = $50-200M, BPO = $20-80M, consulting = $5-30M
+   - Factor in: contract length, client size (Fortune 500 = larger), service scope, geography
+   - Mark tcvIsEstimate=true when estimating. A reasonable estimate is better than null.
+3. Analyst insight must be 3-5 sentences of ACTIONABLE competitive intelligence:
+   - What does this mean for the vendor's market position?
+   - Which competitors should be concerned? Name specific rival vendors.
+   - What client pattern or industry trend does this signal?
+   - What follow-on opportunities might exist?
+4. Summary must capture the key facts in 2-3 sentences for a busy executive.
+5. Do not include financial results, earnings announcements, or analyst reports.
+6. Return JSON only — no prose, no markdown fences.`;
 
 const EXTRACTION_SCHEMA = `{
   "family": "CONTRACT|M_AND_A|PARTNERSHIP|NEW_OFFERING|ORG_CHANGE|EXCLUDED",
   "eventType": "new_win|renewal|extension|expansion|rebid_win|incumbent_displacement|framework_award|acquisition|merger|divestiture|technology_alliance|co_delivery_agreement|service_launch|platform_launch|delivery_centre_opening|leadership_appointment|leadership_departure|restructuring|strategic_transformation|excluded_financial_results|excluded_noise",
-  "canonicalTitle": "concise title, max 120 chars",
-  "vendorRaw": "vendor name or null",
-  "clientRaw": "client name or null (null if anonymised)",
-  "tcvUsd": "number in USD (null if not stated)",
-  "tcvIsEstimate": false,
+  "canonicalTitle": "concise title, max 120 chars — format: Vendor | EventType | Client | ServiceLine",
+  "vendorRaw": "IT services vendor name",
+  "clientRaw": "client/buyer organisation name or null",
+  "tcvUsd": "number in USD — estimate if not stated, using deal size indicators",
+  "tcvIsEstimate": "true if estimated, false if explicitly stated",
   "contractLengthMonths": "integer or null",
   "primaryMacroServiceLine": "ITO|Application Services|Digital & Cloud|BPO|Cybersecurity|AI & Analytics|Consulting & Advisory|ERP & Enterprise Apps|Network & Telco|Engineering IT|null",
-  "geography": ["array of countries/regions"],
-  "industry": "BFSI|Public Sector|Healthcare & Life Sciences|Telecommunications|Manufacturing & Automotive|Retail|Aerospace & Defence|Energy & Resources|Insurance|Technology|null",
-  "confidenceScore": 0.0,
-  "analystInsight": "1-2 sentence market context, or null if insufficient evidence",
-  "missingCritical": ["vendor", "client", "tcv"]
+  "geography": ["array of countries/regions mentioned"],
+  "industry": "BFSI|Public Sector|Healthcare & Life Sciences|Telecommunications|Manufacturing & Automotive|Retail|Aerospace & Defence|Energy & Resources|Insurance|Technology|Transportation & Logistics|Media & Entertainment|Education|null",
+  "confidenceScore": "0.0-1.0 — how confident you are in the extraction accuracy",
+  "summary": "2-3 sentence factual summary of the deal/event for an executive audience",
+  "analystInsight": "3-5 sentences of competitive intelligence: market positioning, competitor implications, industry trends, follow-on opportunities. Name specific competitor vendors where relevant.",
+  "missingCritical": ["list fields that could not be determined"]
 }`;
 
 export async function llmExtract(article: RawArticle): Promise<ExtractionResult | null> {
@@ -216,7 +227,7 @@ ${EXTRACTION_SCHEMA}`;
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 600,
+        max_tokens: 1200,
         system: EXTRACTION_SYSTEM,
         messages: [{ role: "user", content: prompt }],
       }),
@@ -244,6 +255,7 @@ ${EXTRACTION_SCHEMA}`;
       industry: parsed.industry ?? null,
       confidenceScore: typeof parsed.confidenceScore === "number" ? parsed.confidenceScore : 0.6,
       extractionMethod: "llm",
+      summary: parsed.summary ?? null,
       analystInsight: parsed.analystInsight ?? null,
       missingCritical: Array.isArray(parsed.missingCritical) ? parsed.missingCritical : [],
     };

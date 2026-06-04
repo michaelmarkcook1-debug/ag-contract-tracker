@@ -58,6 +58,7 @@ export interface EventSummary {
   contractEventType: string | null;
   primaryMacroServiceLine: string | null;
   contractLengthMonths: number | null;
+  scopeSummary: string | null;
   // M&A specific
   acquirerName: string | null;
   targetName: string | null;
