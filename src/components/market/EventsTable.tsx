@@ -67,50 +67,51 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
         </Badge>
       </div>
 
-      {/* Key Facts Table */}
+      {/* Key Facts — 2-column paired table matching predecessor layout */}
       <div className="rounded-xl border border-border/40 overflow-hidden">
-        <div className="px-4 py-2.5 bg-foreground/[0.03] border-b border-border/30">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Key Facts</h3>
-        </div>
-        <div className="divide-y divide-border/20">
-          {event.family === "CONTRACT" && (
-            <>
-              <FactRow label="Vendor" value={event.vendorName} />
-              <FactRow label="Client" value={event.clientAnonymised ? event.clientDescriptor : event.clientName} />
-              <FactRow label="TCV" value={tcv ? formatTcv(tcv, event.tcvIsEstimate) : null} valueClass="text-emerald-400 font-mono font-semibold" />
-              <FactRow label="Contract Type" value={event.contractEventType ? (CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType) : null} />
-              <FactRow label="Duration" value={event.contractLengthMonths ? `${event.contractLengthMonths} months` : null} />
-              <FactRow label="Service Line" value={event.primaryMacroServiceLine} />
-              <FactRow label="TCV Basis" value={event.tcvBasis} />
-            </>
-          )}
-          {event.family === "M_AND_A" && (
-            <>
-              <FactRow label="Acquirer" value={event.acquirerName} />
-              <FactRow label="Target" value={event.targetName} />
-              <FactRow label="Deal Value" value={event.dealValueUsd ? formatTcv(event.dealValueUsd, false) : null} valueClass="text-violet-400 font-mono font-semibold" />
-              <FactRow label="Deal Type" value={event.maEventType ? (MA_EVENT_TYPE_LABELS[event.maEventType] ?? event.maEventType) : null} />
-              <FactRow label="Status" value={event.maStatus} />
-            </>
-          )}
-          {event.family === "PARTNERSHIP" && (
-            <>
-              <FactRow label="Partner A" value={event.partnerAName} />
-              <FactRow label="Partner B" value={event.partnerBName} />
-              <FactRow label="Type" value={event.partnershipType?.replace(/_/g, " ")} />
-            </>
-          )}
-          {event.family === "ORG_CHANGE" && (
-            <>
-              <FactRow label="Organisation" value={event.primaryEntityName} />
-              <FactRow label="Person" value={event.personName} />
-              <FactRow label="Change Type" value={event.orgEventType ? (ORG_EVENT_TYPE_LABELS[event.orgEventType] ?? event.orgEventType) : null} />
-            </>
-          )}
-          <FactRow label="Date" value={formatDate(event.announcementDate)} />
-          <FactRow label="Geography" value={event.geography.length > 0 ? event.geography.join(", ") : null} />
-          <FactRow label="Industry" value={event.industry} />
-        </div>
+        <table className="w-full text-xs">
+          <tbody className="divide-y divide-border/20">
+            {event.family === "CONTRACT" && (
+              <>
+                <PairedRow l1="Provider" v1={event.vendorName} l2="Industry" v2={event.industry} />
+                <PairedRow l1="Macro Service" v1={event.primaryMacroServiceLine} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
+                <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcv ? formatTcv(tcv, event.tcvIsEstimate) : null} v2Class="text-emerald-400 font-mono font-semibold" />
+                <PairedRow l1="Contract Type" v1={event.contractEventType ? (CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType) : null} l2="Length" v2={event.contractLengthMonths ? `${event.contractLengthMonths} months` : null} />
+                <PairedRow l1="Start Date" v1={formatDate(event.announcementDate)} l2="TCV Basis" v2={event.tcvBasis} />
+                <PairedRow l1="Confidence" v1={`${Math.round(event.confidenceScore * 100)}%`} l2="Source" v2={event.originalArticleUrl ? "See link below" : null} />
+              </>
+            )}
+            {event.family === "M_AND_A" && (
+              <>
+                <PairedRow l1="Acquirer" v1={event.acquirerName} l2="Industry" v2={event.industry} />
+                <PairedRow l1="Target" v1={event.targetName} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
+                <PairedRow l1="Deal Value" v1={event.dealValueUsd ? formatTcv(event.dealValueUsd, false) : null} v1Class="text-violet-400 font-mono font-semibold" l2="Deal Type" v2={event.maEventType ? (MA_EVENT_TYPE_LABELS[event.maEventType] ?? event.maEventType) : null} />
+                <PairedRow l1="Status" v1={event.maStatus} l2="Date" v2={formatDate(event.announcementDate)} />
+              </>
+            )}
+            {event.family === "PARTNERSHIP" && (
+              <>
+                <PairedRow l1="Partner A" v1={event.partnerAName} l2="Industry" v2={event.industry} />
+                <PairedRow l1="Partner B" v1={event.partnerBName} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
+                <PairedRow l1="Partnership Type" v1={event.partnershipType?.replace(/_/g, " ")} l2="Date" v2={formatDate(event.announcementDate)} />
+              </>
+            )}
+            {event.family === "ORG_CHANGE" && (
+              <>
+                <PairedRow l1="Organisation" v1={event.primaryEntityName} l2="Industry" v2={event.industry} />
+                <PairedRow l1="Person" v1={event.personName} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
+                <PairedRow l1="Change Type" v1={event.orgEventType ? (ORG_EVENT_TYPE_LABELS[event.orgEventType] ?? event.orgEventType) : null} l2="Date" v2={formatDate(event.announcementDate)} />
+              </>
+            )}
+            {event.family === "NEW_OFFERING" && (
+              <>
+                <PairedRow l1="Provider" v1={event.primaryEntityName} l2="Industry" v2={event.industry} />
+                <PairedRow l1="Offering Type" v1={event.eventType?.replace(/_/g, " ")} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
+                <PairedRow l1="Service Line" v1={event.primaryMacroServiceLine} l2="Date" v2={formatDate(event.announcementDate)} />
+              </>
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Summary */}
@@ -160,13 +161,17 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
   );
 }
 
-function FactRow({ label, value, valueClass }: { label: string; value: string | null | undefined; valueClass?: string }) {
-  if (!value) return null;
+function PairedRow({ l1, v1, v1Class, l2, v2, v2Class }: {
+  l1: string; v1: string | null | undefined; v1Class?: string;
+  l2: string; v2: string | null | undefined; v2Class?: string;
+}) {
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 text-xs">
-      <span className="text-muted-foreground/60">{label}</span>
-      <span className={valueClass ?? "text-foreground font-medium"}>{value}</span>
-    </div>
+    <tr>
+      <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l1}</td>
+      <td className={`px-3 py-2.5 w-[28%] border-r border-border/10 ${v1Class ?? "text-foreground"}`}>{v1 ?? "—"}</td>
+      <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l2}</td>
+      <td className={`px-3 py-2.5 w-[28%] ${v2Class ?? "text-foreground"}`}>{v2 ?? "—"}</td>
+    </tr>
   );
 }
 
