@@ -168,13 +168,17 @@ export async function syncSourceRegistry(): Promise<void> {
 // ── Main pipeline run ─────────────────────────────────────────────────────────
 export async function runPipeline(
   options: PipelineOptions = {},
-  onProgress?: (p: PipelineProgress) => void
+  onProgress?: (p: PipelineProgress) => void,
+  existingRunId?: string,
 ): Promise<PipelineProgress> {
   const { sourceFilter = "all", maxSourcesPerRun = 10, dryRun = false } = options;
 
-  const run = await prisma.ingestionRun.create({
-    data: { runType: dryRun ? "dry_run" : "manual", sourceFilter: sourceFilter ?? null },
-  });
+  // Use existing run record if provided (from after() pattern), otherwise create one
+  const run = existingRunId
+    ? { id: existingRunId }
+    : await prisma.ingestionRun.create({
+        data: { runType: dryRun ? "dry_run" : "manual", sourceFilter: sourceFilter ?? null },
+      });
 
   const sources = pickSources(sourceFilter).slice(0, maxSourcesPerRun);
   const progress: PipelineProgress = {
