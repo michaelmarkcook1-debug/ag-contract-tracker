@@ -109,7 +109,7 @@ function EventMeta({ event }: { event: EventSummary }) {
 
 export function EventCard({ event, className }: EventCardProps) {
   return (
-    <div className={cn("group p-4 rounded-lg border border-border bg-card hover:border-zinc-600 transition-colors", className)}>
+    <div className={cn("group p-4 rounded-xl border border-border/40 bg-card/50 hover:border-border/80 hover:bg-card/80 transition-all", className)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">

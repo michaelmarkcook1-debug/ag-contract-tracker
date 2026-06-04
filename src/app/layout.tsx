@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AG Contract Tracker",
-  description: "Agricultural grain contract management",
+  title: "IT Market Intel — IT Services Intelligence Platform",
+  description: "Track contracts, M&A, partnerships, and organizational changes across 63 IT services providers",
 };
 
 import { AppShell } from "@/components/market/AppShell";

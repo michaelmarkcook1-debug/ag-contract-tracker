@@ -4,72 +4,81 @@ import { FamilyBadge } from "@/components/market/FamilyBadge";
 import { EventCard } from "@/components/market/EventCard";
 import { FamilyTrendChart, TopVendorsChart } from "@/components/market/DashboardCharts";
 import { formatDate } from "@/lib/types";
-import { Activity, FileText, TrendingUp, GitMerge, Handshake, Lightbulb, Users } from "lucide-react";
+import { Activity, FileText, TrendingUp, GitMerge, Handshake, Lightbulb, Users, ArrowRight, Zap } from "lucide-react";
 import Link from "next/link";
 
 export default async function DashboardPage() {
   const stats = await getDashboardStats();
 
   const familyCounts = [
-    { family: "CONTRACT", count: stats.contractsCount, icon: FileText, label: "Contracts" },
-    { family: "M_AND_A", count: stats.maCount, icon: GitMerge, label: "M&A" },
-    { family: "PARTNERSHIP", count: stats.partnershipCount, icon: Handshake, label: "Partnerships" },
-    { family: "NEW_OFFERING", count: stats.newOfferingCount, icon: Lightbulb, label: "New Offerings" },
-    { family: "ORG_CHANGE", count: stats.orgChangeCount, icon: Users, label: "Org Changes" },
+    { family: "CONTRACT", count: stats.contractsCount, icon: FileText, label: "Contracts", color: "from-blue-500/20 to-blue-500/5 border-blue-500/20" },
+    { family: "M_AND_A", count: stats.maCount, icon: GitMerge, label: "M&A", color: "from-orange-500/20 to-orange-500/5 border-orange-500/20" },
+    { family: "PARTNERSHIP", count: stats.partnershipCount, icon: Handshake, label: "Partnerships", color: "from-emerald-500/20 to-emerald-500/5 border-emerald-500/20" },
+    { family: "NEW_OFFERING", count: stats.newOfferingCount, icon: Lightbulb, label: "New Offerings", color: "from-violet-500/20 to-violet-500/5 border-violet-500/20" },
+    { family: "ORG_CHANGE", count: stats.orgChangeCount, icon: Users, label: "Org Changes", color: "from-pink-500/20 to-pink-500/5 border-pink-500/20" },
   ];
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Market Intelligence Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {stats.totalEvents.toLocaleString()} published events
-            {stats.last30DaysCount > 0
-              ? ` · ${stats.last30DaysCount} in the last 30 days`
-              : stats.latestEventDate
-              ? ` · Latest data: ${formatDate(stats.latestEventDate)}`
-              : ""}
+    <div className="px-6 py-8 space-y-8">
+      {/* Hero header */}
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Market Intelligence</h1>
+          <p className="text-sm text-muted-foreground">
+            Tracking {stats.totalEvents.toLocaleString()} events across 63 IT services providers
+            {stats.last30DaysCount > 0 && (
+              <span className="inline-flex items-center gap-1 ml-2 text-emerald-400">
+                <Zap className="h-3 w-3" />
+                {stats.last30DaysCount} new this month
+              </span>
+            )}
           </p>
         </div>
-        {stats.needsReviewCount > 0 && (
-          <Link href="/admin" className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
-            <Activity className="h-3 w-3" />
-            {stats.needsReviewCount} pending review
+        <div className="flex items-center gap-3">
+          {stats.needsReviewCount > 0 && (
+            <Link href="/admin" className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
+              <Activity className="h-3 w-3" />
+              {stats.needsReviewCount} pending review
+            </Link>
+          )}
+          <Link href="/events" className="flex items-center gap-1.5 text-xs bg-foreground/[0.06] hover:bg-foreground/[0.1] px-3 py-1.5 rounded-full transition-colors font-medium">
+            Open Tracker
+            <ArrowRight className="h-3 w-3" />
           </Link>
-        )}
+        </div>
       </div>
 
-      {/* Family stat cards */}
+      {/* KPI cards */}
       <div className="grid grid-cols-5 gap-3">
-        {familyCounts.map(({ family, count, icon: Icon, label }) => (
-          <Card key={family} className="bg-card border-border">
-            <CardContent className="pt-4 pb-3">
-              <div className="flex items-center justify-between mb-2">
-                <FamilyBadge family={family} className="text-[10px]" />
-                <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-              </div>
-              <div className="text-2xl font-bold tabular-nums">{count}</div>
-              <p className="text-xs text-muted-foreground">{label}</p>
-            </CardContent>
-          </Card>
+        {familyCounts.map(({ family, count, icon: Icon, label, color }) => (
+          <Link key={family} href={`/events?family=${family}`}>
+            <Card className={`bg-gradient-to-b ${color} border hover:border-foreground/10 transition-all cursor-pointer group`}>
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center justify-between mb-3">
+                  <FamilyBadge family={family} className="text-[10px]" />
+                  <Icon className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+                </div>
+                <div className="text-3xl font-bold tabular-nums tracking-tight">{count.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+              </CardContent>
+            </Card>
+          </Link>
         ))}
       </div>
 
       {/* Charts row */}
       <div className="grid grid-cols-3 gap-4">
-        <Card className="col-span-2 bg-card border-border">
+        <Card className="col-span-2 bg-card/50 border-border/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Event Volume by Month</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Event Volume by Month</CardTitle>
           </CardHeader>
           <CardContent>
             <FamilyTrendChart stats={stats} />
           </CardContent>
         </Card>
-        <Card className="bg-card border-border">
+        <Card className="bg-card/50 border-border/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Top Vendors by Activity</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Top Vendors</CardTitle>
           </CardHeader>
           <CardContent>
             <TopVendorsChart stats={stats} />
@@ -77,63 +86,66 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Bottom row: recent events + industry breakdown */}
+      {/* Bottom row */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="col-span-2 space-y-2">
+        <div className="col-span-2 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Recent Events</h2>
-            <Link href="/events" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              View all →
+            <h2 className="text-sm font-semibold">Latest Events</h2>
+            <Link href="/events" className="text-xs text-muted-foreground/60 hover:text-foreground transition-colors flex items-center gap-1">
+              View all <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
           <div className="space-y-2">
-            {stats.recentEvents.slice(0, 6).map((event) => (
+            {stats.recentEvents.slice(0, 8).map((event) => (
               <EventCard key={event.id} event={event} />
             ))}
           </div>
         </div>
 
         <div className="space-y-4">
-          {/* Top industries */}
-          <Card className="bg-card border-border">
+          <Card className="bg-card/50 border-border/40">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Top Industries</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Top Industries</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {stats.topIndustries.map(({ industry, count }, i) => (
+                <div key={industry} className="flex items-center gap-3">
+                  <span className="text-[10px] text-muted-foreground/40 w-3 tabular-nums">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground truncate">{industry}</span>
+                      <span className="font-mono font-medium ml-2 shrink-0">{count}</span>
+                    </div>
+                    <div className="mt-1 h-1 rounded-full bg-foreground/[0.06] overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-500/40"
+                        style={{ width: `${(count / (stats.topIndustries[0]?.count || 1)) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card/50 border-border/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Most Active Vendors</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {stats.topIndustries.map(({ industry, count }) => (
-                <div key={industry} className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">{industry}</span>
-                  <span className="font-mono font-medium">{count}</span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Top vendors list */}
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Most Active Vendors</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {stats.topVendors.slice(0, 6).map(({ name, slug, count }, i) => (
-                <div key={slug} className="flex items-center justify-between text-xs">
-                  <Link href={`/vendors/${slug}`} className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5">
-                    <span className="text-zinc-600 w-3 tabular-nums">{i + 1}</span>
+              {stats.topVendors.slice(0, 8).map(({ name, slug, count }, i) => (
+                <Link
+                  key={slug}
+                  href={`/vendors/${slug}`}
+                  className="flex items-center justify-between text-xs group py-0.5"
+                >
+                  <span className="text-muted-foreground group-hover:text-foreground transition-colors flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground/40 w-3 tabular-nums">{i + 1}</span>
                     {name}
-                  </Link>
-                  <span className="font-mono font-medium">{count}</span>
-                </div>
+                  </span>
+                  <span className="font-mono font-medium text-muted-foreground/60">{count}</span>
+                </Link>
               ))}
-            </CardContent>
-          </Card>
-
-          {/* Coverage note */}
-          <Card className="bg-zinc-900/50 border-zinc-800">
-            <CardContent className="pt-4 pb-3">
-              <p className="text-[10px] text-zinc-500 leading-relaxed">
-                All events are sourced from public announcements. No paid data sources. Every record links to its original article. Confidence scores reflect extraction and classification quality.
-              </p>
-              <p className="text-[10px] text-zinc-600 mt-1">Last updated: {formatDate(new Date().toISOString())}</p>
             </CardContent>
           </Card>
         </div>
