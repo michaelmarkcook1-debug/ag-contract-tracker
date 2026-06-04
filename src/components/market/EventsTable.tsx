@@ -75,6 +75,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
               <>
                 <PairedRow l1="Provider" v1={event.vendorName} l2="Industry" v2={event.industry} />
                 <PairedRow l1="Macro Service" v1={event.primaryMacroServiceLine} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
+                <PairedRow l1="Micro Service" v1={event.primaryMicroServiceLine} l2="Country" v2={null} />
                 <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcv ? formatTcv(tcv, event.tcvIsEstimate) : null} v2Class="text-emerald-400 font-mono font-semibold" />
                 <PairedRow l1="Contract Type" v1={event.contractEventType ? (CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType) : null} l2="Length" v2={event.contractLengthMonths ? `${event.contractLengthMonths} months` : null} />
                 <PairedRow l1="Start Date" v1={formatDate(event.announcementDate)} l2="TCV Basis" v2={event.tcvBasis} />

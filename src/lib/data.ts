@@ -13,7 +13,7 @@ function shapeEvent(e: {
     clientAnonymised: boolean; clientDescriptor: string | null;
     tcvCommittedUsd: number | null; tcvEstimateMidUsd: number | null;
     tcvIsEstimate: boolean; tcvBasis: string;
-    contractEventType: string | null; primaryMacroServiceLine: string | null;
+    contractEventType: string | null; primaryMacroServiceLine: string | null; primaryMicroServiceLine: string | null;
     contractLengthMonths: number | null; scopeSummary: string | null;
   } | null;
   maDetails: {
@@ -61,6 +61,7 @@ function shapeEvent(e: {
     contractEventType: cd?.contractEventType ?? null,
     primaryMacroServiceLine: cd?.primaryMacroServiceLine ?? null,
     contractLengthMonths: cd?.contractLengthMonths ?? null,
+    primaryMicroServiceLine: cd?.primaryMicroServiceLine ?? null,
     scopeSummary: cd?.scopeSummary ?? null,
     // m&a
     acquirerName: ma?.acquirer?.canonicalName ?? ma?.acquirerRaw ?? null,
@@ -88,7 +89,7 @@ const eventInclude = {
       clientRaw: true, client: { select: { canonicalName: true } },
       clientAnonymised: true, clientDescriptor: true,
       tcvCommittedUsd: true, tcvEstimateMidUsd: true, tcvIsEstimate: true, tcvBasis: true,
-      contractEventType: true, primaryMacroServiceLine: true, contractLengthMonths: true,
+      contractEventType: true, primaryMacroServiceLine: true, primaryMicroServiceLine: true, contractLengthMonths: true,
       scopeSummary: true,
     },
   },

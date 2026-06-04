@@ -57,6 +57,7 @@ export interface EventSummary {
   tcvBasis: string | null;
   contractEventType: string | null;
   primaryMacroServiceLine: string | null;
+  primaryMicroServiceLine: string | null;
   contractLengthMonths: number | null;
   scopeSummary: string | null;
   // M&A specific
