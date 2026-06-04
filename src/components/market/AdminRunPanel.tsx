@@ -38,7 +38,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState<RunResult | null>(null);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [maxSources, setMaxSources] = useState<string>("0");
+  const [maxSources, setMaxSources] = useState<string>("all");
 
   const refreshStatus = useCallback(async () => {
     const res = await fetch("/api/ingestion");
@@ -53,7 +53,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
       const res = await fetch("/api/ingestion", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sourceFilter, maxSources: parseInt(maxSources), dryRun }),
+        body: JSON.stringify({ sourceFilter, maxSources: maxSources === "all" ? 0 : parseInt(maxSources), dryRun }),
       });
       const data: RunResult = await res.json();
       setLastResult(data);
@@ -135,7 +135,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
               <Select value={maxSources} onValueChange={v => v && setMaxSources(v)}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="0">All sources (full run)</SelectItem>
+                  <SelectItem value="all">All sources (full run)</SelectItem>
                   <SelectItem value="5">5 sources (quick test)</SelectItem>
                   <SelectItem value="20">20 sources</SelectItem>
                   <SelectItem value="50">50 sources</SelectItem>
