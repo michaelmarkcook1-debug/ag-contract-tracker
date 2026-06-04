@@ -50,35 +50,33 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
     setRunning(true);
     setLastResult(null);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 590000); // 9.8 min
       const res = await fetch("/api/ingestion", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sourceFilter, maxSources: maxSources === "all" ? 0 : parseInt(maxSources), dryRun }),
+        signal: controller.signal,
       });
-      const data: RunResult = await res.json();
-      setLastResult(data);
-
-      // Pipeline runs in background — poll for completion
-      if (data.success && data.result?.status === "started") {
-        const poll = setInterval(async () => {
-          try {
-            await refreshStatus();
-            const s = await fetch("/api/ingestion").then(r => r.json());
-            if (s.lastRun?.status !== "running") {
-              clearInterval(poll);
-              setRunning(false);
-              setLastResult({ success: true, result: { message: `Pipeline ${s.lastRun?.status ?? "done"}. Published: ${s.lastRun?.eventsPublished ?? 0}, Queued: ${s.lastRun?.eventsQueued ?? 0}` } });
-            }
-          } catch { /* ignore poll errors */ }
-        }, 5000);
-        // Safety: stop polling after 10 min
-        setTimeout(() => { clearInterval(poll); setRunning(false); }, 600000);
-        return; // Don't setRunning(false) yet
+      clearTimeout(timeout);
+      const text = await res.text();
+      try {
+        const data: RunResult = JSON.parse(text);
+        setLastResult(data);
+      } catch {
+        setLastResult({ success: false, error: `Server returned non-JSON: ${text.slice(0, 200)}` });
       }
+      await refreshStatus();
     } catch (err) {
-      setLastResult({ success: false, error: String(err) });
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("abort")) {
+        setLastResult({ success: false, error: "Request timed out. Try with fewer sources." });
+      } else {
+        setLastResult({ success: false, error: msg });
+      }
+    } finally {
+      setRunning(false);
     }
-    setRunning(false);
   }, [sourceFilter, maxSources, refreshStatus]);
 
   const statusColor = (s: string) => {

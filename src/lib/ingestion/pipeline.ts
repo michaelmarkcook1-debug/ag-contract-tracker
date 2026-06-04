@@ -195,33 +195,37 @@ export async function runPipeline(
 
   const allArticles: RawArticle[] = [];
 
-  // Phase 1: Crawl
-  for (const source of sources) {
-    progress.currentSource = source.name;
-    onProgress?.(progress);
-
-    const { articles, error } = await crawlSource(source);
-
-    if (error) {
-      progress.errors.push(`${source.name}: ${error}`);
-      await prisma.sourceRegistryItem.updateMany({
-        where: { url: source.url },
-        data: { consecutiveErrors: { increment: 1 }, lastError: error, lastCrawledAt: new Date() },
-      });
-    } else {
-      await prisma.sourceRegistryItem.updateMany({
-        where: { url: source.url },
-        data: { consecutiveErrors: 0, lastError: null, lastCrawledAt: new Date(), lastItemCount: articles.length, nextDueAt: new Date(Date.now() + source.refreshHours * 3_600_000) },
-      });
+  // Phase 1: Crawl — parallel with concurrency cap
+  const CRAWL_CONCURRENCY = 15;
+  let crawlCursor = 0;
+  async function crawlWorker() {
+    while (true) {
+      const idx = crawlCursor++;
+      if (idx >= sources.length) return;
+      const source = sources[idx];
+      try {
+        const { articles, error } = await crawlSource(source);
+        if (error) {
+          progress.errors.push(`${source.name}: ${error}`);
+          await prisma.sourceRegistryItem.updateMany({
+            where: { url: source.url },
+            data: { consecutiveErrors: { increment: 1 }, lastError: error, lastCrawledAt: new Date() },
+          }).catch(() => {});
+        } else {
+          allArticles.push(...articles);
+          progress.articlesFound += articles.length;
+          await prisma.sourceRegistryItem.updateMany({
+            where: { url: source.url },
+            data: { consecutiveErrors: 0, lastError: null, lastCrawledAt: new Date(), lastItemCount: articles.length, nextDueAt: new Date(Date.now() + source.refreshHours * 3_600_000) },
+          }).catch(() => {});
+        }
+      } catch (err) {
+        progress.errors.push(`${source.name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      progress.sourcesProcessed++;
     }
-
-    allArticles.push(...articles);
-    progress.articlesFound += articles.length;
-    progress.sourcesProcessed++;
-
-    // Polite delay between sources
-    await new Promise(r => setTimeout(r, 600));
   }
+  await Promise.all(Array.from({ length: CRAWL_CONCURRENCY }, crawlWorker));
 
   if (dryRun) {
     progress.phase = "done";
