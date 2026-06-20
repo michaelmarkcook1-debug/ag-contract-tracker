@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
-import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES } from "./sources";
+import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES, isRelevantArticle } from "./sources";
 import { crawlSource, RawArticle } from "./crawler";
 import { extractArticle, ExtractionResult } from "./classifier";
 
@@ -9,6 +9,8 @@ export interface PipelineOptions {
   maxSourcesPerRun?: number;
   sourceOffset?: number;
   dryRun?: boolean;
+  /** Cap on LLM extractions per invocation — keeps each batch inside the 60s budget. */
+  maxExtractions?: number;
 }
 
 export interface PipelineProgress {
@@ -18,9 +20,11 @@ export interface PipelineProgress {
   sourcesTotal: number;
   articlesFound: number;
   articlesDuped: number;
+  articlesIrrelevant: number;
   eventsExtracted: number;
   eventsPublished: number;
   eventsQueued: number;
+  eventsDeferred: number;
   currentSource?: string;
   errors: string[];
 }
@@ -136,8 +140,14 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
 }
 
 // ── Sync source registry from definitions ─────────────────────────────────────
+// Reconciles the SourceRegistryItem table to exactly match ALL_SOURCES:
+// upserts every code-defined source and deactivates anything stale (sources
+// removed from code). Runs in parallel chunks so it doesn't stall on a cold DB.
 export async function syncSourceRegistry(): Promise<void> {
-  for (const src of ALL_SOURCES) {
+  const codeUrls = new Set(ALL_SOURCES.map(s => s.url));
+  const codeIds = new Set(ALL_SOURCES.map(s => s.id));
+
+  const upsertOne = async (src: (typeof ALL_SOURCES)[number]) => {
     try {
       const existing = await prisma.sourceRegistryItem.findFirst({
         where: { OR: [{ url: src.url }, { id: src.id }] },
@@ -149,21 +159,28 @@ export async function syncSourceRegistry(): Promise<void> {
         });
       } else {
         await prisma.sourceRegistryItem.create({
-          data: {
-            id: src.id,
-            name: src.name,
-            provider: src.provider,
-            url: src.url,
-            sourceType: src.sourceType,
-            tier: src.tier,
-            fetchMethod: src.fetchMethod,
-            isActive: true,
-          },
+          data: { id: src.id, name: src.name, provider: src.provider, url: src.url, sourceType: src.sourceType, tier: src.tier, fetchMethod: src.fetchMethod, isActive: true },
         });
       }
     } catch {
       // Skip individual source sync failures — don't block the pipeline
     }
+  };
+
+  // Upsert in parallel chunks of 20
+  for (let i = 0; i < ALL_SOURCES.length; i += 20) {
+    await Promise.all(ALL_SOURCES.slice(i, i + 20).map(upsertOne));
+  }
+
+  // Deactivate registry rows that no longer exist in code (stale accumulation)
+  try {
+    const all = await prisma.sourceRegistryItem.findMany({ where: { isActive: true }, select: { id: true, url: true } });
+    const staleIds = all.filter(r => !codeUrls.has(r.url) && !codeIds.has(r.id)).map(r => r.id);
+    if (staleIds.length) {
+      await prisma.sourceRegistryItem.updateMany({ where: { id: { in: staleIds } }, data: { isActive: false } });
+    }
+  } catch {
+    // tolerate
   }
 }
 
@@ -173,7 +190,13 @@ export async function runPipeline(
   onProgress?: (p: PipelineProgress) => void,
   existingRunId?: string,
 ): Promise<PipelineProgress> {
-  const { sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false } = options;
+  const { sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false, maxExtractions = 12 } = options;
+  const runStart = Date.now();
+  // Hard wall-clock budget. Serverless caps the function at 60s and a single
+  // in-flight LLM call can run up to its 20s fetch timeout, so we must stop
+  // *starting* new calls at 38s (38 + 20 = 58 < 60) to guarantee the run always
+  // reaches its final DB write instead of being killed mid-flight.
+  const TIME_BUDGET_MS = 38_000;
 
   // Use existing run record if provided (from after() pattern), otherwise create one
   const run = existingRunId
@@ -191,9 +214,11 @@ export async function runPipeline(
     sourcesTotal: sources.length,
     articlesFound: 0,
     articlesDuped: 0,
+    articlesIrrelevant: 0,
     eventsExtracted: 0,
     eventsPublished: 0,
     eventsQueued: 0,
+    eventsDeferred: 0,
     errors: [],
   };
 
@@ -249,9 +274,23 @@ export async function runPipeline(
   const newArticles = allArticles.filter(a => !seenUrls.has(a.url));
   progress.articlesDuped = allArticles.length - newArticles.length;
 
-  for (const article of newArticles) {
+  // Cheap relevance pre-filter BEFORE any LLM spend — drops obvious noise
+  // (earnings, rankings, opinion pieces) for free via regex.
+  const relevantArticles = newArticles.filter(a => isRelevantArticle(a.title, a.sourceType).relevant);
+  progress.articlesIrrelevant = newArticles.length - relevantArticles.length;
+
+  // Hard cap on LLM calls so a batch always finishes inside the 60s budget.
+  // Articles beyond the cap stay unstored and are re-crawled on the next run.
+  let llmCalls = 0;
+  for (let i = 0; i < relevantArticles.length; i++) {
+    const article = relevantArticles[i];
+    if (llmCalls >= maxExtractions || Date.now() - runStart > TIME_BUDGET_MS) {
+      progress.eventsDeferred = relevantArticles.length - i;
+      break;
+    }
     try {
       const result = await extractArticle(article);
+      llmCalls++;
       if (result.family === "EXCLUDED") continue;
       progress.eventsExtracted++;
       progress.phase = "storing";
@@ -264,7 +303,7 @@ export async function runPipeline(
       progress.errors.push(`Article error (${article.url.slice(0, 60)}): ${msg}`);
     }
     // Small delay between LLM calls
-    if (process.env.ANTHROPIC_API_KEY) await new Promise(r => setTimeout(r, 200));
+    if (process.env.ANTHROPIC_API_KEY) await new Promise(r => setTimeout(r, 150));
   }
 
   progress.phase = "done";

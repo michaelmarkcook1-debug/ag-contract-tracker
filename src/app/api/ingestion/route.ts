@@ -9,19 +9,24 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const {
-      sourceFilter = "vendor_rss",
+      sourceFilter = "all",
       maxSources = 10,
       sourceOffset = 0,
       dryRun = false,
+      sync = false,
     } = body as {
       sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
       maxSources?: number;
       sourceOffset?: number;
       dryRun?: boolean;
+      sync?: boolean;
     };
 
-    // Only sync registry on first batch (offset 0)
-    if (sourceOffset === 0) {
+    // Registry sync is opt-in only (POST {sync:true}). It does 100+ DB writes
+    // and is NOT needed to crawl — the pipeline reads sources from code. Running
+    // it on every batch was burning the serverless time budget before any
+    // sources were crawled.
+    if (sync) {
       try { await syncSourceRegistry(); } catch { /* tolerate */ }
     }
 

@@ -29,7 +29,7 @@ interface RunResult {
     message?: string;
     phase?: string; sourcesAvailable?: number; sourcesProcessed?: number; sourcesTotal?: number;
     articlesFound?: number; articlesDuped?: number; eventsExtracted?: number;
-    eventsPublished?: number; eventsQueued?: number; errors?: string[];
+    eventsPublished?: number; eventsQueued?: number; eventsDeferred?: number; errors?: string[];
   };
 }
 
@@ -59,6 +59,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
     let totalArticles = 0;
     let totalPublished = 0;
     let totalQueued = 0;
+    let totalDeferred = 0;
     let totalErrors: string[] = [];
     let sourcesAvailable = 0;
     let batchNum = 0;
@@ -99,6 +100,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
           totalArticles += r.articlesFound ?? 0;
           totalPublished += r.eventsPublished ?? 0;
           totalQueued += r.eventsQueued ?? 0;
+          totalDeferred += r.eventsDeferred ?? 0;
           totalErrors = totalErrors.concat(r.errors ?? []);
           sourcesAvailable = r.sourcesAvailable ?? 0;
         }
@@ -120,6 +122,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
           articlesFound: totalArticles,
           eventsPublished: totalPublished,
           eventsQueued: totalQueued,
+          eventsDeferred: totalDeferred,
           errors: totalErrors,
         },
       });
@@ -219,6 +222,11 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
                       <div><div className="font-mono font-bold text-base text-emerald-400">{lastResult.result.eventsPublished}</div>published</div>
                       <div><div className="font-mono font-bold text-base text-amber-400">{lastResult.result.eventsQueued}</div>needs review</div>
                     </div>
+                  )}
+                  {(lastResult.result.eventsDeferred ?? 0) > 0 && (
+                    <p className="text-muted-foreground mt-1">
+                      {lastResult.result.eventsDeferred} relevant articles deferred to the next run (per-run LLM budget). Run again to ingest more.
+                    </p>
                   )}
                   {(lastResult.result.errors?.length ?? 0) > 0 && (
                     <p className="text-yellow-400 mt-1">{lastResult.result.errors!.length} source errors</p>

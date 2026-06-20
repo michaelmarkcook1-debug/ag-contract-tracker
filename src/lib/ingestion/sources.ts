@@ -50,31 +50,23 @@ function pressSource(id: string, name: string, provider: string, url: string, ho
   return { id, name, provider, url, sourceType: "vendor_press_release", tier: "tier_1_primary", fetchMethod: "rss", refreshHours: hours };
 }
 
+// NOTE: Direct vendor newsroom RSS is fragile — many vendors rotate or remove
+// these URLs without notice. Only feeds verified reachable (2026-06) are kept
+// here; the rest were returning HTTP 404/403 and added nothing because every
+// tracked vendor is already covered by a dedicated Google News feed below.
+// Removed (dead as of 2026-06): Accenture, CGI, Coforge, DXC, EPAM, Genpact,
+// HCLTech, IBM, Infosys, Kyndryl, Nagarro, Persistent, Tech Mahindra, Unisys,
+// Wipro. Re-add with a corrected URL once verified via a dry run.
 export const VENDOR_RSS_SOURCES: SourceDefinition[] = [
-  pressSource("accenture-press-rss",    "Accenture Newsroom",         "Accenture",           "https://newsroom.accenture.com/rss/news-releases.xml", 6),
   pressSource("atos-feed-rss",          "Atos News Feed",             "Atos",                "https://atos.net/en/feed"),
   pressSource("capgemini-feed-rss",     "Capgemini News Feed",        "Capgemini",           "https://www.capgemini.com/feed/", 6),
-  pressSource("cgi-press-rss",          "CGI News",                   "CGI",                 "https://www.cgi.com/en/rss/news", 12),
-  pressSource("coforge-press-rss",      "Coforge Newsroom",           "Coforge",             "https://www.coforge.com/rss/news", 12),
   pressSource("cognizant-press-rss",    "Cognizant Press Releases",   "Cognizant",           "https://news.cognizant.com/rss", 6),
   pressSource("concentrix-news-rss",    "Concentrix Newsroom",        "Concentrix",          "https://www.concentrix.com/newsroom/feed/", 12),
-  pressSource("dxc-press-rss",          "DXC Technology News",        "DXC Technology",      "https://dxc.com/us/en/newsroom/rss.xml"),
-  pressSource("epam-press-rss",         "EPAM Newsroom",              "EPAM",                "https://www.epam.com/about/newsroom/rss", 12),
   pressSource("fujitsu-press-rss",      "Fujitsu News",               "Fujitsu",             "https://www.fujitsu.com/global/about/resources/news/rss/"),
-  pressSource("genpact-press-rss",      "Genpact Newsroom",           "Genpact",             "https://www.genpact.com/rss/pressreleases", 12),
-  pressSource("hcl-press-rss",          "HCLTech News",               "HCLTech",             "https://www.hcltech.com/rss/news", 6),
-  pressSource("ibm-press-rss",          "IBM Newsroom",               "IBM",                 "https://newsroom.ibm.com/rss-feeds?term_node_tid_depth=All&feed_id=1", 6),
-  pressSource("infosys-press-rss",      "Infosys Press Releases",     "Infosys",             "https://www.infosys.com/newsroom/rss-feeds/press-releases-background.xml", 6),
-  pressSource("kyndryl-press-rss",      "Kyndryl Newsroom",           "Kyndryl",             "https://www.kyndryl.com/us/en/about-us/news/rss.xml"),
   pressSource("ltimindtree-press-rss",  "LTIMindtree Newsroom",       "LTIMindtree",         "https://www.ltimindtree.com/newsroom/feed/", 12),
-  pressSource("nagarro-press-rss",      "Nagarro Newsroom",           "Nagarro",             "https://www.nagarro.com/en/feed/news", 12),
   pressSource("nttdata-news-rss",       "NTT DATA News",              "NTT DATA",            "https://www.nttdata.com/global/en/rss/news", 6),
-  pressSource("persistent-press-rss",   "Persistent Systems News",    "Persistent",          "https://www.persistent.com/media-center/rss/", 12),
   pressSource("soprasteria-feed-rss",   "Sopra Steria Feed",          "Sopra Steria",        "https://www.soprasteria.com/feed", 12),
-  pressSource("techmahindra-press-rss", "Tech Mahindra News",         "Tech Mahindra",       "https://www.techmahindra.com/en-in/rss/press-releases/"),
   pressSource("tietoevry-press-rss",    "Tietoevry Newsroom",         "Tietoevry",           "https://www.tietoevry.com/en/newsroom/rss/"),
-  pressSource("unisys-press-rss",       "Unisys Press Releases",      "Unisys",              "https://www.unisys.com/siteassets/rss/press-releases.xml", 12),
-  pressSource("wipro-press-rss",        "Wipro Press Releases",       "Wipro",               "https://www.wipro.com/content/nexus/en/newsroom/press-releases/rss.xml", 6),
 ];
 
 // ── Tier-1: Investor Relations RSS ──────────────────────────────────────────
@@ -192,12 +184,16 @@ export const PROCUREMENT_SOURCES: SourceDefinition[] = [
   },
 ];
 
+// Order matters: the pipeline crawls in this sequence and may be cut short by
+// the serverless time budget. Put the highest-yield, most-reliable sources
+// FIRST (Google News covers every tracked vendor and rarely fails), so a short
+// run still returns real data. The fragile direct vendor/IR feeds go last.
 export const ALL_SOURCES: SourceDefinition[] = [
+  ...GOOGLE_NEWS_SOURCES,
+  ...WIRE_SOURCES,
+  ...PROCUREMENT_SOURCES,
   ...VENDOR_RSS_SOURCES,
   ...INVESTOR_RELATIONS_SOURCES,
-  ...WIRE_SOURCES,
-  ...GOOGLE_NEWS_SOURCES,
-  ...PROCUREMENT_SOURCES,
 ];
 
 // ── Relevance filter ────────────────────────────────────────────────────────
