@@ -11,7 +11,12 @@ export interface PipelineOptions {
   dryRun?: boolean;
   /** Cap on LLM extractions per invocation — keeps each batch inside the 60s budget. */
   maxExtractions?: number;
+  /** Tag for the IngestionRun record (e.g. "manual", "cron"). Defaults by dryRun. */
+  runType?: string;
 }
+
+/** Total number of crawlable sources (for callers computing a rotating window). */
+export const TOTAL_SOURCES = ALL_SOURCES.length;
 
 export interface PipelineProgress {
   phase: "crawling" | "classifying" | "storing" | "done";
@@ -190,7 +195,7 @@ export async function runPipeline(
   onProgress?: (p: PipelineProgress) => void,
   existingRunId?: string,
 ): Promise<PipelineProgress> {
-  const { sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false, maxExtractions = 12 } = options;
+  const { sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false, maxExtractions = 12, runType } = options;
   const runStart = Date.now();
   // Hard wall-clock budget. Serverless caps the function at 60s and a single
   // in-flight LLM call can run up to its 20s fetch timeout, so we must stop
@@ -202,7 +207,7 @@ export async function runPipeline(
   const run = existingRunId
     ? { id: existingRunId }
     : await prisma.ingestionRun.create({
-        data: { runType: dryRun ? "dry_run" : "manual", sourceFilter: sourceFilter ?? null },
+        data: { runType: runType ?? (dryRun ? "dry_run" : "manual"), sourceFilter: sourceFilter ?? null },
       });
 
   const allPickedSources = pickSources(sourceFilter);
