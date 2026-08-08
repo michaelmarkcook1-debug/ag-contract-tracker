@@ -50,23 +50,44 @@ function pressSource(id: string, name: string, provider: string, url: string, ho
   return { id, name, provider, url, sourceType: "vendor_press_release", tier: "tier_1_primary", fetchMethod: "rss", refreshHours: hours };
 }
 
-// NOTE: Direct vendor newsroom RSS is fragile — many vendors rotate or remove
-// these URLs without notice. Only feeds verified reachable (2026-06) are kept
-// here; the rest were returning HTTP 404/403 and added nothing because every
-// tracked vendor is already covered by a dedicated Google News feed below.
-// Removed (dead as of 2026-06): Accenture, CGI, Coforge, DXC, EPAM, Genpact,
-// HCLTech, IBM, Infosys, Kyndryl, Nagarro, Persistent, Tech Mahindra, Unisys,
-// Wipro. Re-add with a corrected URL once verified via a dry run.
+// All URLs below were verified live (2026-08) — each returns real, current
+// press releases. Vendor RSS rots constantly, so re-check with:
+//     npm run check:feeds
+//
+// Deliberately ABSENT because no working feed exists (verified, not assumed):
+//   Accenture ...... newsroom migrated to Adobe Edge Delivery; zero feeds in
+//                    its 3,663-URL sitemap. A structured query-index.json
+//                    endpoint exists if a custom adapter is ever wanted.
+//   CGI ............ retired its RSS; its own feed-list page has the anchors
+//                    stripped and every historical feed path 404s.
+//   Fujitsu ........ moved to global.fujitsu SPA; no feed in its 9k sitemap.
+//   LTIMindtree .... rebranded to LTM; old feed path is a redirect stub.
+//   Sopra Steria ... Sitefinity soft-404s every path (why /feed "worked").
+//   Tietoevry ...... newsroom offers email subscription only, no RSS.
+//   Infosys ........ Akamai 403s all non-browser clients at the origin.
+//   Persistent ..... Radware bot manager blocks the whole site.
+//   Tech Mahindra .. only /rss.xml exists and it serves generic service pages,
+//                    NOT news — ingesting it would pollute the DB.
+//   Wipro .......... press-release-feed.xml parses but is abandoned (newest
+//                    item 2023-10), so it can never yield new articles.
+// All of the above are still covered by their Google News feeds below.
 export const VENDOR_RSS_SOURCES: SourceDefinition[] = [
-  pressSource("atos-feed-rss",          "Atos News Feed",             "Atos",                "https://atos.net/en/feed"),
-  pressSource("capgemini-feed-rss",     "Capgemini News Feed",        "Capgemini",           "https://www.capgemini.com/feed/", 6),
-  pressSource("cognizant-press-rss",    "Cognizant Press Releases",   "Cognizant",           "https://news.cognizant.com/rss", 6),
-  pressSource("concentrix-news-rss",    "Concentrix Newsroom",        "Concentrix",          "https://www.concentrix.com/newsroom/feed/", 12),
-  pressSource("fujitsu-press-rss",      "Fujitsu News",               "Fujitsu",             "https://www.fujitsu.com/global/about/resources/news/rss/"),
-  pressSource("ltimindtree-press-rss",  "LTIMindtree Newsroom",       "LTIMindtree",         "https://www.ltimindtree.com/newsroom/feed/", 12),
-  pressSource("nttdata-news-rss",       "NTT DATA News",              "NTT DATA",            "https://www.nttdata.com/global/en/rss/news", 6),
-  pressSource("soprasteria-feed-rss",   "Sopra Steria Feed",          "Sopra Steria",        "https://www.soprasteria.com/feed", 12),
-  pressSource("tietoevry-press-rss",    "Tietoevry Newsroom",         "Tietoevry",           "https://www.tietoevry.com/en/newsroom/rss/"),
+  pressSource("atos-feed-rss",          "Atos News Feed",             "Atos",             "https://atos.net/en/feed"),
+  pressSource("capgemini-feed-rss",     "Capgemini News Feed",        "Capgemini",        "https://www.capgemini.com/feed/", 6),
+  pressSource("coforge-press-rss",      "Coforge Newsroom",           "Coforge",          "https://news.coforge.com/newsroom/press-release/rss.xml", 12),
+  // Cognizant/Genpact/IBM use a Notified-style template — keep the query string.
+  pressSource("cognizant-press-rss",    "Cognizant Press Releases",   "Cognizant",        "https://news.cognizant.com/newsannouncements?pagetemplate=rss", 6),
+  // Concentrix: must be the WordPress *category* feed; /newsroom/feed/ is empty.
+  pressSource("concentrix-news-rss",    "Concentrix Newsroom",        "Concentrix",       "https://www.concentrix.com/category/about/news/press-release/feed/", 12),
+  // DXC/EPAM publish press releases via their Q4 investor platform.
+  pressSource("dxc-press-rss",          "DXC Technology News",        "DXC Technology",   "https://investors.dxc.com/rss/pressrelease.aspx"),
+  pressSource("epam-press-rss",         "EPAM Newsroom",              "EPAM",             "https://investors.epam.com/rss/pressrelease.aspx", 12),
+  pressSource("genpact-press-rss",      "Genpact Newsroom",           "Genpact",          "https://media.genpact.com/news-releases?pagetemplate=rss", 12),
+  // HCLTech: site-wide feed — carries news but also case studies/videos.
+  pressSource("hcl-press-rss",          "HCLTech News",               "HCLTech",          "https://www.hcltech.com/rss.xml", 6),
+  pressSource("ibm-press-rss",          "IBM Newsroom",               "IBM",              "https://newsroom.ibm.com/announcements?pagetemplate=rss", 6),
+  pressSource("nagarro-press-rss",      "Nagarro Newsroom",           "Nagarro",          "https://www.nagarro.com/en/news-press-release/rss.xml", 12),
+  pressSource("nttdata-news-rss",       "NTT DATA News",              "NTT DATA",         "https://www.nttdata.com/global/en/rss/news", 6),
 ];
 
 // ── Tier-1: Investor Relations RSS ──────────────────────────────────────────
@@ -74,36 +95,62 @@ function irSource(id: string, name: string, provider: string, url: string): Sour
   return { id, name, provider, url, sourceType: "investor_relations_release", tier: "tier_1_primary", fetchMethod: "rss", refreshHours: 12 };
 }
 
+// All URLs verified live (2026-08). Note the two Q4-platform conventions:
+// Cloudflare-fronted IR sites use `/rss/pressrelease.aspx`, while *.gcs-web.com
+// hosts use `/rss/news-releases.xml` — the wrong one 404s. These sites also
+// reject non-browser User-Agents, which the crawler now sends.
+//
+// Excluded — verified to have NO usable IR feed:
+//   Accenture, Capgemini ... no IR feed (Capgemini's /feed/ is blog content
+//                            only; its press-release "feed" is a comments feed)
+//   Fujitsu, Infosys ....... Infosys' advertised feeds return 200 with 30 items
+//                            but serve stale Infosys Public Services content
+//                            (2015-2023) — a trap, not a usable feed
+//   LTIMindtree, NTT DATA, Tech Mahindra, Wipro, Coforge, Mphasis ... none exist
+//   Virtusa ................ gcs-web feed returns 200/10 items but is FROZEN at
+//                            Feb 2021 (went private) — dead archive
+//   WNS .................... IR site returns 401 site-wide post-Capgemini deal
+//   DXC, EPAM, HCLTech ..... their IR feed is the same URL already crawled in
+//                            VENDOR_RSS_SOURCES; not duplicated here
+// Do NOT use ibm.gcs-web.com — returns 200 with 10 items dated 2001.
 export const INVESTOR_RELATIONS_SOURCES: SourceDefinition[] = [
-  irSource("accenture-ir-rss",    "Accenture Investor Relations",  "Accenture",       "https://newsroom.accenture.com/rss/investor-news.xml"),
-  irSource("capgemini-ir-rss",    "Capgemini Investor Relations",  "Capgemini",       "https://www.capgemini.com/investors/feed/"),
-  irSource("cognizant-ir-rss",    "Cognizant Investor Relations",  "Cognizant",       "https://news.cognizant.com/rss?tags=investor-relations"),
-  irSource("concentrix-ir-rss",   "Concentrix Investor Relations", "Concentrix",      "https://investor.concentrix.com/rss/news-releases.xml"),
-  irSource("dxc-ir-rss",          "DXC Investor Relations",        "DXC Technology",  "https://dxc.com/us/en/investor-relations/rss.xml"),
-  irSource("epam-ir-rss",         "EPAM Investor Relations",       "EPAM",            "https://investors.epam.com/rss/news-releases.xml"),
-  irSource("fujitsu-ir-rss",      "Fujitsu Investor Relations",    "Fujitsu",         "https://www.fujitsu.com/global/about/ir/rss/"),
-  irSource("genpact-ir-rss",      "Genpact Investor Relations",    "Genpact",         "https://investor.genpact.com/rss/news-releases.xml"),
-  irSource("hcl-ir-rss",          "HCLTech Investor Relations",    "HCLTech",         "https://www.hcltech.com/rss/investors"),
-  irSource("ibm-ir-rss",          "IBM Investor Relations",        "IBM",             "https://newsroom.ibm.com/rss-feeds?term_node_tid_depth=1261&feed_id=1"),
-  irSource("infosys-ir-rss",      "Infosys Investor News",         "Infosys",         "https://www.infosys.com/newsroom/rss-feeds/investors-corner.xml"),
-  irSource("kyndryl-ir-rss",      "Kyndryl Investor Relations",    "Kyndryl",         "https://investors.kyndryl.com/rss/news-releases.xml"),
-  irSource("ltimindtree-ir-rss",  "LTIMindtree Investor News",     "LTIMindtree",     "https://www.ltimindtree.com/investors/feed/"),
-  irSource("nttdata-ir-rss",      "NTT DATA Investor Relations",   "NTT DATA",        "https://www.nttdata.com/global/en/rss/investor-relations"),
-  irSource("techmahindra-ir-rss", "Tech Mahindra Investor News",   "Tech Mahindra",   "https://www.techmahindra.com/en-in/rss/investors/"),
-  irSource("unisys-ir-rss",       "Unisys Investor Relations",     "Unisys",          "https://investor.unisys.com/rss/news-releases.xml"),
-  irSource("wipro-ir-rss",        "Wipro Investor Relations",      "Wipro",           "https://www.wipro.com/content/nexus/en/investors/rss.xml"),
-  irSource("coforge-ir-rss",      "Coforge Investor Relations",    "Coforge",         "https://www.coforge.com/rss/investors"),
-  irSource("exl-ir-rss",          "EXL Investor Relations",        "EXL",             "https://ir.exlservice.com/rss/news-releases.xml"),
-  irSource("virtusa-ir-rss",      "Virtusa Investor Relations",    "Virtusa",         "https://ir.virtusa.com/rss/news-releases.xml"),
-  irSource("wns-ir-rss",          "WNS Investor Relations",        "WNS",             "https://ir.wns.com/rss/news-releases.xml"),
-  irSource("mphasis-ir-rss",      "Mphasis Investor Relations",    "Mphasis",         "https://www.mphasis.com/investors/feed/"),
+  irSource("cognizant-ir-rss",    "Cognizant Investor Relations",  "Cognizant",   "https://investors.cognizant.com/rss/pressrelease.aspx"),
+  irSource("concentrix-ir-rss",   "Concentrix Investor Relations", "Concentrix",  "https://ir.concentrix.com/rss/pressrelease.aspx"),
+  irSource("genpact-ir-rss",      "Genpact Investor Relations",    "Genpact",     "https://genpact.gcs-web.com/rss/news-releases.xml"),
+  irSource("ibm-ir-rss",          "IBM Investor Relations",        "IBM",         "https://newsroom.ibm.com/press-releases-corporate?pagetemplate=rss"),
+  irSource("kyndryl-ir-rss",      "Kyndryl Investor Relations",    "Kyndryl",     "https://investors.kyndryl.com/rss/news-releases.xml"),
+  irSource("exl-ir-rss",          "EXL Investor Relations",        "EXL",         "https://ir.exlservice.com/rss/news-releases.xml"),
+  irSource("unisys-ir-rss",       "Unisys Investor Relations",     "Unisys",      "https://ir.unisys.com/rss/news-releases.xml"),
 ];
 
 // ── Tier-1: Wire services ───────────────────────────────────────────────────
+// Market-wide feeds: highest value per source since one feed covers every
+// vendor at once. All URLs below verified live (2026-08).
+//
+// Two traps fixed here, both of which silently returned nothing/wrong data:
+//  * Business Wire `?rss=G1` was NOT a valid channel id — the feed responded
+//    200 with "RSS channel ID is not available in the request" and zero items.
+//    Real ids are the opaque tokens below (Technology / Contract-Agreement /
+//    Professional Services).
+//  * GlobeNewswire selects content by the NUMERIC code; the trailing label is
+//    cosmetic. The old `subjectcode/14-Information Technology` actually serves
+//    code 14 = *Economic News*. Replaced with genuinely IT-scoped feeds.
+function wire(id: string, name: string, url: string): SourceDefinition {
+  return { id, name, provider: "Market Wide", url, sourceType: "wire_service", tier: "tier_1_primary", fetchMethod: "rss", refreshHours: 4 };
+}
+
 export const WIRE_SOURCES: SourceDefinition[] = [
-  { id: "businesswire-it-rss",   name: "BusinessWire Technology",   provider: "Market Wide", url: "https://feed.businesswire.com/rss/home/?rss=G1",                        sourceType: "wire_service", tier: "tier_1_primary", fetchMethod: "rss", refreshHours: 4 },
-  { id: "prnewswire-it-rss",     name: "PR Newswire IT Services",   provider: "Market Wide", url: "https://www.prnewswire.com/rss/information-technology-latest-news.rss",  sourceType: "wire_service", tier: "tier_1_primary", fetchMethod: "rss", refreshHours: 4 },
-  { id: "globenewswire-it-rss",  name: "GlobeNewsWire Technology",  provider: "Market Wide", url: "https://www.globenewswire.com/RssFeed/subjectcode/14-Information%20Technology/feedTitle/GlobeNewswire%20-%20Information%20Technology", sourceType: "wire_service", tier: "tier_1_primary", fetchMethod: "rss", refreshHours: 4 },
+  // Business Wire — verified 117 / 29 / 117 items
+  wire("businesswire-tech-rss",      "BusinessWire Technology",           "https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEFpQWg%3D%3D"),
+  wire("businesswire-contract-rss",  "BusinessWire Contracts",            "https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEF5XWA%3D%3D"),
+  wire("businesswire-prof-svc-rss",  "BusinessWire Professional Services","https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEFpQWw%3D%3D"),
+  // PR Newswire — scheme changed to /rss/<category>/<category>-list.rss (20 each)
+  wire("prnewswire-biztech-rss",     "PR Newswire Business Technology",   "https://www.prnewswire.com/rss/business-technology-latest-news/business-technology-latest-news-list.rss"),
+  wire("prnewswire-telecom-rss",     "PR Newswire Telecommunications",    "https://www.prnewswire.com/rss/telecommunications-latest-news/telecommunications-latest-news-list.rss"),
+  // GlobeNewswire — industry-scoped feeds (20 each)
+  wire("globenewswire-contracts-rss","GlobeNewsWire Business Contracts",  "https://www.globenewswire.com/RssFeed/subjectcode/7-Business%20Contracts/feedTitle/GlobeNewswire%20-%20Business%20Contracts"),
+  wire("globenewswire-compsvc-rss",  "GlobeNewsWire Computer Services",   "https://www.globenewswire.com/RssFeed/industry/9533-Computer%20Services/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Computer%20Services"),
+  wire("globenewswire-software-rss", "GlobeNewsWire Software",            "https://www.globenewswire.com/RssFeed/industry/9537-Software/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Software"),
 ];
 
 // ── Tier-2: Google News keyword RSS (aggregator) ────────────────────────────

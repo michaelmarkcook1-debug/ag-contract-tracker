@@ -12,6 +12,7 @@
     "db:import:predecessor": "npx tsx scripts/import-predecessor.ts",
     "db:studio": "npx prisma studio",
     "db:reset": "npx prisma migrate reset --force && npm run db:seed",
+    "check:feeds": "npx tsx scripts/check-feeds.ts",
     "dedup": "npx tsx scripts/dedup-semantic.ts",
     "dedup:titles": "npx tsx scripts/dedup-titles.ts",
     "reextract": "npx tsx scripts/reextract-pending.ts",

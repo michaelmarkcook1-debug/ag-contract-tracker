@@ -131,13 +131,26 @@ export async function crawlSource(source: SourceDefinition): Promise<{ articles:
       return { articles };
     }
 
+    // SAM.gov requires an api.data.gov key. Without one the endpoint returns
+    // 401, so treat a missing key as "nothing to crawl" rather than an error —
+    // otherwise it reports a failure on every single run.
+    if (source.fetchMethod === "api" && source.id === "sam-gov-api") {
+      if (!process.env.SAM_GOV_API_KEY) return { articles: [] };
+      return { articles: [], error: "SAM.gov fetch not implemented yet" };
+    }
+
     if (source.fetchMethod === "rss") {
+      // Use a browser User-Agent: several vendor/IR hosts (Cloudflare, Akamai,
+      // Q4) reject unknown bot agents with 403, and enterprise IR platforms can
+      // take >15s to respond cold. Both were previously misreported as dead
+      // feeds when the URL was actually fine.
       const res = await fetch(source.url, {
         headers: {
-          "User-Agent": "ITMarketIntel/1.0 (market intelligence aggregator)",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
           "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "Accept-Language": "en-US,en;q=0.9",
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(25000),
         redirect: "follow",
       });
       if (!res.ok) return { articles: [], error: `HTTP ${res.status}` };
