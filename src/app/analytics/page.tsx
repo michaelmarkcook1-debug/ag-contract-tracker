@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -34,6 +35,8 @@ function KpiCard({ label, value, sub, icon: Icon, color }: {
 }
 
 export default async function AnalyticsPage() {
+  // Opt out of prerendering — every chart below is DB-derived.
+  await connection();
   const data = await getAnalytics();
 
   const tcvCoverage = Math.round((data.dealsWithTcv / data.totalDeals) * 100);

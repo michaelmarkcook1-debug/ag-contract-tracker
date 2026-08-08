@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { getDashboardStats } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FamilyBadge } from "@/components/market/FamilyBadge";
@@ -8,6 +9,9 @@ import { Activity, FileText, TrendingUp, GitMerge, Handshake, Lightbulb, Users, 
 import Link from "next/link";
 
 export default async function DashboardPage() {
+  // Opt out of prerendering — these KPIs are read from the DB and would
+  // otherwise be frozen at build time and never reflect new ingestion.
+  await connection();
   const stats = await getDashboardStats();
 
   const familyCounts = [

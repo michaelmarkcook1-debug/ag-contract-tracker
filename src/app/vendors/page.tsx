@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { getAllVendors } from "@/lib/data";
 import { prisma } from "@/lib/db";
 import { Card, CardContent } from "@/components/ui/card";
@@ -6,6 +7,8 @@ import Link from "next/link";
 import { Globe, ArrowRight } from "lucide-react";
 
 export default async function VendorsPage() {
+  // Opt out of prerendering — vendor event counts come from the DB.
+  await connection();
   const vendors = await getAllVendors();
 
   // Get event counts per vendor

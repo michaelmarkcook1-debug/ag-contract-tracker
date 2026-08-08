@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { prisma } from "@/lib/db";
 import { getEvents } from "@/lib/data";
 import { syncSourceRegistry } from "@/lib/ingestion/pipeline";
@@ -8,8 +9,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 
 export default async function AdminPage() {
-  // Ensure source registry is seeded
-  await syncSourceRegistry();
+  // Opt out of prerendering. Without this the whole admin page — including the
+  // review queue and its counts — is baked at build time, so approvals appear
+  // to do nothing and newly ingested events never show up.
+  await connection();
+
+  // Seed the registry only when empty. This used to run on every page load,
+  // which meant 90+ upserts per view; the pipeline reads sources from code, so
+  // the registry is only needed to populate the Sources tab.
+  if ((await prisma.sourceRegistryItem.count()) === 0) {
+    await syncSourceRegistry();
+  }
 
   const [ingestionStatus, reviewData, runs, sourceItems] = await Promise.all([
     // API key + source status
