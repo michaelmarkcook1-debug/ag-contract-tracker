@@ -404,6 +404,19 @@ export function matchTrackedVendor(text: string): string | null {
   return VENDOR_MATCHERS.find(({ re }) => re.test(text))?.vendor ?? null;
 }
 
+/**
+ * Same as matchTrackedVendor, but resolves ties using an explicit precedence
+ * list first. Needed where one string names several tracked vendors — e.g.
+ * "IBM and CGI" or "PwC, KPMG, AECOM" — so attribution is deterministic rather
+ * than falling out of the order TRACKED_VENDORS happens to be written in.
+ */
+export function matchTrackedVendorPreferring(text: string, priority: readonly string[]): string | null {
+  for (const vendor of priority) {
+    if (VENDOR_MATCHERS.some(m => m.vendor === vendor && m.re.test(text))) return vendor;
+  }
+  return matchTrackedVendor(text);
+}
+
 export function isRelevantArticle(title: string, sourceType?: string): { relevant: boolean; family: string } {
   const t = title;
   if (HARD_EXCLUDE.test(t)) return { relevant: false, family: "EXCLUDED" };
