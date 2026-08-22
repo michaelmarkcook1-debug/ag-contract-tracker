@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES, isRelevantArticle, mentionsTrackedVendor } from "./sources";
 import { crawlSource, RawArticle } from "./crawler";
-import { extractArticle, ExtractionResult } from "./classifier";
+import { extractArticle, ExtractionResult, EMPTY_USAGE, TokenUsage } from "./classifier";
 
 export interface PipelineOptions {
   sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
@@ -30,6 +30,8 @@ export interface PipelineProgress {
   eventsPublished: number;
   eventsQueued: number;
   eventsDeferred: number;
+  /** Real token spend for this run. */
+  usage: TokenUsage;
   currentSource?: string;
   errors: string[];
 }
@@ -224,6 +226,7 @@ export async function runPipeline(
     eventsPublished: 0,
     eventsQueued: 0,
     eventsDeferred: 0,
+    usage: { ...EMPTY_USAGE, tiers: [] },
     errors: [],
   };
 
@@ -307,6 +310,12 @@ export async function runPipeline(
     try {
       const result = await extractArticle(article);
       llmCalls++;
+      progress.usage = {
+        inputTokens: progress.usage.inputTokens + result.usage.inputTokens,
+        outputTokens: progress.usage.outputTokens + result.usage.outputTokens,
+        costUsd: progress.usage.costUsd + result.usage.costUsd,
+        tiers: progress.usage.tiers,
+      };
       if (result.family === "EXCLUDED") continue;
       progress.eventsExtracted++;
       progress.phase = "storing";
@@ -334,6 +343,9 @@ export async function runPipeline(
       eventsPublished: progress.eventsPublished,
       eventsQueued: progress.eventsQueued,
       errors: JSON.stringify(progress.errors.slice(0, 20)),
+      inputTokens: progress.usage.inputTokens,
+      outputTokens: progress.usage.outputTokens,
+      costUsd: progress.usage.costUsd,
     },
   });
 

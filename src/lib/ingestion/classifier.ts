@@ -40,6 +40,50 @@ const CURRENCY_TO_USD: Record<string, number> = { "£": 1.27, "€": 1.09, "$": 
 const MULTI_YEAR_TERMS = /\b(\d+)[- ]?year\b/i;
 const LENGTH_MAP: Record<string, number> = { "one": 12, "two": 24, "three": 36, "four": 48, "five": 60, "seven": 84, "ten": 120 };
 
+// ── Model tiers & pricing ────────────────────────────────────────────────────
+// Two-tier extraction. Every article gets a cheap TRIAGE pass; only the
+// commercially significant ones (contracts / M&A involving a tracked vendor)
+// are promoted to the more capable ANALYSIS model. Most articles stop after
+// triage, which is where the saving comes from.
+export const MODEL_TIERS = {
+  /** Cheap classifier: family, vendor, in/out of scope. Small max_tokens. */
+  triage: "claude-haiku-4-5",
+  /** Deeper reasoning for TCV estimation and competitive analyst insight. */
+  analysis: "claude-sonnet-4-6",
+} as const;
+
+/** USD per 1M tokens. Source: Anthropic model pricing (verified 2026-08). */
+export const MODEL_PRICING: Record<string, { inputPerM: number; outputPerM: number }> = {
+  "claude-haiku-4-5": { inputPerM: 1.0, outputPerM: 5.0 },
+  "claude-sonnet-4-6": { inputPerM: 3.0, outputPerM: 15.0 },
+  "claude-opus-4-8": { inputPerM: 5.0, outputPerM: 25.0 },
+};
+
+export function costOf(model: string, inputTokens: number, outputTokens: number): number {
+  const p = MODEL_PRICING[model];
+  if (!p) return 0;
+  return (inputTokens / 1_000_000) * p.inputPerM + (outputTokens / 1_000_000) * p.outputPerM;
+}
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  /** Which tiers actually ran, e.g. ["triage"] or ["triage","analysis"]. */
+  tiers: string[];
+}
+
+export const EMPTY_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0, tiers: [] };
+
+function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    costUsd: a.costUsd + b.costUsd,
+    tiers: [...a.tiers, ...b.tiers],
+  };
+}
+
 export interface ExtractionResult {
   family: string;
   eventType: string;
@@ -57,6 +101,8 @@ export interface ExtractionResult {
   summary: string | null;
   analystInsight: string | null;
   missingCritical: string[];
+  /** Actual token spend for this article (zero for rule-based results). */
+  usage: TokenUsage;
 }
 
 // ── Rule-based extraction (always available, no API key required) ─────────────
@@ -71,7 +117,7 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
       vendorRaw: null, clientRaw: null, tcvUsd: null, tcvIsEstimate: false,
       contractLengthMonths: null, primaryMacroServiceLine: null, geography: [],
       industry: null, confidenceScore: 0.1, extractionMethod: "rules",
-      summary: null, analystInsight: null, missingCritical: [],
+      summary: null, analystInsight: null, missingCritical: [], usage: EMPTY_USAGE,
     };
   }
 
@@ -165,7 +211,7 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
     vendorRaw, clientRaw: null, tcvUsd, tcvIsEstimate,
     contractLengthMonths, primaryMacroServiceLine, geography: geos,
     industry, confidenceScore: Math.min(confidenceScore, 0.89),
-    extractionMethod: "rules", summary: null, analystInsight: null, missingCritical,
+    extractionMethod: "rules", summary: null, analystInsight: null, missingCritical, usage: EMPTY_USAGE,
   };
 }
 
@@ -231,19 +277,36 @@ const EXTRACTION_SCHEMA = `{
   "missingCritical": ["list fields that could not be determined"]
 }`;
 
-export async function llmExtract(article: RawArticle): Promise<ExtractionResult | null> {
+const TRIAGE_SCHEMA = `{
+  "family": "CONTRACT|FINANCIAL_RESULTS|M_AND_A|PARTNERSHIP|NEW_OFFERING|ORG_CHANGE|EXCLUDED",
+  "vendorRaw": "MUST be one of the TRACKED VENDORS, spelled exactly as listed; null if none involved",
+  "clientRaw": "counterparty organisation name or null",
+  "canonicalTitle": "concise title, max 120 chars",
+  "confidenceScore": "0.0-1.0"
+}`;
+
+const TRIAGE_SYSTEM = `You are triaging IT services news for a competitive intelligence platform. Be fast and decisive.
+
+TRACKED VENDOR UNIVERSE — the ${TRACKED_VENDORS.length} providers this platform covers:
+${VENDOR_UNIVERSE}
+
+Rules:
+1. If no tracked vendor is a party to the event, return family "EXCLUDED".
+2. "vendorRaw" MUST be spelled EXACTLY as in the list above (e.g. "TCS", not
+   "Tata Consultancy Services Ltd"). A non-tracked counterparty goes in clientRaw.
+3. Classify earnings/results/guidance as FINANCIAL_RESULTS — do not discard them.
+   Exclude analyst-firm rankings, marketing and thought-leadership as EXCLUDED.
+4. Return JSON only — no prose, no markdown fences.`;
+
+interface ClaudeCall { parsed: Record<string, unknown> | null; usage: TokenUsage; }
+
+/** One Messages API call, returning parsed JSON plus real token spend. */
+async function callClaude(
+  model: string, system: string, prompt: string, maxTokens: number, tier: string,
+): Promise<ClaudeCall> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-
+  if (!apiKey) return { parsed: null, usage: EMPTY_USAGE };
   try {
-    const prompt = `Article title: ${article.title}
-Source: ${article.provider} (${article.sourceType})
-Published: ${article.publishedAt ?? "unknown"}
-Snippet: ${article.snippet ?? "(no snippet available)"}
-
-Extract and return this JSON schema:
-${EXTRACTION_SCHEMA}`;
-
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -252,42 +315,120 @@ ${EXTRACTION_SCHEMA}`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1200,
-        system: EXTRACTION_SYSTEM,
+        model,
+        max_tokens: maxTokens,
+        system,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(20000),
     });
-
-    if (!res.ok) return null;
-    const data = await res.json() as { content: Array<{ type: string; text: string }> };
+    if (!res.ok) return { parsed: null, usage: EMPTY_USAGE };
+    const data = await res.json() as {
+      content?: Array<{ type: string; text: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    // Bill actual usage even if the body fails to parse — the tokens were spent.
+    const inputTokens = data.usage?.input_tokens ?? 0;
+    const outputTokens = data.usage?.output_tokens ?? 0;
+    const usage: TokenUsage = {
+      inputTokens, outputTokens, costUsd: costOf(model, inputTokens, outputTokens), tiers: [tier],
+    };
     const text = data.content?.[0]?.text ?? "";
     const jsonMatch = /\{[\s\S]*\}/.exec(text);
-    if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]);
-
-    return {
-      family: parsed.family ?? "CONTRACT",
-      eventType: parsed.eventType ?? "new_win",
-      canonicalTitle: parsed.canonicalTitle ?? article.title,
-      vendorRaw: parsed.vendorRaw ?? null,
-      clientRaw: parsed.clientRaw ?? null,
-      tcvUsd: typeof parsed.tcvUsd === "number" ? parsed.tcvUsd : null,
-      tcvIsEstimate: parsed.tcvIsEstimate ?? false,
-      contractLengthMonths: typeof parsed.contractLengthMonths === "number" ? parsed.contractLengthMonths : null,
-      primaryMacroServiceLine: parsed.primaryMacroServiceLine ?? null,
-      geography: Array.isArray(parsed.geography) ? parsed.geography : [],
-      industry: parsed.industry ?? null,
-      confidenceScore: typeof parsed.confidenceScore === "number" ? parsed.confidenceScore : 0.6,
-      extractionMethod: "llm",
-      summary: parsed.summary ?? null,
-      analystInsight: parsed.analystInsight ?? null,
-      missingCritical: Array.isArray(parsed.missingCritical) ? parsed.missingCritical : [],
-    };
+    if (!jsonMatch) return { parsed: null, usage };
+    return { parsed: JSON.parse(jsonMatch[0]), usage };
   } catch {
-    return null;
+    return { parsed: null, usage: EMPTY_USAGE };
   }
+}
+
+function articlePrompt(article: RawArticle, schema: string): string {
+  return `Article title: ${article.title}
+Source: ${article.provider} (${article.sourceType})
+Published: ${article.publishedAt ?? "unknown"}
+Snippet: ${article.snippet ?? "(no snippet available)"}
+
+Extract and return this JSON schema:
+${schema}`;
+}
+
+/** Families worth paying the deeper analysis model for. */
+const HIGH_VALUE_FAMILIES = new Set(["CONTRACT", "M_AND_A"]);
+
+export async function llmExtract(article: RawArticle): Promise<ExtractionResult | null> {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+
+  // ── Tier 1: cheap triage ───────────────────────────────────────────────────
+  const triage = await callClaude(
+    MODEL_TIERS.triage, TRIAGE_SYSTEM, articlePrompt(article, TRIAGE_SCHEMA), 400, "triage",
+  );
+  if (!triage.parsed) return null;
+
+  const t = triage.parsed as Record<string, unknown>;
+  const family = typeof t.family === "string" ? t.family : "EXCLUDED";
+  const vendorRaw = typeof t.vendorRaw === "string" ? t.vendorRaw : null;
+
+  // Out of scope, or no tracked vendor — stop here. This is the saving.
+  if (family === "EXCLUDED" || !vendorRaw) {
+    return {
+      family: "EXCLUDED", eventType: "excluded_noise",
+      canonicalTitle: typeof t.canonicalTitle === "string" ? t.canonicalTitle : article.title,
+      vendorRaw: null, clientRaw: null, tcvUsd: null, tcvIsEstimate: false,
+      contractLengthMonths: null, primaryMacroServiceLine: null, geography: [],
+      industry: null, confidenceScore: typeof t.confidenceScore === "number" ? t.confidenceScore : 0.5,
+      extractionMethod: "llm", summary: null, analystInsight: null, missingCritical: [],
+      usage: triage.usage,
+    };
+  }
+
+  // Lower-value families keep the cheap result rather than paying for analysis.
+  if (!HIGH_VALUE_FAMILIES.has(family)) {
+    const rules = ruleBasedExtract(article);
+    return {
+      ...rules,
+      family,
+      vendorRaw,
+      clientRaw: typeof t.clientRaw === "string" ? t.clientRaw : null,
+      canonicalTitle: typeof t.canonicalTitle === "string" ? t.canonicalTitle : article.title,
+      confidenceScore: typeof t.confidenceScore === "number" ? t.confidenceScore : 0.6,
+      extractionMethod: "llm",
+      usage: triage.usage,
+    };
+  }
+
+  // ── Tier 2: deep analysis for contracts and M&A ────────────────────────────
+  const deep = await callClaude(
+    MODEL_TIERS.analysis, EXTRACTION_SYSTEM, articlePrompt(article, EXTRACTION_SCHEMA), 1200, "analysis",
+  );
+  const usage = addUsage(triage.usage, deep.usage);
+  if (!deep.parsed) {
+    // Analysis failed — keep the triage classification rather than losing the event.
+    const rules = ruleBasedExtract(article);
+    return { ...rules, family, vendorRaw, extractionMethod: "llm", usage };
+  }
+
+  const parsed = deep.parsed as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === "number" ? v : null);
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  return {
+    family: str(parsed.family) ?? family,
+    eventType: str(parsed.eventType) ?? "new_win",
+    canonicalTitle: str(parsed.canonicalTitle) ?? article.title,
+    vendorRaw: str(parsed.vendorRaw) ?? vendorRaw,
+    clientRaw: str(parsed.clientRaw),
+    tcvUsd: num(parsed.tcvUsd),
+    tcvIsEstimate: parsed.tcvIsEstimate === true,
+    contractLengthMonths: num(parsed.contractLengthMonths),
+    primaryMacroServiceLine: str(parsed.primaryMacroServiceLine),
+    geography: Array.isArray(parsed.geography) ? (parsed.geography as string[]) : [],
+    industry: str(parsed.industry),
+    confidenceScore: num(parsed.confidenceScore) ?? 0.6,
+    extractionMethod: "llm",
+    summary: str(parsed.summary),
+    analystInsight: str(parsed.analystInsight),
+    missingCritical: Array.isArray(parsed.missingCritical) ? (parsed.missingCritical as string[]) : [],
+    usage,
+  };
 }
 
 export async function extractArticle(article: RawArticle): Promise<ExtractionResult> {

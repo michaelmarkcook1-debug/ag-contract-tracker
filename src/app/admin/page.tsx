@@ -4,6 +4,7 @@ import { getEvents } from "@/lib/data";
 import { syncSourceRegistry } from "@/lib/ingestion/pipeline";
 import { AdminRunPanel } from "@/components/market/AdminRunPanel";
 import { ReviewQueue } from "@/components/market/ReviewQueue";
+import { CostPanel } from "@/components/market/CostPanel";
 import { SourceHealthTable } from "@/components/market/SourceHealthTable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -63,6 +64,7 @@ export default async function AdminPage() {
             )}
           </TabsTrigger>
           <TabsTrigger value="sources">Sources ({ingestionStatus.sourcesTotal})</TabsTrigger>
+          <TabsTrigger value="costs">Costs</TabsTrigger>
           <TabsTrigger value="runs">Run History</TabsTrigger>
         </TabsList>
 
@@ -107,6 +109,11 @@ export default async function AdminPage() {
             initialEvents={reviewData.events}
             totalCount={reviewData.total}
           />
+        </TabsContent>
+
+        {/* Cost tab */}
+        <TabsContent value="costs" className="mt-4">
+          <CostPanel />
         </TabsContent>
 
         {/* Sources tab */}

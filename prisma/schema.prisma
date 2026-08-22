@@ -306,6 +306,10 @@ model IngestionRun {
   eventsPublished Int      @default(0)
   eventsQueued    Int      @default(0)
   errors          String   @default("[]")
+  // Real LLM spend for the run, summed from Messages API usage fields.
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  costUsd         Float    @default(0)
 
   sourceEvents SourceEvent[]
 }

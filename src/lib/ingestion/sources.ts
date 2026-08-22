@@ -36,28 +36,40 @@ export interface SourceDefinition {
 // Vendors also need an Entity row to link events to a profile page; run
 // `npm run backfill:vendors` after expanding this list.
 // ══════════════════════════════════════════════════════════════════════════════
+// DELIBERATELY EXCLUDED — US federal IT primes (SAIC, Leidos, Booz Allen, CACI,
+// GDIT, Peraton). These are covered by the separate FedSpend product. They
+// appear heavily in the legacy imported data and are screened out here.
 export const TRACKED_VENDORS = [
-  "Accenture", "ADP", "Alorica", "Amdocs", "Atento", "Atos",
+  "Accenture", "ADP", "Alight", "Alorica", "Amdocs", "Arvato", "Atento", "Atos", "AWS",
   "Birlasoft", "Broadridge",
-  "Capita", "Capgemini", "CGI", "Coforge", "Cognizant", "Concentrix", "Conduent", "CSS Corp",
+  "Capgemini", "Capita", "CGI", "Coforge", "Cognizant", "Computacenter", "Concentrix", "Conduent", "CSS Corp",
   "Datamatics", "Deloitte", "Dell Technologies", "DXC Technology",
-  "EPAM", "EXL", "EY",
+  "Endava", "EPAM", "EXL", "EY",
   "Firstsource", "Foundever", "Fujitsu",
-  "Genpact",
-  "HCLTech", "Hexaware", "Hitachi Digital Services",
-  "IBM", "Infosys",
+  "Genpact", "Globant", "Google Cloud",
+  "HCLTech", "Hexaware", "HGS", "Hitachi Digital Services",
+  "IBM", "Infosys", "iQor",
   "KPMG", "Kyndryl",
   "L&T Technology Services", "LTIMindtree",
-  "Majorel", "Mastek", "Mphasis",
-  "Nagarro", "NEC", "NICE", "NTT DATA",
-  "Orange Business",
+  "Majorel", "Mastek", "Maximus", "Microsoft", "Mphasis",
+  "Nagarro", "NEC", "Netcompany", "NICE", "NTT DATA",
+  "Oracle", "Orange Business",
   "Persistent", "PwC",
-  "Searce", "Singtel", "Sopra Steria", "Stefanini", "Sutherland", "Synechron",
-  "TCS", "Tech Mahindra", "Teleperformance", "TELUS International", "Tietoevry", "TTEC",
+  "SAP", "Searce", "Serco", "Singtel", "Softtek", "Sopra Steria", "Startek", "Stefanini", "Sutherland", "Synechron",
+  "TaskUs", "TCS", "Tech Mahindra", "Teleperformance", "TELUS International", "Thoughtworks", "Tietoevry", "Transcom", "T-Systems", "TTEC",
   "Unisys", "UST",
   "Virtusa",
   "Wipro", "WNS",
+  "Zensar",
 ] as const;
+
+/**
+ * Vendors that are hyperscalers / software platforms rather than services
+ * outsourcers. Tracked because they win large IT deals, but they generate a lot
+ * of product and licensing news that is NOT outsourcing — their Google News
+ * queries below are therefore narrowed to services language.
+ */
+export const PLATFORM_VENDORS: readonly string[] = ["AWS", "Microsoft", "Oracle", "Google Cloud", "SAP"];
 
 // ── Tier-1: Direct vendor newsroom / press RSS ──────────────────────────────
 // Only vendors with known working RSS feeds
@@ -217,6 +229,37 @@ export const GOOGLE_NEWS_SOURCES: SourceDefinition[] = TRACKED_VENDORS.map(vendo
       return gnews("Orange Business", `"Orange Business" OR "Orange Business Services" ${IT_SIGNAL_TERMS}`);
     case "Singtel":
       return gnews("Singtel", `"Singtel" OR "NCS" IT services ${IT_SIGNAL_TERMS}`);
+
+    // ── Platform vendors ─────────────────────────────────────────────────────
+    // Narrowed to services language. Without this these feeds are dominated by
+    // product launches, licensing and earnings rather than outsourcing deals.
+    case "AWS":
+      return gnews("AWS", `"Amazon Web Services" (migration OR "managed services" OR outsourcing OR "cloud contract") ${IT_SIGNAL_TERMS}`);
+    case "Microsoft":
+      return gnews("Microsoft", `"Microsoft" ("managed services" OR outsourcing OR "cloud migration" OR "digital transformation contract") ${IT_SIGNAL_TERMS}`);
+    case "Oracle":
+      return gnews("Oracle", `"Oracle Corporation" OR "Oracle" (ERP implementation OR "managed services" OR outsourcing) ${IT_SIGNAL_TERMS}`);
+    case "Google Cloud":
+      return gnews("Google Cloud", `"Google Cloud" (migration OR "managed services" OR outsourcing OR partnership) ${IT_SIGNAL_TERMS}`);
+    case "SAP":
+      return gnews("SAP", `"SAP SE" OR "SAP" (S/4HANA OR implementation OR "managed services" OR outsourcing) ${IT_SIGNAL_TERMS}`);
+
+    // ── Ambiguous brand names ────────────────────────────────────────────────
+    case "Maximus":
+      return gnews("Maximus", `"Maximus Inc" OR "Maximus" (BPO OR government services OR outsourcing) ${IT_SIGNAL_TERMS}`);
+    case "Alight":
+      return gnews("Alight", `"Alight Solutions" ${IT_SIGNAL_TERMS}`);
+    case "HGS":
+      return gnews("HGS", `"Hinduja Global Solutions" OR "HGS" BPO ${IT_SIGNAL_TERMS}`);
+    case "T-Systems":
+      return gnews("T-Systems", `"T-Systems" ${IT_SIGNAL_TERMS}`);
+    case "Serco":
+      return gnews("Serco", `"Serco" (outsourcing OR BPO OR government contract) ${IT_SIGNAL_TERMS}`);
+    case "Transcom":
+      return gnews("Transcom", `"Transcom" (BPO OR "customer experience" OR outsourcing) ${IT_SIGNAL_TERMS}`);
+    case "Arvato":
+      return gnews("Arvato", `"Arvato" (BPO OR outsourcing OR "supply chain services") ${IT_SIGNAL_TERMS}`);
+
     default:
       return gnews(vendor, IT_SIGNAL_TERMS);
   }
@@ -308,15 +351,46 @@ const VENDOR_ALIASES: Record<string, string[]> = {
   "TELUS International": ["TELUS Digital"],
   "EXL": ["ExlService"],
   "Concentrix": ["Webhelp"],
+  // Added 2026-08 with the universe expansion
+  "AWS": ["Amazon Web Services"],
+  "Google Cloud": ["Google Cloud Platform"],
+  "SAP": ["SAP SE"],
+  "Oracle": ["Oracle Corporation", "Oracle Corp"],
+  "HGS": ["Hinduja Global Solutions"],
+  "T-Systems": ["T Systems", "Deutsche Telekom IT"],
+  "Alight": ["Alight Solutions"],
+  "Maximus": ["Maximus Inc"],
+  "Thoughtworks": ["ThoughtWorks"],
+  "Zensar": ["Zensar Technologies"],
+  "Softtek": ["SoftTek"],
+  "Startek": ["StarTek"],
 };
 
-// Short/ambiguous names need a strict word boundary to avoid false positives
-// (e.g. "UST" inside "August", "NEC" inside "connect").
+/**
+ * Names that must match case-SENSITIVELY. Two groups:
+ *  - acronyms that are also ordinary lowercase words ("SAP" vs "sap",
+ *    "NICE" vs "nice", "HGS", "AWS", "EXL", "ADP", "NEC", "UST", "EY"),
+ *  - brand names that are ordinary English words ("Alight", "Oracle",
+ *    "Maximus", "Capita").
+ * Matching these case-insensitively produced false positives — e.g. "a nice
+ * contract" registering as the vendor NICE.
+ */
+const CASE_SENSITIVE_FORMS = new Set([
+  "AWS", "SAP", "HGS", "NICE", "NEC", "UST", "EY", "EXL", "ADP", "CGI", "IBM", "TCS",
+  "DXC", "WNS", "TTEC", "KPMG", "PwC", "LTTS", "NCS", "GCP",
+  "Alight", "Oracle", "Maximus", "Capita",
+]);
+
+// Word boundaries stop short names matching inside other words ("UST" inside
+// "August", "NEC" inside "connect").
 const VENDOR_MATCHERS: { vendor: string; re: RegExp }[] = TRACKED_VENDORS.flatMap((vendor) => {
   const forms = [vendor, ...(VENDOR_ALIASES[vendor] ?? [])];
   return forms.map((form) => ({
     vendor,
-    re: new RegExp(`(^|[^A-Za-z0-9])${form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z0-9]|$)`, "i"),
+    re: new RegExp(
+      `(^|[^A-Za-z0-9])${form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z0-9]|$)`,
+      CASE_SENSITIVE_FORMS.has(form) ? "" : "i",
+    ),
   }));
 });
 
