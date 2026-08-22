@@ -168,12 +168,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   const [
-    totalEvents, contractsCount, maCount, partnershipCount, newOfferingCount, orgChangeCount,
+    totalEvents, contractsCount, financialResultsCount, maCount, partnershipCount, newOfferingCount, orgChangeCount,
     needsReviewCount, last30DaysCount, topVendorRows, topIndustryRows, recentRows, monthlyRows,
     latestEventRow,
   ] = await Promise.all([
     prisma.canonicalMarketEvent.count({ where: { publicationStatus: "published" } }),
     prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published" } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "FINANCIAL_RESULTS", publicationStatus: "published" } }),
     prisma.canonicalMarketEvent.count({ where: { family: "M_AND_A", publicationStatus: "published" } }),
     prisma.canonicalMarketEvent.count({ where: { family: "PARTNERSHIP", publicationStatus: "published" } }),
     prisma.canonicalMarketEvent.count({ where: { family: "NEW_OFFERING", publicationStatus: "published" } }),
@@ -216,11 +217,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   ]);
 
   // Build monthly trend buckets
-  const trendMap = new Map<string, { CONTRACT: number; M_AND_A: number; PARTNERSHIP: number; NEW_OFFERING: number; ORG_CHANGE: number }>();
+  const trendMap = new Map<string, { CONTRACT: number; FINANCIAL_RESULTS: number; M_AND_A: number; PARTNERSHIP: number; NEW_OFFERING: number; ORG_CHANGE: number }>();
   for (const e of monthlyRows) {
     if (!e.announcementDate) continue;
     const key = e.announcementDate.toISOString().slice(0, 7); // YYYY-MM
-    if (!trendMap.has(key)) trendMap.set(key, { CONTRACT: 0, M_AND_A: 0, PARTNERSHIP: 0, NEW_OFFERING: 0, ORG_CHANGE: 0 });
+    if (!trendMap.has(key)) trendMap.set(key, { CONTRACT: 0, FINANCIAL_RESULTS: 0, M_AND_A: 0, PARTNERSHIP: 0, NEW_OFFERING: 0, ORG_CHANGE: 0 });
     const bucket = trendMap.get(key)!;
     if (e.family in bucket) bucket[e.family as keyof typeof bucket]++;
   }
@@ -234,6 +235,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   return {
     totalEvents,
     contractsCount,
+    financialResultsCount,
     maCount,
     partnershipCount,
     newOfferingCount,

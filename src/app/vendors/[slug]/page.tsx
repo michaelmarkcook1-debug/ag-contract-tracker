@@ -71,7 +71,7 @@ export default async function VendorPage({ params }: { params: Promise<{ slug: s
         </div>
 
         {/* Group by family */}
-        {(["CONTRACT", "M_AND_A", "PARTNERSHIP", "NEW_OFFERING", "ORG_CHANGE"] as const).map((family) => {
+        {(["CONTRACT", "FINANCIAL_RESULTS", "M_AND_A", "PARTNERSHIP", "NEW_OFFERING", "ORG_CHANGE"] as const).map((family) => {
           const events = vendor.recentEvents.filter((e) => e.family === family);
           if (events.length === 0) return null;
           return (

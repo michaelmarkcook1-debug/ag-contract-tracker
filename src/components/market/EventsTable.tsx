@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
+import { EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,6 +18,7 @@ import Link from "next/link";
 const FAMILIES: { value: MarketEventFamily | "all"; label: string; color?: string }[] = [
   { value: "all", label: "All Types" },
   { value: "CONTRACT", label: "Contracts", color: "bg-blue-500" },
+  { value: "FINANCIAL_RESULTS", label: "Financial Results", color: "bg-cyan-600" },
   { value: "M_AND_A", label: "M&A", color: "bg-orange-500" },
   { value: "PARTNERSHIP", label: "Partnerships", color: "bg-emerald-500" },
   { value: "NEW_OFFERING", label: "New Offerings", color: "bg-violet-500" },
@@ -109,6 +110,14 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
                 <PairedRow l1="Provider" v1={event.primaryEntityName} l2="Industry" v2={event.industry} />
                 <PairedRow l1="Offering Type" v1={event.eventType?.replace(/_/g, " ")} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
                 <PairedRow l1="Service Line" v1={event.primaryMacroServiceLine} l2="Date" v2={formatDate(event.announcementDate)} />
+              </>
+            )}
+            {event.family === "FINANCIAL_RESULTS" && (
+              <>
+                <PairedRow l1="Company" v1={event.primaryEntityName ?? event.vendorName} l2="Industry" v2={event.industry} />
+                <PairedRow l1="Announcement" v1={event.eventType ? (FINANCIAL_EVENT_TYPE_LABELS[event.eventType] ?? event.eventType.replace(/_/g, " ")) : null} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
+                <PairedRow l1="Reported Value" v1={event.tcvCommittedUsd || event.tcvEstimateMidUsd ? formatTcv(event.tcvCommittedUsd ?? event.tcvEstimateMidUsd, event.tcvIsEstimate) : null} l2="Date" v2={formatDate(event.announcementDate)} />
+                <PairedRow l1="Confidence" v1={`${(event.confidenceScore * 100).toFixed(0)}%`} l2="Source" v2={event.originalArticleUrl ? new URL(event.originalArticleUrl).hostname.replace(/^www\./, "") : null} />
               </>
             )}
           </tbody>

@@ -2,6 +2,7 @@
 
 export type MarketEventFamily =
   | "CONTRACT"
+  | "FINANCIAL_RESULTS"
   | "M_AND_A"
   | "PARTNERSHIP"
   | "NEW_OFFERING"
@@ -9,6 +10,7 @@ export type MarketEventFamily =
 
 export const FAMILY_LABELS: Record<MarketEventFamily, string> = {
   CONTRACT: "Contract",
+  FINANCIAL_RESULTS: "Financial Results",
   M_AND_A: "M&A",
   PARTNERSHIP: "Partnership",
   NEW_OFFERING: "New Offering",
@@ -17,6 +19,7 @@ export const FAMILY_LABELS: Record<MarketEventFamily, string> = {
 
 export const FAMILY_COLORS: Record<MarketEventFamily, string> = {
   CONTRACT: "emerald",
+  FINANCIAL_RESULTS: "cyan",
   M_AND_A: "violet",
   PARTNERSHIP: "blue",
   NEW_OFFERING: "amber",
@@ -114,6 +117,7 @@ export interface VendorProfile {
 export interface DashboardStats {
   totalEvents: number;
   contractsCount: number;
+  financialResultsCount: number;
   maCount: number;
   partnershipCount: number;
   newOfferingCount: number;
@@ -124,7 +128,7 @@ export interface DashboardStats {
   topVendors: { name: string; slug: string; count: number }[];
   topIndustries: { industry: string; count: number }[];
   recentEvents: EventSummary[];
-  familyTrend: { month: string; CONTRACT: number; M_AND_A: number; PARTNERSHIP: number; NEW_OFFERING: number; ORG_CHANGE: number }[];
+  familyTrend: { month: string; CONTRACT: number; FINANCIAL_RESULTS: number; M_AND_A: number; PARTNERSHIP: number; NEW_OFFERING: number; ORG_CHANGE: number }[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -152,6 +156,15 @@ export const CONTRACT_EVENT_TYPE_LABELS: Record<string, string> = {
   framework_award: "Framework",
   call_off: "Call-Off",
   unknown: "Unknown",
+};
+
+export const FINANCIAL_EVENT_TYPE_LABELS: Record<string, string> = {
+  financial_announcement: "Financial Announcement",
+  quarterly_results: "Quarterly Results",
+  annual_results: "Annual Results",
+  guidance_update: "Guidance Update",
+  bookings_update: "Bookings / TCV Update",
+  segment_performance: "Segment Performance",
 };
 
 export const MA_EVENT_TYPE_LABELS: Record<string, string> = {

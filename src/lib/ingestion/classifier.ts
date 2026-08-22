@@ -111,7 +111,8 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
 
   // Event type
   let eventType = "new_win";
-  if (/\brenew|extension|extend\b/i.test(text)) eventType = "renewal";
+  if (family === "FINANCIAL_RESULTS") eventType = "financial_announcement";
+  else if (/\brenew|extension|extend\b/i.test(text)) eventType = "renewal";
   else if (/\bextend|extension\b/i.test(text)) eventType = "extension";
   else if (/\bacquir|merger\b/i.test(text)) eventType = "acquisition";
   else if (/\bpartner|alliance\b/i.test(text)) eventType = "technology_alliance";
@@ -184,12 +185,19 @@ Rules:
    - What client pattern or industry trend does this signal?
    - What follow-on opportunities might exist?
 4. Summary must capture the key facts in 2-3 sentences for a busy executive.
-5. Do not include financial results, earnings announcements, or analyst reports.
+5. FINANCIAL_RESULTS is a tracked category — classify earnings, quarterly/annual
+   results, guidance updates and bookings/TCV disclosures as FINANCIAL_RESULTS.
+   Do NOT discard them. For these, set tcvUsd to the disclosed bookings/TCV
+   figure when one is stated, otherwise null (do NOT estimate a TCV from
+   revenue). If an article is primarily about a specific deal or acquisition,
+   prefer CONTRACT / M_AND_A over FINANCIAL_RESULTS.
+   Still exclude analyst-firm rankings (Gartner/Forrester), marketing and
+   thought-leadership pieces as EXCLUDED.
 6. Return JSON only — no prose, no markdown fences.`;
 
 const EXTRACTION_SCHEMA = `{
-  "family": "CONTRACT|M_AND_A|PARTNERSHIP|NEW_OFFERING|ORG_CHANGE|EXCLUDED",
-  "eventType": "new_win|renewal|extension|expansion|rebid_win|incumbent_displacement|framework_award|acquisition|merger|divestiture|technology_alliance|co_delivery_agreement|service_launch|platform_launch|delivery_centre_opening|leadership_appointment|leadership_departure|restructuring|strategic_transformation|excluded_financial_results|excluded_noise",
+  "family": "CONTRACT|FINANCIAL_RESULTS|M_AND_A|PARTNERSHIP|NEW_OFFERING|ORG_CHANGE|EXCLUDED",
+  "eventType": "new_win|renewal|extension|expansion|rebid_win|incumbent_displacement|framework_award|acquisition|merger|divestiture|technology_alliance|co_delivery_agreement|service_launch|platform_launch|delivery_centre_opening|leadership_appointment|leadership_departure|restructuring|strategic_transformation|financial_announcement|quarterly_results|annual_results|guidance_update|bookings_update|segment_performance|excluded_noise",
   "canonicalTitle": "concise title, max 120 chars — format: Vendor | EventType | Client | ServiceLine",
   "vendorRaw": "IT services vendor name",
   "clientRaw": "client/buyer organisation name or null",

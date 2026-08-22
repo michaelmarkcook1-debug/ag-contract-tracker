@@ -5,6 +5,7 @@ import { DashboardStats, FAMILY_LABELS } from "@/lib/types";
 
 const FAMILY_CHART_COLORS: Record<string, string> = {
   CONTRACT: "#34d399",
+  FINANCIAL_RESULTS: "#22d3ee",
   M_AND_A: "#a78bfa",
   PARTNERSHIP: "#60a5fa",
   NEW_OFFERING: "#fbbf24",
@@ -16,7 +17,7 @@ interface Props {
 }
 
 export function FamilyTrendChart({ stats }: Props) {
-  const families = ["CONTRACT", "M_AND_A", "PARTNERSHIP", "NEW_OFFERING", "ORG_CHANGE"] as const;
+  const families = ["CONTRACT", "FINANCIAL_RESULTS", "M_AND_A", "PARTNERSHIP", "NEW_OFFERING", "ORG_CHANGE"] as const;
 
   return (
     <ResponsiveContainer width="100%" height={180}>

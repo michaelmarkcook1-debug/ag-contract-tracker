@@ -16,6 +16,7 @@ export default async function DashboardPage() {
 
   const familyCounts = [
     { family: "CONTRACT", count: stats.contractsCount, icon: FileText, label: "Contracts", color: "from-blue-500/20 to-blue-500/5 border-blue-500/20" },
+    { family: "FINANCIAL_RESULTS", count: stats.financialResultsCount, icon: TrendingUp, label: "Financial Results", color: "from-cyan-500/20 to-cyan-500/5 border-cyan-500/20" },
     { family: "M_AND_A", count: stats.maCount, icon: GitMerge, label: "M&A", color: "from-orange-500/20 to-orange-500/5 border-orange-500/20" },
     { family: "PARTNERSHIP", count: stats.partnershipCount, icon: Handshake, label: "Partnerships", color: "from-emerald-500/20 to-emerald-500/5 border-emerald-500/20" },
     { family: "NEW_OFFERING", count: stats.newOfferingCount, icon: Lightbulb, label: "New Offerings", color: "from-violet-500/20 to-violet-500/5 border-violet-500/20" },

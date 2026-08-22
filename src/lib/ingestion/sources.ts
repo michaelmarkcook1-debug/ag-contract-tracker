@@ -245,23 +245,37 @@ export const ALL_SOURCES: SourceDefinition[] = [
 
 // ── Relevance filter ────────────────────────────────────────────────────────
 const CONTRACT_TERMS    = /\b(contract|award|select|chosen|signed?|outsourc|managed service|win\b|deal|engagement|framework award|task order|procurement)\b/i;
-const MA_TERMS          = /\b(acqui|merger|divest|stake acquisition|joint venture|\bJV\b|buyout|takeover)\b/i;
+// NOTE on anchoring: these alternations contain word STEMS (acqui, outsourc,
+// restructur, sustainab). A trailing \b would stop "acqui" matching "acquire"
+// or "sustainab" matching "sustainability", so the closing \b is deliberately
+// omitted. Terms that do need a right-hand boundary carry their own (win\b).
+const MA_TERMS          = /\b(acqui|merger|divest|stake acquisition|joint venture|\bJV\b|buyout|takeover)/i;
 const PARTNER_TERMS     = /\b(strategic alliance|technology partnership|co-deliver|collaboration agreement|ecosystem partner)\b/i;
 const OFFERING_TERMS    = /\b(launch|unveil|introduc|new platform|new service|new offering|new capability|practice area|delivery cent)\b/i;
 const ORG_TERMS         = /\b(appoints?|hires?|joins? as|names? .*(?:CEO|CTO|CFO|COO|President|EVP)|restructur|headcount reduction|spin[- ]off)\b/i;
 
-const HARD_EXCLUDE      = /\b(earnings?|revenue|quarter|annual report|full[- ]year|guidance|dividend|share price|\bstock\b|EPS|analyst (?:upgrade|rate|target)|market research|magic quadrant|peer review|gartner|forrester|isg provider|everest group|leadership development|women in|csr|sustainab|carbon|climate|award for excellence|recognised as|named .*leader by|ranked .*in|survey finds?|study shows?|webinar|podcast|blog post|opinion|thought leadership|self[- ]service)\b/i;
+// Earnings / results coverage is a TRACKED CATEGORY (FINANCIAL_RESULTS), not
+// noise. These terms used to sit inside HARD_EXCLUDE, which meant every
+// earnings article was discarded before it ever reached the LLM.
+const FINANCIAL_TERMS   = /\b(earnings?|revenue|quarterly results|\bQ[1-4]\b|quarter|annual report|full[- ]year|guidance|dividend|share price|\bstock\b|EPS|bookings|profit|margin|analyst (?:upgrade|rate|target))\b/i;
+
+// Genuine noise only — marketing, research-firm rankings, thought leadership.
+const HARD_EXCLUDE      = /\b(market research|magic quadrant|peer review|gartner|forrester|isg provider|everest group|leadership development|women in|csr|sustainab|carbon|climate|award for excellence|recognised as|named .*leader by|ranked .*in|survey finds?|study shows?|webinar|podcast|blog post|opinion|thought leadership|self[- ]service)/i;
 
 const VENDOR_REQUIRE    = /\b(contract|award|outsourc|managed service|win\b|deal|selected by|engages?|acqui|partner(?:ship|s)?|merger|divest|joint venture|appoints?|restructur|delivery centre|opens?|launch|platform)\b/i;
 
 export function isRelevantArticle(title: string, sourceType?: string): { relevant: boolean; family: string } {
   const t = title;
   if (HARD_EXCLUDE.test(t)) return { relevant: false, family: "EXCLUDED" };
+  // Deal families are checked BEFORE financial so that genuine deal news which
+  // happens to mention revenue (e.g. "Wipro wins Harman deal; Q3 revenue up")
+  // stays a CONTRACT rather than being reclassified as an earnings story.
   if (MA_TERMS.test(t))       return { relevant: true, family: "M_AND_A" };
   if (CONTRACT_TERMS.test(t)) return { relevant: true, family: "CONTRACT" };
   if (PARTNER_TERMS.test(t))  return { relevant: true, family: "PARTNERSHIP" };
   if (OFFERING_TERMS.test(t)) return { relevant: true, family: "NEW_OFFERING" };
   if (ORG_TERMS.test(t))      return { relevant: true, family: "ORG_CHANGE" };
+  if (FINANCIAL_TERMS.test(t)) return { relevant: true, family: "FINANCIAL_RESULTS" };
 
   if (sourceType === "vendor_press_release" || sourceType === "investor_relations_release") {
     return VENDOR_REQUIRE.test(t)
