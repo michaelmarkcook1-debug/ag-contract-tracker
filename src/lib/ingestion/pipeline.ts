@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
-import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES, isRelevantArticle } from "./sources";
+import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES, isRelevantArticle, mentionsTrackedVendor } from "./sources";
 import { crawlSource, RawArticle } from "./crawler";
 import { extractArticle, ExtractionResult } from "./classifier";
 
@@ -280,8 +280,19 @@ export async function runPipeline(
   progress.articlesDuped = allArticles.length - newArticles.length;
 
   // Cheap relevance pre-filter BEFORE any LLM spend — drops obvious noise
-  // (earnings, rankings, opinion pieces) for free via regex.
-  const relevantArticles = newArticles.filter(a => isRelevantArticle(a.title, a.sourceType).relevant);
+  // (rankings, marketing, opinion pieces) for free via regex.
+  //
+  // Market-wide sources (wire services, procurement) are not tied to a vendor
+  // and return large volumes of unrelated industry news, so they additionally
+  // must name one of the TRACKED_VENDORS. Vendor-specific sources (per-vendor
+  // Google News, vendor press, IR) are already scoped by construction.
+  const relevantArticles = newArticles.filter(a => {
+    if (!isRelevantArticle(a.title, a.sourceType).relevant) return false;
+    if (a.provider === "Market Wide") {
+      return mentionsTrackedVendor(`${a.title} ${a.snippet ?? ""}`);
+    }
+    return true;
+  });
   progress.articlesIrrelevant = newArticles.length - relevantArticles.length;
 
   // Hard cap on LLM calls so a batch always finishes inside the 60s budget.

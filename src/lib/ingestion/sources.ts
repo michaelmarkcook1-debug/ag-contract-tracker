@@ -19,7 +19,22 @@ export interface SourceDefinition {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TRACKED VENDORS — 63 IT services providers
+// TRACKED VENDORS — the coverage universe (63 IT services providers)
+//
+// THIS IS THE SINGLE PLACE TO EXPAND COVERAGE. Adding a name here automatically:
+//   1. creates a dedicated Google News feed for it (GOOGLE_NEWS_SOURCES below),
+//   2. admits its articles through the market-wide ingestion gate
+//      (mentionsTrackedVendor), and
+//   3. adds it to the vendor universe sent to the LLM in classifier.ts.
+// No other file needs editing.
+//
+// Two optional follow-ups when adding a vendor:
+//   - If headlines commonly use a different form (e.g. "Tata Consultancy" for
+//     TCS), add it to VENDOR_ALIASES further down so the gate still matches.
+//   - If the name is ambiguous or very short, check GOOGLE_NEWS_SOURCES below
+//     for a disambiguating search-term override.
+// Vendors also need an Entity row to link events to a profile page; run
+// `npm run backfill:vendors` after expanding this list.
 // ══════════════════════════════════════════════════════════════════════════════
 export const TRACKED_VENDORS = [
   "Accenture", "ADP", "Alorica", "Amdocs", "Atento", "Atos",
@@ -263,6 +278,57 @@ const FINANCIAL_TERMS   = /\b(earnings?|revenue|quarterly results|\bQ[1-4]\b|qua
 const HARD_EXCLUDE      = /\b(market research|magic quadrant|peer review|gartner|forrester|isg provider|everest group|leadership development|women in|csr|sustainab|carbon|climate|award for excellence|recognised as|named .*leader by|ranked .*in|survey finds?|study shows?|webinar|podcast|blog post|opinion|thought leadership|self[- ]service)/i;
 
 const VENDOR_REQUIRE    = /\b(contract|award|outsourc|managed service|win\b|deal|selected by|engages?|acqui|partner(?:ship|s)?|merger|divest|joint venture|appoints?|restructur|delivery centre|opens?|launch|platform)\b/i;
+
+// ── Tracked-vendor gate ─────────────────────────────────────────────────────
+// Vendor-specific sources (Google News per vendor, vendor press, IR) are
+// inherently scoped to a tracked vendor. Market-wide sources are NOT — e.g. the
+// Business Wire technology feed returns ~117 general items per pull covering
+// every industry. Without this gate that noise consumes the per-run LLM budget.
+//
+// Aliases only for names that genuinely appear differently in headlines; the
+// rest are matched from TRACKED_VENDORS directly, so updating that list is all
+// that is needed to change coverage.
+const VENDOR_ALIASES: Record<string, string[]> = {
+  "TCS": ["Tata Consultancy"],
+  "HCLTech": ["HCL Technologies", "HCL Tech"],
+  "NTT DATA": ["NTT Data"],
+  "EY": ["Ernst & Young"],
+  "PwC": ["PricewaterhouseCoopers"],
+  "L&T Technology Services": ["LTTS", "L&T Technology"],
+  "Orange Business": ["Orange Business Services"],
+  "UST": ["UST Global"],
+  "ADP": ["Automatic Data Processing"],
+  "NICE": ["NICE Systems", "NICE Ltd"],
+  "NEC": ["NEC Corporation"],
+  "Persistent": ["Persistent Systems"],
+  "Singtel": ["NCS"],
+  "DXC Technology": ["DXC"],
+  "Dell Technologies": ["Dell"],
+  "Hitachi Digital Services": ["Hitachi Vantara", "Hitachi Digital"],
+  "TELUS International": ["TELUS Digital"],
+  "EXL": ["ExlService"],
+  "Concentrix": ["Webhelp"],
+};
+
+// Short/ambiguous names need a strict word boundary to avoid false positives
+// (e.g. "UST" inside "August", "NEC" inside "connect").
+const VENDOR_MATCHERS: { vendor: string; re: RegExp }[] = TRACKED_VENDORS.flatMap((vendor) => {
+  const forms = [vendor, ...(VENDOR_ALIASES[vendor] ?? [])];
+  return forms.map((form) => ({
+    vendor,
+    re: new RegExp(`(^|[^A-Za-z0-9])${form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z0-9]|$)`, "i"),
+  }));
+});
+
+/** True if the text names one of the tracked vendors. */
+export function mentionsTrackedVendor(text: string): boolean {
+  return VENDOR_MATCHERS.some(({ re }) => re.test(text));
+}
+
+/** Which tracked vendor the text names, if any. */
+export function matchTrackedVendor(text: string): string | null {
+  return VENDOR_MATCHERS.find(({ re }) => re.test(text))?.vendor ?? null;
+}
 
 export function isRelevantArticle(title: string, sourceType?: string): { relevant: boolean; family: string } {
   const t = title;

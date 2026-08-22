@@ -1,5 +1,5 @@
 import { RawArticle } from "./crawler";
-import { isRelevantArticle } from "./sources";
+import { isRelevantArticle, TRACKED_VENDORS } from "./sources";
 
 // ── Canonical vendor name map (for entity matching) ───────────────────────────
 const VENDOR_PATTERNS: [RegExp, string][] = [
@@ -171,9 +171,27 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
 
 // ── LLM extraction (requires ANTHROPIC_API_KEY) ───────────────────────────────
 
+// ── Tracked vendor universe ──────────────────────────────────────────────────
+// Built from TRACKED_VENDORS so the coverage universe lives in ONE place. To
+// expand coverage, add the vendor to TRACKED_VENDORS in sources.ts — that
+// single edit updates the Google News feed list, the market-wide ingestion
+// gate, and this prompt together. Nothing here needs changing.
+const VENDOR_UNIVERSE = TRACKED_VENDORS.join(", ");
+
 const EXTRACTION_SYSTEM = `You are a senior IT services market analyst coding events for a competitive intelligence platform used by enterprise sales teams. Your output must be thorough and commercially actionable.
 
+TRACKED VENDOR UNIVERSE — the ${TRACKED_VENDORS.length} providers this platform covers:
+${VENDOR_UNIVERSE}
+
 Rules:
+0. SCOPE: an event only matters if one of the TRACKED VENDORS above is a party to
+   it (as provider, acquirer, target, or partner). If no tracked vendor is
+   involved, return family "EXCLUDED" with eventType "excluded_noise" — do not
+   invent a link to a tracked vendor.
+   "vendorRaw" MUST be written EXACTLY as spelled in the list above (e.g. "TCS",
+   not "Tata Consultancy Services Ltd"; "HCLTech", not "HCL Technologies") so it
+   resolves against our entity records. If the article names a non-tracked firm
+   as the counterparty, put that name in clientRaw, not vendorRaw.
 1. Extract ALL available structured data from the text.
 2. TCV ESTIMATION: If TCV is not explicitly stated, ESTIMATE it based on deal characteristics:
    - Use industry benchmarks: avg IT outsourcing deal = $50-200M, BPO = $20-80M, consulting = $5-30M
@@ -199,7 +217,7 @@ const EXTRACTION_SCHEMA = `{
   "family": "CONTRACT|FINANCIAL_RESULTS|M_AND_A|PARTNERSHIP|NEW_OFFERING|ORG_CHANGE|EXCLUDED",
   "eventType": "new_win|renewal|extension|expansion|rebid_win|incumbent_displacement|framework_award|acquisition|merger|divestiture|technology_alliance|co_delivery_agreement|service_launch|platform_launch|delivery_centre_opening|leadership_appointment|leadership_departure|restructuring|strategic_transformation|financial_announcement|quarterly_results|annual_results|guidance_update|bookings_update|segment_performance|excluded_noise",
   "canonicalTitle": "concise title, max 120 chars — format: Vendor | EventType | Client | ServiceLine",
-  "vendorRaw": "IT services vendor name",
+  "vendorRaw": "MUST be one of the TRACKED VENDORS, spelled exactly as listed; null if none involved",
   "clientRaw": "client/buyer organisation name or null",
   "tcvUsd": "number in USD — estimate if not stated, using deal size indicators",
   "tcvIsEstimate": "true if estimated, false if explicitly stated",
