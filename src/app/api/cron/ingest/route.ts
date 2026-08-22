@@ -9,6 +9,16 @@ export const dynamic = "force-dynamic";
 // so we crawl a wide window but only extract up to `maxExtractions`.
 const WINDOW = 15;
 
+// ⏸  SCHEDULE PAUSED (2026-08-22) pending vendor-universe sign-off.
+// The endpoint still works when called manually; only the automatic daily
+// trigger is switched off, so no unattended run fires against the expanded
+// 114-source universe before scope is agreed.
+//
+// To resume, add this back to vercel.json (Hobby allows at most one run/day):
+//   "crons": [{ "path": "/api/cron/ingest", "schedule": "0 7 * * *" }]
+// Note vercel.json rejects any key outside its schema — the schedule cannot be
+// "commented out" in that file, it has to be removed or restored wholesale.
+//
 // GET /api/cron/ingest — invoked by Vercel Cron on a schedule.
 // Each fire processes one rotating window of sources so that, over successive
 // runs, the whole source list is covered. The window advances automatically by
