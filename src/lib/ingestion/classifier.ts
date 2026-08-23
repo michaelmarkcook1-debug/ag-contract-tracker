@@ -72,26 +72,45 @@ export const MODEL_PRICING: Record<string, { inputPerM: number; outputPerM: numb
   "claude-opus-4-8": { inputPerM: 5.0, outputPerM: 25.0 },
 };
 
-export function costOf(model: string, inputTokens: number, outputTokens: number): number {
+/**
+ * Prompt-caching multipliers, relative to base input price.
+ * Verified against platform.claude.com/docs/en/about-claude/pricing (2026-08).
+ */
+const CACHE_WRITE_MULTIPLIER = 1.25;   // 5-minute cache write
+const CACHE_READ_MULTIPLIER = 0.1;     // cache hit
+
+export function costOf(
+  model: string, inputTokens: number, outputTokens: number,
+  cacheWriteTokens = 0, cacheReadTokens = 0,
+): number {
   const p = MODEL_PRICING[model];
   if (!p) return 0;
-  return (inputTokens / 1_000_000) * p.inputPerM + (outputTokens / 1_000_000) * p.outputPerM;
+  const perM = (n: number) => n / 1_000_000;
+  return perM(inputTokens) * p.inputPerM
+    + perM(cacheWriteTokens) * p.inputPerM * CACHE_WRITE_MULTIPLIER
+    + perM(cacheReadTokens) * p.inputPerM * CACHE_READ_MULTIPLIER
+    + perM(outputTokens) * p.outputPerM;
 }
 
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  /** Tokens written to / read from the prompt cache (billed at 1.25x / 0.1x). */
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
   costUsd: number;
   /** Which tiers actually ran, e.g. ["triage"] or ["triage","analysis"]. */
   tiers: string[];
 }
 
-export const EMPTY_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0, tiers: [] };
+export const EMPTY_USAGE: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, costUsd: 0, tiers: [] };
 
 function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
     costUsd: a.costUsd + b.costUsd,
     tiers: [...a.tiers, ...b.tiers],
   };
@@ -314,6 +333,20 @@ Rules:
 interface ClaudeCall { parsed: Record<string, unknown> | null; usage: TokenUsage; }
 
 /** One Messages API call, returning parsed JSON plus real token spend. */
+/**
+ * Anthropic requires a cacheable prefix of roughly 1024 tokens; shorter
+ * prefixes are silently not cached. The analysis system prompt clears this
+ * (~1.3k tokens) but the triage one does not (~0.8k), so caching is applied
+ * only where it actually pays. Measured effect on the analysis prompt: input
+ * billed drops from 1603 tokens to 33 + 1570 cache-read at 0.1x.
+ */
+// ~2.16 chars/token measured on this prompt, so 2500 chars is ~1150 tokens —
+// comfortably over the ~1024 minimum while still excluding the shorter triage
+// prompt (~1800 chars), which would never cache and would only add overhead.
+// An earlier value of 4000 silently disabled caching entirely: the analysis
+// prompt is ~3465 chars at runtime, so the condition never fired.
+const CACHEABLE_PREFIX_CHARS = 2500;
+
 async function callClaude(
   model: string, system: string, prompt: string, maxTokens: number, tier: string,
 ): Promise<ClaudeCall> {
@@ -330,7 +363,12 @@ async function callClaude(
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        system,
+        // A cache breakpoint needs `system` as an array of content blocks.
+        // The prompt is static per process, so the prefix stays byte-identical
+        // across calls and the cache actually hits.
+        system: system.length >= CACHEABLE_PREFIX_CHARS
+          ? [{ type: "text", text: system, cache_control: { type: "ephemeral" } }]
+          : system,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(20000),
@@ -338,13 +376,20 @@ async function callClaude(
     if (!res.ok) return { parsed: null, usage: EMPTY_USAGE };
     const data = await res.json() as {
       content?: Array<{ type: string; text: string }>;
-      usage?: { input_tokens?: number; output_tokens?: number };
+      usage?: {
+        input_tokens?: number; output_tokens?: number;
+        cache_creation_input_tokens?: number; cache_read_input_tokens?: number;
+      };
     };
     // Bill actual usage even if the body fails to parse — the tokens were spent.
     const inputTokens = data.usage?.input_tokens ?? 0;
     const outputTokens = data.usage?.output_tokens ?? 0;
+    const cacheWriteTokens = data.usage?.cache_creation_input_tokens ?? 0;
+    const cacheReadTokens = data.usage?.cache_read_input_tokens ?? 0;
     const usage: TokenUsage = {
-      inputTokens, outputTokens, costUsd: costOf(model, inputTokens, outputTokens), tiers: [tier],
+      inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens,
+      costUsd: costOf(model, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens),
+      tiers: [tier],
     };
     // Take the first TEXT block, not content[0]: newer models can emit a
     // leading non-text block (e.g. thinking), and indexing blindly yields
