@@ -13,6 +13,18 @@ export interface PipelineOptions {
   maxExtractions?: number;
   /** Tag for the IngestionRun record (e.g. "manual", "cron"). Defaults by dryRun. */
   runType?: string;
+  /**
+   * Wall-clock budget for starting new LLM calls, ms. Defaults to 38s, sized
+   * for the 60s serverless ceiling. Raise it only for long-running local
+   * backfills that are not behind a request timeout.
+   */
+  timeBudgetMs?: number;
+  /**
+   * Parallel extractions. Defaults to 1 (sequential) so the serverless path is
+   * unchanged. Higher values drain a backlog far faster; cost per article is
+   * identical, only wall-clock changes.
+   */
+  concurrency?: number;
 }
 
 /** Total number of crawlable sources (for callers computing a rotating window). */
@@ -30,6 +42,8 @@ export interface PipelineProgress {
   eventsPublished: number;
   eventsQueued: number;
   eventsDeferred: number;
+  /** Articles actually put through the LLM this run (incl. ones judged EXCLUDED). */
+  articlesProcessed: number;
   /** Real token spend for this run. */
   usage: TokenUsage;
   currentSource?: string;
@@ -197,13 +211,12 @@ export async function runPipeline(
   onProgress?: (p: PipelineProgress) => void,
   existingRunId?: string,
 ): Promise<PipelineProgress> {
-  const { sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false, maxExtractions = 12, runType } = options;
+  const { sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false, maxExtractions = 12, runType, timeBudgetMs = 38_000, concurrency = 1 } = options;
   const runStart = Date.now();
-  // Hard wall-clock budget. Serverless caps the function at 60s and a single
-  // in-flight LLM call can run up to its 20s fetch timeout, so we must stop
-  // *starting* new calls at 38s (38 + 20 = 58 < 60) to guarantee the run always
-  // reaches its final DB write instead of being killed mid-flight.
-  const TIME_BUDGET_MS = 38_000;
+  // Wall-clock budget for STARTING new LLM calls. The serverless default of
+  // 38s exists because the function is capped at 60s and one in-flight call can
+  // run up to its 20s fetch timeout (38 + 20 = 58 < 60), guaranteeing the run
+  // still reaches its final DB write. Overridable via options.timeBudgetMs.
 
   // Use existing run record if provided (from after() pattern), otherwise create one
   const run = existingRunId
@@ -226,6 +239,7 @@ export async function runPipeline(
     eventsPublished: 0,
     eventsQueued: 0,
     eventsDeferred: 0,
+    articlesProcessed: 0,
     usage: { ...EMPTY_USAGE, tiers: [] },
     errors: [],
   };
@@ -298,38 +312,51 @@ export async function runPipeline(
   });
   progress.articlesIrrelevant = newArticles.length - relevantArticles.length;
 
-  // Hard cap on LLM calls so a batch always finishes inside the 60s budget.
+  // Hard cap on LLM calls so a batch always finishes inside the time budget.
   // Articles beyond the cap stay unstored and are re-crawled on the next run.
+  //
+  // Concurrency defaults to 1 (strictly sequential) so the serverless path is
+  // unchanged. Long-running backfills raise it to drain a backlog that would
+  // otherwise take hours at ~3s per extraction.
   let llmCalls = 0;
-  for (let i = 0; i < relevantArticles.length; i++) {
-    const article = relevantArticles[i];
-    if (llmCalls >= maxExtractions || Date.now() - runStart > TIME_BUDGET_MS) {
-      progress.eventsDeferred = relevantArticles.length - i;
-      break;
-    }
-    try {
-      const result = await extractArticle(article);
-      llmCalls++;
-      progress.usage = {
-        inputTokens: progress.usage.inputTokens + result.usage.inputTokens,
-        outputTokens: progress.usage.outputTokens + result.usage.outputTokens,
-        costUsd: progress.usage.costUsd + result.usage.costUsd,
-        tiers: progress.usage.tiers,
-      };
-      if (result.family === "EXCLUDED") continue;
-      progress.eventsExtracted++;
-      progress.phase = "storing";
+  let cursor = 0;
+  const shouldStop = () => llmCalls >= maxExtractions || Date.now() - runStart > timeBudgetMs;
 
-      const outcome = await storeEvent(article, result, run.id);
-      if (outcome === "published") progress.eventsPublished++;
-      else if (outcome === "queued") progress.eventsQueued++;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      progress.errors.push(`Article error (${article.url.slice(0, 60)}): ${msg}`);
+  async function extractionWorker() {
+    while (true) {
+      if (shouldStop()) return;
+      const i = cursor++;
+      if (i >= relevantArticles.length) return;
+      const article = relevantArticles[i];
+      llmCalls++;                       // reserve the slot before awaiting
+      try {
+        const result = await extractArticle(article);
+        progress.usage = {
+          inputTokens: progress.usage.inputTokens + result.usage.inputTokens,
+          outputTokens: progress.usage.outputTokens + result.usage.outputTokens,
+          costUsd: progress.usage.costUsd + result.usage.costUsd,
+          tiers: progress.usage.tiers,
+        };
+        if (result.family !== "EXCLUDED") {
+          progress.eventsExtracted++;
+          progress.phase = "storing";
+          const outcome = await storeEvent(article, result, run.id);
+          if (outcome === "published") progress.eventsPublished++;
+          else if (outcome === "queued") progress.eventsQueued++;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        progress.errors.push(`Article error (${article.url.slice(0, 60)}): ${msg}`);
+      }
+      if (process.env.ANTHROPIC_API_KEY && concurrency === 1) {
+        await new Promise(r => setTimeout(r, 150));
+      }
     }
-    // Small delay between LLM calls
-    if (process.env.ANTHROPIC_API_KEY) await new Promise(r => setTimeout(r, 150));
   }
+
+  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, extractionWorker));
+  progress.articlesProcessed = Math.min(cursor, relevantArticles.length);
+  progress.eventsDeferred = Math.max(0, relevantArticles.length - cursor);
 
   progress.phase = "done";
   await prisma.ingestionRun.update({

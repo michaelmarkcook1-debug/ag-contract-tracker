@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { EventSummary, EventFilters, EventsResponse, DashboardStats, VendorProfile } from "./types";
+import { TRACKED_VENDORS } from "./ingestion/sources";
 
 function shapeEvent(e: {
   id: string; family: string; eventType: string; canonicalTitle: string;
@@ -144,6 +145,9 @@ export async function getEvents(filters: EventFilters = {}): Promise<EventsRespo
     ];
   }
 
+  // Scope to tracked vendors via AND so it composes with the search/vendor ORs.
+  where.AND = [...((where.AND as unknown[]) ?? []), await trackedEventScope()];
+
   const [total, rows] = await Promise.all([
     prisma.canonicalMarketEvent.count({ where }),
     prisma.canonicalMarketEvent.findMany({
@@ -166,23 +170,24 @@ export async function getEvents(filters: EventFilters = {}): Promise<EventsRespo
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const scope = await trackedEventScope();
 
   const [
     totalEvents, contractsCount, financialResultsCount, maCount, partnershipCount, newOfferingCount, orgChangeCount,
     needsReviewCount, last30DaysCount, topVendorRows, topIndustryRows, recentRows, monthlyRows,
     latestEventRow,
   ] = await Promise.all([
-    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "published" } }),
-    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published" } }),
-    prisma.canonicalMarketEvent.count({ where: { family: "FINANCIAL_RESULTS", publicationStatus: "published" } }),
-    prisma.canonicalMarketEvent.count({ where: { family: "M_AND_A", publicationStatus: "published" } }),
-    prisma.canonicalMarketEvent.count({ where: { family: "PARTNERSHIP", publicationStatus: "published" } }),
-    prisma.canonicalMarketEvent.count({ where: { family: "NEW_OFFERING", publicationStatus: "published" } }),
-    prisma.canonicalMarketEvent.count({ where: { family: "ORG_CHANGE", publicationStatus: "published" } }),
-    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review" } }),
+    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "FINANCIAL_RESULTS", publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "M_AND_A", publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "PARTNERSHIP", publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "NEW_OFFERING", publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "ORG_CHANGE", publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...scope } }),
     prisma.canonicalMarketEvent.count({ where: { announcementDate: { gte: thirtyDaysAgo }, publicationStatus: "published" } }),
     prisma.entity.findMany({
-      where: { entityType: { in: ["vendor", "both"] } },
+      where: { entityType: { in: ["vendor", "both"] }, ...trackedVendorNameFilter() },
       include: { _count: { select: { primaryEvents: true } } },
       orderBy: { primaryEvents: { _count: "desc" } },
       take: 8,
@@ -195,7 +200,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       take: 8,
     }),
     prisma.canonicalMarketEvent.findMany({
-      where: { publicationStatus: "published" },
+      where: { publicationStatus: "published", ...scope },
       include: eventInclude,
       orderBy: { announcementDate: "desc" },
       take: 8,
@@ -282,9 +287,60 @@ export async function getVendorProfile(slug: string): Promise<VendorProfile | nu
   };
 }
 
+/**
+ * Entity rows matching the tracked universe.
+ *
+ * The Entity table holds ~1,600 rows because the GlobalData and predecessor
+ * imports created one per distinct vendor legal name. Only TRACKED_VENDORS is
+ * the coverage universe, so vendor-facing surfaces must scope to it — otherwise
+ * the Vendors page lists every counterparty ever seen.
+ *
+ * Matched case-insensitively: some stored names differ in case from the tracked
+ * spelling (e.g. "NTT Data" vs "NTT DATA").
+ */
+function trackedVendorNameFilter() {
+  return {
+    OR: TRACKED_VENDORS.map(name => ({
+      canonicalName: { equals: name, mode: "insensitive" as const },
+    })),
+  };
+}
+
+
+/**
+ * Event-level scoping to the tracked vendor universe.
+ *
+ * The store holds ~12.5k events, most imported from GlobalData/predecessor data
+ * covering vendors far outside TRACKED_VENDORS. Every user-facing surface must
+ * scope to the tracked universe or the counts describe a different business.
+ *
+ * Matches through any relation that can carry a vendor, not just primaryEntity,
+ * so an M&A or partnership involving a tracked vendor still counts.
+ */
+let trackedIdsCache: string[] | null = null;
+export async function getTrackedEntityIds(): Promise<string[]> {
+  if (trackedIdsCache) return trackedIdsCache;
+  const rows = await prisma.entity.findMany({ where: trackedVendorNameFilter(), select: { id: true } });
+  trackedIdsCache = rows.map(r => r.id);
+  return trackedIdsCache;
+}
+
+export async function trackedEventScope() {
+  const ids = await getTrackedEntityIds();
+  return {
+    OR: [
+      { primaryEntityId: { in: ids } },
+      { contractDetails: { vendorId: { in: ids } } },
+      { maDetails: { acquirerId: { in: ids } } },
+      { partnershipDetails: { entityAId: { in: ids } } },
+      { partnershipDetails: { entityBId: { in: ids } } },
+    ],
+  };
+}
+
 export async function getAllVendors() {
   return prisma.entity.findMany({
-    where: { entityType: { in: ["vendor", "both"] }, isActive: true },
+    where: { entityType: { in: ["vendor", "both"] }, isActive: true, ...trackedVendorNameFilter() },
     select: { canonicalName: true, displayName: true, slug: true },
     orderBy: { canonicalName: "asc" },
   });
@@ -293,7 +349,11 @@ export async function getAllVendors() {
 export async function getFilterOptions() {
   const [vendors, industries, serviceLines] = await Promise.all([
     prisma.entity.findMany({
-      where: { entityType: { in: ["vendor", "both"] }, isActive: true, primaryEvents: { some: { publicationStatus: "published" } } },
+      where: {
+        entityType: { in: ["vendor", "both"] }, isActive: true,
+        primaryEvents: { some: { publicationStatus: "published" } },
+        ...trackedVendorNameFilter(),
+      },
       select: { canonicalName: true, slug: true },
       orderBy: { canonicalName: "asc" },
     }),

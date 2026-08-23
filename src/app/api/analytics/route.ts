@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { trackedEventScope } from "@/lib/data";
 
 export interface AnalyticsData {
   // Summary KPIs
@@ -38,12 +39,12 @@ export interface AnalyticsData {
 // SQLite doesn't have PERCENTILE_CONT, so we approximate median via offset
 async function getMedianTcv(): Promise<number> {
   const total = await prisma.contractDetails.count({
-    where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published" } },
+    where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
   });
   if (total === 0) return 0;
   const mid = Math.floor(total / 2);
   const rows = await prisma.contractDetails.findMany({
-    where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published" } },
+    where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
     orderBy: { tcvCommittedUsd: "asc" },
     skip: mid,
     take: 1,
@@ -56,7 +57,7 @@ async function getMedianTcv(): Promise<number> {
 async function getTopGeographies(): Promise<{ region: string; count: number }[]> {
   // Use prisma raw to get the geography JSON arrays and count in app
   const rows = await prisma.canonicalMarketEvent.findMany({
-    where: { publicationStatus: "published", NOT: { geography: "[]" } },
+    where: { publicationStatus: "published", NOT: { geography: "[]" }, ...scope },
     select: { geography: true },
     take: 5000,
   });
@@ -83,6 +84,8 @@ async function getTopGeographies(): Promise<{ region: string; count: number }[]>
 }
 
 export async function GET() {
+  // Scope every metric to the tracked vendor universe.
+  const scope = await trackedEventScope();
   const [
     totalDeals, dealsWithTcv, tcvAgg,
     byYearRaw, topVendorsByTcvRaw, topVendorsByDealsRaw,
@@ -90,12 +93,12 @@ export async function GET() {
     monthlyRaw, medianTcvM, topGeographies,
   ] = await Promise.all([
     // Total deals
-    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published" } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", ...scope } }),
     // Deals with TCV
-    prisma.contractDetails.count({ where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published" } } }),
+    prisma.contractDetails.count({ where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } } }),
     // TCV aggregate
     prisma.contractDetails.aggregate({
-      where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published" } },
+      where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
       _sum: { tcvCommittedUsd: true },
       _avg: { tcvCommittedUsd: true },
     }),
