@@ -347,6 +347,7 @@ export async function getAllVendors() {
 }
 
 export async function getFilterOptions() {
+  const scope = await trackedEventScope();
   const [vendors, industries, serviceLines] = await Promise.all([
     prisma.entity.findMany({
       where: {
@@ -359,14 +360,14 @@ export async function getFilterOptions() {
     }),
     prisma.canonicalMarketEvent.groupBy({
       by: ["industry"],
-      where: { publicationStatus: "published", industry: { not: null } },
+      where: { publicationStatus: "published", industry: { not: null }, ...scope },
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
       take: 50,
     }),
     prisma.contractDetails.groupBy({
       by: ["primaryMacroServiceLine"],
-      where: { primaryMacroServiceLine: { not: null }, canonicalEvent: { publicationStatus: "published" } },
+      where: { primaryMacroServiceLine: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
       _count: { canonicalEventId: true },
       orderBy: { _count: { canonicalEventId: "desc" } },
       take: 30,

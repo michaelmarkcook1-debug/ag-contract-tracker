@@ -1,5 +1,5 @@
 import { connection } from "next/server";
-import { getAllVendors } from "@/lib/data";
+import { getAllVendors, trackedEventScope } from "@/lib/data";
 import { prisma } from "@/lib/db";
 import { Card, CardContent } from "@/components/ui/card";
 import { FamilyBadge } from "@/components/market/FamilyBadge";
@@ -7,14 +7,15 @@ import Link from "next/link";
 import { Globe, ArrowRight } from "lucide-react";
 
 export default async function VendorsPage() {
-  // Opt out of prerendering — vendor event counts come from the DB.
+  // Opt out of prerendering BEFORE any DB work — vendor counts come from the DB.
   await connection();
+  const scope = await trackedEventScope();
   const vendors = await getAllVendors();
 
   // Get event counts per vendor
   const counts = await prisma.canonicalMarketEvent.groupBy({
     by: ["primaryEntityId"],
-    where: { publicationStatus: "published", primaryEntityId: { not: null } },
+    where: { publicationStatus: "published", primaryEntityId: { not: null }, ...scope },
     _count: { id: true },
   });
   const countMap = new Map(counts.map((c) => [c.primaryEntityId, c._count.id]));
@@ -22,7 +23,7 @@ export default async function VendorsPage() {
   // Per-family counts
   const familyCounts = await prisma.canonicalMarketEvent.groupBy({
     by: ["primaryEntityId", "family"],
-    where: { publicationStatus: "published", primaryEntityId: { not: null } },
+    where: { publicationStatus: "published", primaryEntityId: { not: null }, ...scope },
     _count: { id: true },
   });
   const familyMap = new Map<string, Record<string, number>>();

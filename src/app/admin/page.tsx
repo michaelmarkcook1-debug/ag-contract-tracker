@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import { prisma } from "@/lib/db";
-import { getEvents } from "@/lib/data";
+import { getEvents, trackedEventScope } from "@/lib/data";
 import { syncSourceRegistry } from "@/lib/ingestion/pipeline";
 import { AdminRunPanel } from "@/components/market/AdminRunPanel";
 import { ReviewQueue } from "@/components/market/ReviewQueue";
@@ -27,7 +27,7 @@ export default async function AdminPage() {
     (async () => ({
       hasApiKey: !!process.env.ANTHROPIC_API_KEY,
       sourcesTotal: await prisma.sourceRegistryItem.count({ where: { isActive: true } }),
-      needsReview: await prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review" } }),
+      needsReview: await prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...(await trackedEventScope()) } }),
       lastRun: await prisma.ingestionRun.findFirst({ orderBy: { startedAt: "desc" } }).then(r => r ? {
         ...r,
         errors: JSON.parse(r.errors || "[]"),
