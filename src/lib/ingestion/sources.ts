@@ -60,6 +60,16 @@ export const TRACKED_VENDORS = [
   "Unisys", "UST",
   "Virtusa",
   "Wipro", "WNS",
+  // ── BPO / CX specialists ──
+  "eClerx", "IGT Solutions", "[24]7.ai", "Everise", "VXI Global", "ResultsCX",
+  // ── ITO / infrastructure & managed services ──
+  "Insight Enterprises", "Rackspace", "Ensono", "SoftwareOne", "Bechtle", "Cancom",
+  "Inetum", "Indra", "Reply", "Devoteam", "Kainos", "Version 1", "Claranet",
+  "Crayon", "Advania", "NNIT", "Getronics", "Telefonica Tech",
+  // ── Engineering / R&D services ──
+  "Cyient", "KPIT", "Tata Elxsi", "Quest Global", "ALTEN", "Expleo", "Akkodis",
+  // ── India mid-tier IT ──
+  "Happiest Minds", "Sonata Software",
   "Zensar",
 ] as const;
 
@@ -260,6 +270,26 @@ export const GOOGLE_NEWS_SOURCES: SourceDefinition[] = TRACKED_VENDORS.map(vendo
     case "Arvato":
       return gnews("Arvato", `"Arvato" (BPO OR outsourcing OR "supply chain services") ${IT_SIGNAL_TERMS}`);
 
+    // Ordinary-word names need explicit company context or the feed fills with
+    // unrelated news ("reply", "crayon", "version 1", "indra" as a first name).
+    case "Reply":
+      return gnews("Reply", `"Reply S.p.A" OR "Reply Group" ${IT_SIGNAL_TERMS}`);
+    case "Crayon":
+      return gnews("Crayon", `"Crayon Group" ${IT_SIGNAL_TERMS}`);
+    case "Indra":
+      return gnews("Indra", `"Indra Sistemas" OR "Minsait" ${IT_SIGNAL_TERMS}`);
+    case "Version 1":
+      return gnews("Version 1", `"Version 1" (IT services OR consulting) ${IT_SIGNAL_TERMS}`);
+    case "Quest Global":
+      return gnews("Quest Global", `"Quest Global" OR "QuEST Global" engineering ${IT_SIGNAL_TERMS}`);
+    case "Everise":
+      return gnews("Everise", `"Everise" (BPO OR customer experience) ${IT_SIGNAL_TERMS}`);
+    case "IGT Solutions":
+      return gnews("IGT Solutions", `"IGT Solutions" ${IT_SIGNAL_TERMS}`);
+    case "Insight Enterprises":
+      return gnews("Insight Enterprises", `"Insight Enterprises" ${IT_SIGNAL_TERMS}`);
+    case "Telefonica Tech":
+      return gnews("Telefonica Tech", `"Telefonica Tech" OR "Telefónica Tech" ${IT_SIGNAL_TERMS}`);
     default:
       return gnews(vendor, IT_SIGNAL_TERMS);
   }
@@ -351,6 +381,20 @@ const VENDOR_ALIASES: Record<string, string[]> = {
   "TELUS International": ["TELUS Digital"],
   "EXL": ["ExlService"],
   "Concentrix": ["Webhelp"],
+  "CSS Corp": ["Movate"],
+  "Indra": ["Indra Sistemas", "Minsait"],
+  "Reply": ["Reply S.p.A", "Reply SpA"],
+  "Version 1": ["Version1"],
+  "Crayon": ["Crayon Group"],
+  "Telefonica Tech": ["Telefónica Tech"],
+  "SoftwareOne": ["SoftwareONE"],
+  "Insight Enterprises": ["Insight Direct"],
+  "Rackspace": ["Rackspace Technology"],
+  "KPIT": ["KPIT Technologies"],
+  "ALTEN": ["ALTEN Group"],
+  "Akkodis": ["Adecco Akkodis"],
+  "Quest Global": ["QuEST Global"],
+  "eClerx": ["eClerx Services"],
   // Added 2026-08 with the universe expansion
   "AWS": ["Amazon Web Services"],
   "Google Cloud": ["Google Cloud Platform"],
@@ -379,12 +423,23 @@ const CASE_SENSITIVE_FORMS = new Set([
   "AWS", "SAP", "HGS", "NICE", "NEC", "UST", "EY", "EXL", "ADP", "CGI", "IBM", "TCS",
   "DXC", "WNS", "TTEC", "KPMG", "PwC", "LTTS", "NCS", "GCP",
   "Alight", "Oracle", "Maximus", "Capita",
+  "NNIT", "ALTEN", "KPIT", "IGT Solutions", "VXI Global",
+  // lowercase "insight enterprises" is an ordinary phrase
+  "Insight Enterprises", "Everise", "Ensono",
 ]);
+
+// Some tracked firms are named after ordinary words. Matching their bare name
+// would flood the gate with false positives ("in reply to", "a box of crayons",
+// "version 1 of the spec"), and case-sensitivity does not help because
+// headlines capitalise sentence-initial words. For these, ONLY the unambiguous
+// alias forms are matched.
+const AMBIGUOUS_BARE_NAMES = new Set(["Reply", "Crayon", "Indra", "Version 1"]);
 
 // Word boundaries stop short names matching inside other words ("UST" inside
 // "August", "NEC" inside "connect").
 const VENDOR_MATCHERS: { vendor: string; re: RegExp }[] = TRACKED_VENDORS.flatMap((vendor) => {
-  const forms = [vendor, ...(VENDOR_ALIASES[vendor] ?? [])];
+  const aliases = VENDOR_ALIASES[vendor] ?? [];
+  const forms = AMBIGUOUS_BARE_NAMES.has(vendor) ? aliases : [vendor, ...aliases];
   return forms.map((form) => ({
     vendor,
     re: new RegExp(

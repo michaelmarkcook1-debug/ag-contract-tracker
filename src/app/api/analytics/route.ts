@@ -38,6 +38,7 @@ export interface AnalyticsData {
 
 // SQLite doesn't have PERCENTILE_CONT, so we approximate median via offset
 async function getMedianTcv(): Promise<number> {
+  const scope = await trackedEventScope();
   const total = await prisma.contractDetails.count({
     where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
   });
@@ -55,6 +56,7 @@ async function getMedianTcv(): Promise<number> {
 
 // Geography is stored as JSON array — extract with raw SQL grouping
 async function getTopGeographies(): Promise<{ region: string; count: number }[]> {
+  const scope = await trackedEventScope();
   // Use prisma raw to get the geography JSON arrays and count in app
   const rows = await prisma.canonicalMarketEvent.findMany({
     where: { publicationStatus: "published", NOT: { geography: "[]" }, ...scope },
