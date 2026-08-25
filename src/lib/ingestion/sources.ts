@@ -350,6 +350,12 @@ const FINANCIAL_TERMS   = /\b(earnings?|revenue|quarterly results|\bQ[1-4]\b|qua
 // Genuine noise only — marketing, research-firm rankings, thought leadership.
 const HARD_EXCLUDE      = /\b(market research|magic quadrant|peer review|gartner|forrester|isg provider|everest group|leadership development|women in|csr|sustainab|carbon|climate|award for excellence|recognised as|named .*leader by|ranked .*in|survey finds?|study shows?|webinar|podcast|blog post|opinion|thought leadership|self[- ]service)/i;
 
+// §3 — a CONTRACT requires evidence of an actual commercial award. Source type
+// alone must NEVER establish one. These terms distinguish a concluded award
+// from a procurement opportunity.
+const AWARD_EVIDENCE    = /\b(award(ed|s)?|has been selected|was selected|selected as|signed|renew(ed|al)|extend(ed|s|sion)|wins?|won|secured|appointed as (?:supplier|provider)|contract with|go[- ]live)\b/i;
+const OPPORTUNITY_ONLY  = /\b(tender|invitation to tender|\bITT\b|request for proposal|\bRFP\b|request for quote|\bRFQ\b|prior information notice|\bPIN\b|expression of interest|\bEOI\b|market engagement|seeking suppliers?|inviting bids?|opportunity|pre[- ]qualification|supplier registration|call for competition)\b/i;
+
 const VENDOR_REQUIRE    = /\b(contract|award|outsourc|managed service|win\b|deal|selected by|engages?|acqui|partner(?:ship|s)?|merger|divest|joint venture|appoints?|restructur|delivery centre|opens?|launch|platform)\b/i;
 
 // ── Tracked-vendor gate ─────────────────────────────────────────────────────
@@ -475,6 +481,15 @@ export function matchTrackedVendorPreferring(text: string, priority: readonly st
 export function isRelevantArticle(title: string, sourceType?: string): { relevant: boolean; family: string } {
   const t = title;
   if (HARD_EXCLUDE.test(t)) return { relevant: false, family: "EXCLUDED" };
+
+  // §3 — OPPORTUNITY GUARD, deliberately ahead of the family matchers.
+  // A tender headline usually contains the word "contract" ("tender for a
+  // five-year managed-services contract"), so CONTRACT_TERMS would otherwise
+  // claim it before any source-type logic runs. An opportunity with no award
+  // evidence is never a contract win, whatever the source.
+  if (OPPORTUNITY_ONLY.test(t) && !AWARD_EVIDENCE.test(t)) {
+    return { relevant: true, family: "UNCLASSIFIED" };
+  }
   // Deal families are checked BEFORE financial so that genuine deal news which
   // happens to mention revenue (e.g. "Wipro wins Harman deal; Q3 revenue up")
   // stays a CONTRACT rather than being reclassified as an earnings story.
@@ -491,8 +506,23 @@ export function isRelevantArticle(title: string, sourceType?: string): { relevan
       : { relevant: false, family: "EXCLUDED" };
   }
 
-  if (sourceType === "procurement_notice" || sourceType === "wire_service") {
-    return { relevant: true, family: "CONTRACT" };
+  // §3/§6 — procurement sources are relevant EVIDENCE but a notice is not a win.
+  // An opportunity/tender never becomes CONTRACT here; only explicit award
+  // language does. Anything ambiguous stays UNCLASSIFIED so the classifier (or
+  // review) decides, rather than manufacturing a contract from source type.
+  if (sourceType === "procurement_notice") {
+    if (OPPORTUNITY_ONLY.test(t) && !AWARD_EVIDENCE.test(t)) {
+      return { relevant: true, family: "UNCLASSIFIED" };
+    }
+    return AWARD_EVIDENCE.test(t)
+      ? { relevant: true, family: "CONTRACT" }
+      : { relevant: true, family: "UNCLASSIFIED" };
+  }
+
+  // §7 — wire services carry every event type. Source provenance says nothing
+  // about event semantics, so these proceed to real classification.
+  if (sourceType === "wire_service") {
+    return { relevant: true, family: "UNCLASSIFIED" };
   }
 
   return { relevant: false, family: "UNCLASSIFIED" };

@@ -48,7 +48,7 @@ const LENGTH_MAP: Record<string, number> = { "one": 12, "two": 24, "three": 36, 
 export const MODEL_TIERS = {
   /** Cheap classifier: family, vendor, in/out of scope. Small max_tokens. */
   triage: "claude-haiku-4-5",
-  /** Deeper reasoning for TCV estimation and competitive analyst insight. */
+  /** Deeper reasoning for scope interpretation and competitive analyst insight. */
   analysis: "claude-sonnet-5",
 } as const;
 
@@ -163,7 +163,8 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
 
   // TCV extraction
   let tcvUsd: number | null = null;
-  let tcvIsEstimate = true;
+  // §2 — this extractor only reports explicitly stated values; it never estimates.
+  let tcvIsEstimate = false;
   for (const pattern of TCV_PATTERNS) {
     const m = pattern.exec(text);
     if (!m) continue;
@@ -271,10 +272,14 @@ Rules:
    resolves against our entity records. If the article names a non-tracked firm
    as the counterparty, put that name in clientRaw, not vendorRaw.
 1. Extract ALL available structured data from the text.
-2. TCV ESTIMATION: If TCV is not explicitly stated, ESTIMATE it based on deal characteristics:
-   - Use industry benchmarks: avg IT outsourcing deal = $50-200M, BPO = $20-80M, consulting = $5-30M
-   - Factor in: contract length, client size (Fortune 500 = larger), service scope, geography
-   - Mark tcvIsEstimate=true when estimating. A reasonable estimate is better than null.
+2. CONTRACT VALUE — DO NOT ESTIMATE. Return tcvUsd ONLY when the evidence
+   explicitly states a monetary value for this contract (e.g. "valued at $120
+   million", "a £80 million agreement"). If no value is stated, return
+   tcvUsd = null and tcvIsEstimate = false.
+   - Do NOT infer a value from industry benchmarks, deal size, contract length,
+     client size, headcount, geography or comparable deals.
+   - Do NOT convert a vendor's total revenue or bookings into a contract value.
+   - An unknown value is a correct answer. Never guess to fill the field.
 3. Analyst insight must be 3-5 sentences of ACTIONABLE competitive intelligence:
    - What does this mean for the vendor's market position?
    - Which competitors should be concerned? Name specific rival vendors.
@@ -297,8 +302,8 @@ const EXTRACTION_SCHEMA = `{
   "canonicalTitle": "concise title, max 120 chars — format: Vendor | EventType | Client | ServiceLine",
   "vendorRaw": "MUST be one of the TRACKED VENDORS, spelled exactly as listed; null if none involved",
   "clientRaw": "client/buyer organisation name or null",
-  "tcvUsd": "number in USD — estimate if not stated, using deal size indicators",
-  "tcvIsEstimate": "true if estimated, false if explicitly stated",
+  "tcvUsd": "number in USD — ONLY if explicitly stated in the evidence; null otherwise. Never estimated.",
+  "tcvIsEstimate": "always false — this extractor never estimates",
   "contractLengthMonths": "integer or null",
   "primaryMacroServiceLine": "ITO|Application Services|Digital & Cloud|BPO|Cybersecurity|AI & Analytics|Consulting & Advisory|ERP & Enterprise Apps|Network & Telco|Engineering IT|null",
   "geography": ["array of countries/regions mentioned"],

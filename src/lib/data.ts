@@ -56,7 +56,21 @@ function shapeEvent(e: {
     clientAnonymised: cd?.clientAnonymised ?? false,
     clientDescriptor: cd?.clientDescriptor ?? null,
     tcvCommittedUsd: cd?.tcvCommittedUsd ?? null,
-    tcvEstimateMidUsd: cd?.tcvEstimateMidUsd ?? null,
+    // §4/§5 QUARANTINE — historic inferred TCV is withheld from every read path.
+    //
+    // These 552 values were produced by an extraction LLM instructed to guess
+    // undisclosed contract values from industry benchmarks. That instruction is
+    // removed, and no approved inference engine exists, so no inferred value is
+    // currently defensible as market intelligence.
+    //
+    // The stored column is untouched (audit/history preserved); this suppresses
+    // it at the read layer only, so it is fully reversible by deleting this
+    // line. The property is kept and returned null rather than removed, so the
+    // API shape is unchanged and the UI falls through to its existing
+    // "Undisclosed" treatment instead of rendering a false "~$X" estimate.
+    //
+    // Re-enable ONLY when values come from an approved inference engine.
+    tcvEstimateMidUsd: null,
     tcvIsEstimate: cd?.tcvIsEstimate ?? false,
     tcvBasis: cd?.tcvBasis ?? null,
     contractEventType: cd?.contractEventType ?? null,

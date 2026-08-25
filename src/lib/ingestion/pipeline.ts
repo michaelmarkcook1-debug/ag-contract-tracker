@@ -78,8 +78,17 @@ async function resolveVendorId(vendorName: string | null): Promise<string | null
   return entity?.id ?? null;
 }
 
+/** The six canonical families. Anything else must never reach the store. */
+const CANONICAL_FAMILIES = new Set([
+  "CONTRACT", "FINANCIAL_RESULTS", "M_AND_A", "PARTNERSHIP", "NEW_OFFERING", "ORG_CHANGE",
+]);
+
 async function storeEvent(article: RawArticle, result: ExtractionResult, runId: string): Promise<"published" | "queued" | "excluded"> {
   if (result.family === "EXCLUDED") return "excluded";
+  // §3/§6/§23 — an unclassifiable article (e.g. a procurement notice with no
+  // award evidence, or a rule-based fallback after model failure) must not be
+  // stored under a guessed family. Withhold rather than manufacture an event.
+  if (!CANONICAL_FAMILIES.has(result.family)) return "excluded";
 
   const now = new Date().toISOString();
   const isHighConfidence = result.confidenceScore >= 0.72 && result.extractionMethod !== "rules";
@@ -114,7 +123,11 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
         eventType: result.eventType,
         canonicalTitle: result.canonicalTitle.slice(0, 500),
         announcementDate: article.publishedAt ? new Date(article.publishedAt) : null,
-        announcementDateBasis: "explicit",
+        // §8 — provenance must reflect the evidence. This was hardcoded to
+        // "explicit", asserting a sourced date even when none existed. It is
+        // now derived: "explicit" only when the source supplied a date.
+        // Ingestion/processing timestamps are never used as a substitute.
+        announcementDateBasis: article.publishedAt ? "explicit" : "unavailable",
         geography: JSON.stringify(result.geography),
         industry: result.industry,
         industryBasis: result.industry ? "classified" : "unavailable",
