@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES, isRelevantArticle, mentionsTrackedVendor } from "./sources";
 import { crawlSource, RawArticle } from "./crawler";
 import { extractArticle, ExtractionResult, EMPTY_USAGE, TokenUsage } from "./classifier";
+import { inferTcv, INFERRED_BASIS } from "@/lib/tcv/infer";
 
 export interface PipelineOptions {
   sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
@@ -145,6 +146,18 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
     // Store family-specific details
     if (result.family === "CONTRACT") {
       const clientId = await resolveVendorId(result.clientRaw);
+
+      // §15 — the ONLY approved inference route. Runs solely when no value was
+      // disclosed, and refuses unless the comparable gates pass. The extractor
+      // itself never estimates.
+      const disclosed = result.tcvUsd && !result.tcvIsEstimate ? result.tcvUsd : null;
+      const verdict = await inferTcv({
+        serviceLine: result.primaryMacroServiceLine,
+        sourceType: article.sourceType,
+        contractLengthMonths: result.contractLengthMonths,
+        disclosedUsd: disclosed,
+      });
+      const inferred = verdict.state === "INFERRED" ? verdict : null;
       await tx.contractDetails.create({
         data: {
           canonicalEventId: event.id,
@@ -155,10 +168,14 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
           clientId: clientId ?? undefined,
           clientConfidence: clientId ? 0.85 : 0.5,
           contractEventType: result.eventType,
-          tcvCommittedUsd: result.tcvUsd && !result.tcvIsEstimate ? result.tcvUsd : null,
-          tcvEstimateMidUsd: result.tcvUsd && result.tcvIsEstimate ? result.tcvUsd : null,
-          tcvBasis: result.tcvUsd ? (result.tcvIsEstimate ? "model_estimated" : "official_disclosed") : "undisclosed",
-          tcvIsEstimate: result.tcvIsEstimate,
+          tcvCommittedUsd: disclosed,
+          tcvEstimateLowUsd: inferred?.lowUsd ?? null,
+          tcvEstimateMidUsd: inferred?.midUsd ?? null,
+          tcvEstimateHighUsd: inferred?.highUsd ?? null,
+          tcvBasis: disclosed ? "official_disclosed" : (inferred ? INFERRED_BASIS : "insufficient_evidence"),
+          tcvIsEstimate: !!inferred,
+          // §10/§16 external vocabulary: KNOWN / ESTIMATED / NOT RELIABLY ESTIMABLE
+          tcvConfidence: disclosed ? "known" : (inferred ? "estimated" : "not_reliably_estimable"),
           contractLengthMonths: result.contractLengthMonths,
           primaryMacroServiceLine: result.primaryMacroServiceLine,
           scopeSummary: result.summary ?? article.snippet?.slice(0, 500) ?? null,

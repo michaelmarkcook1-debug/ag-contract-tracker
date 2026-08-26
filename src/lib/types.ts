@@ -55,9 +55,14 @@ export interface EventSummary {
   clientAnonymised: boolean;
   clientDescriptor: string | null;
   tcvCommittedUsd: number | null;
+  /** §16 — inferred value is a RANGE. Midpoint is never exposed as a fact. */
+  tcvEstimateLowUsd: number | null;
+  tcvEstimateHighUsd: number | null;
   tcvEstimateMidUsd: number | null;
   tcvIsEstimate: boolean;
   tcvBasis: string | null;
+  /** known | estimated | not_reliably_estimable */
+  tcvConfidence: string | null;
   contractEventType: string | null;
   primaryMacroServiceLine: string | null;
   primaryMicroServiceLine: string | null;
@@ -139,6 +144,25 @@ export function formatTcv(usd: number | null, isEstimate: boolean): string {
   if (usd >= 1_000_000_000) return `${prefix}$${(usd / 1_000_000_000).toFixed(1)}bn`;
   if (usd >= 1_000_000) return `${prefix}$${(usd / 1_000_000).toFixed(0)}m`;
   return `${prefix}$${(usd / 1_000).toFixed(0)}k`;
+}
+
+/**
+ * §16 — external TCV presentation.
+ *   disclosed  -> "$120m"
+ *   inferred   -> "Est. $18m-$27m"   (a range, never a midpoint stated as fact)
+ *   withheld   -> "Not reliably estimable"
+ * Never exposes confidence scores, comparable counts or methodology.
+ */
+export function formatTcvDisplay(e: {
+  tcvCommittedUsd: number | null;
+  tcvEstimateLowUsd: number | null;
+  tcvEstimateHighUsd: number | null;
+}): string {
+  if (e.tcvCommittedUsd != null) return formatTcv(e.tcvCommittedUsd, false);
+  if (e.tcvEstimateLowUsd != null && e.tcvEstimateHighUsd != null) {
+    return `Est. ${formatTcv(e.tcvEstimateLowUsd, false)}–${formatTcv(e.tcvEstimateHighUsd, false)}`;
+  }
+  return "Not reliably estimable";
 }
 
 export function formatDate(iso: string | null): string {

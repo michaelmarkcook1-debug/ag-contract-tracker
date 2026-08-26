@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
+import { EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatTcvDisplay, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,7 +41,7 @@ function ConfidenceBadge({ score }: { score: number }) {
 
 // ── Detail Panel ─────────────────────────────────────────────────────────────
 function EventDetailPanel({ event }: { event: EventSummary }) {
-  const tcv = event.tcvCommittedUsd ?? event.tcvEstimateMidUsd;
+  const tcvLabel = formatTcvDisplay(event);   // §16: disclosed | Est. range | Not reliably estimable
 
   return (
     <div className="space-y-6 pb-8">
@@ -77,7 +77,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
                 <PairedRow l1="Provider" v1={event.vendorName} l2="Industry" v2={event.industry} />
                 <PairedRow l1="Macro Service" v1={event.primaryMacroServiceLine} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
                 <PairedRow l1="Micro Service" v1={event.primaryMicroServiceLine} l2="Country" v2={null} />
-                <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcv ? formatTcv(tcv, event.tcvIsEstimate) : null} v2Class="text-emerald-400 font-mono font-semibold" />
+                <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcvLabel} v2Class="text-emerald-400 font-mono font-semibold" />
                 <PairedRow l1="Contract Type" v1={event.contractEventType ? (CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType) : null} l2="Length" v2={event.contractLengthMonths ? `${event.contractLengthMonths} months` : null} />
                 <PairedRow l1="Start Date" v1={formatDate(event.announcementDate)} l2="TCV Basis" v2={event.tcvBasis} />
                 <PairedRow l1="Confidence" v1={`${Math.round(event.confidenceScore * 100)}%`} l2="Source" v2={event.originalArticleUrl ? "See link below" : null} />
@@ -116,7 +116,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
               <>
                 <PairedRow l1="Company" v1={event.primaryEntityName ?? event.vendorName} l2="Industry" v2={event.industry} />
                 <PairedRow l1="Announcement" v1={event.eventType ? (FINANCIAL_EVENT_TYPE_LABELS[event.eventType] ?? event.eventType.replace(/_/g, " ")) : null} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
-                <PairedRow l1="Reported Value" v1={event.tcvCommittedUsd || event.tcvEstimateMidUsd ? formatTcv(event.tcvCommittedUsd ?? event.tcvEstimateMidUsd, event.tcvIsEstimate) : null} l2="Date" v2={formatDate(event.announcementDate)} />
+                <PairedRow l1="Reported Value" v1={event.tcvCommittedUsd ? formatTcv(event.tcvCommittedUsd, false) : null} l2="Date" v2={formatDate(event.announcementDate)} />
                 <PairedRow l1="Confidence" v1={`${(event.confidenceScore * 100).toFixed(0)}%`} l2="Source" v2={event.originalArticleUrl ? new URL(event.originalArticleUrl).hostname.replace(/^www\./, "") : null} />
               </>
             )}
@@ -218,9 +218,12 @@ function EntityNames({ event }: { event: EventSummary }) {
 
 function EventValueCell({ event }: { event: EventSummary }) {
   if (event.family === "CONTRACT") {
-    const tcv = event.tcvCommittedUsd ?? event.tcvEstimateMidUsd;
-    if (!tcv) return null;
-    return <span className="font-mono text-xs font-semibold text-emerald-400">{formatTcv(tcv, event.tcvIsEstimate)}</span>;
+    const tcvLabel = formatTcvDisplay(event);   // §16: disclosed | Est. range | Not reliably estimable
+    // §16 — withheld values render honestly rather than disappearing.
+    if (tcvLabel === "Not reliably estimable") {
+      return <span className="font-mono text-xs text-zinc-600">—</span>;
+    }
+    return <span className="font-mono text-xs font-semibold text-emerald-400">{tcvLabel}</span>;
   }
   if (event.family === "M_AND_A" && event.dealValueUsd) {
     return <span className="font-mono text-xs font-semibold text-violet-400">{formatTcv(event.dealValueUsd, false)}</span>;

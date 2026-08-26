@@ -11,9 +11,12 @@ export default async function VendorPage({ params }: { params: Promise<{ slug: s
   const vendor = await getVendorProfile(slug);
   if (!vendor) notFound();
 
-  const totalTcv = vendor.recentEvents
-    .filter((e) => e.family === "CONTRACT")
-    .reduce((sum, e) => sum + (e.tcvCommittedUsd ?? e.tcvEstimateMidUsd ?? 0), 0);
+  // §17 — known and inferred value must never be silently blended into one
+  // headline figure. This previously summed `tcvCommittedUsd ?? tcvEstimateMidUsd`,
+  // so a disclosed total quietly absorbed estimated values. Disclosed only.
+  const contracts = vendor.recentEvents.filter((e) => e.family === "CONTRACT");
+  const totalTcv = contracts.reduce((sum, e) => sum + (e.tcvCommittedUsd ?? 0), 0);
+  const disclosedCount = contracts.filter((e) => e.tcvCommittedUsd != null).length;
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
@@ -55,9 +58,9 @@ export default async function VendorPage({ params }: { params: Promise<{ slug: s
         {totalTcv > 0 && (
           <Card className="bg-emerald-500/5 border-emerald-500/20">
             <CardContent className="pt-3 pb-3">
-              <div className="text-[10px] text-emerald-500 font-medium mb-2 uppercase tracking-wide">Contract TCV</div>
+              <div className="text-[10px] text-emerald-500 font-medium mb-2 uppercase tracking-wide">Disclosed TCV</div>
               <div className="text-xl font-bold tabular-nums text-emerald-400">{formatTcv(totalTcv, false)}</div>
-              <p className="text-xs text-muted-foreground">visible value</p>
+              <p className="text-xs text-muted-foreground">{disclosedCount} disclosed contract{disclosedCount !== 1 ? "s" : ""}</p>
             </CardContent>
           </Card>
         )}

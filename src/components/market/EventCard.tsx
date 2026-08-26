@@ -1,6 +1,6 @@
 "use client";
 
-import { EventSummary, formatTcv, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
+import { EventSummary, formatTcv, formatTcvDisplay, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Building2, Calendar, ExternalLink } from "lucide-react";
@@ -14,7 +14,7 @@ interface EventCardProps {
 
 function EventMeta({ event }: { event: EventSummary }) {
   if (event.family === "CONTRACT") {
-    const tcv = event.tcvCommittedUsd ?? event.tcvEstimateMidUsd;
+    const tcvLabel = formatTcvDisplay(event);   // §16 disclosed | Est. range | withheld
     return (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
         {event.vendorName && <span className="font-medium text-foreground/80">{event.vendorName}</span>}
@@ -24,10 +24,8 @@ function EventMeta({ event }: { event: EventSummary }) {
         {event.clientAnonymised && event.clientDescriptor && (
           <span>→ {event.clientDescriptor}</span>
         )}
-        {tcv && (
-          <span className="font-mono font-semibold text-emerald-400">
-            {formatTcv(tcv, event.tcvIsEstimate)}
-          </span>
+        {tcvLabel !== "Not reliably estimable" && (
+          <span className="font-mono font-semibold text-emerald-400">{tcvLabel}</span>
         )}
         {event.contractEventType && (
           <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-zinc-400">

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { EventSummary, formatDate } from "@/lib/types";
+import { EventSummary, formatDate, formatTcvDisplay } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -193,7 +193,7 @@ function ReviewCard({ event, isProcessing, isSelected, onToggleSelect, onApprove
   onApprove: () => void;
   onReject: () => void;
 }) {
-  const tcv = event.tcvCommittedUsd ?? event.tcvEstimateMidUsd;
+  const tcvLabel = formatTcvDisplay(event);   // §16 disclosed | Est. range | withheld
   const confidence = event.confidenceScore;
   const confColor = confidence >= 0.75 ? "text-emerald-400" : confidence >= 0.55 ? "text-yellow-400" : "text-red-400";
 
@@ -236,7 +236,7 @@ function ReviewCard({ event, isProcessing, isSelected, onToggleSelect, onApprove
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
             {event.vendorName && <span className="font-medium text-foreground/70">{event.vendorName}</span>}
             {event.clientName && !event.clientAnonymised && <span>→ {event.clientName}</span>}
-            {tcv && <span className="font-mono text-emerald-400/80">${tcv >= 1e9 ? `${(tcv/1e9).toFixed(1)}bn` : `${(tcv/1e6).toFixed(0)}m`}</span>}
+            {tcvLabel !== "Not reliably estimable" && <span className="font-mono text-emerald-400/80">{tcvLabel}</span>}
             {event.primaryMacroServiceLine && <span>{event.primaryMacroServiceLine}</span>}
           </div>
 

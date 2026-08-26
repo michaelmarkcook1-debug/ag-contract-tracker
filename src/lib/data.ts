@@ -12,8 +12,9 @@ function shapeEvent(e: {
     vendorRaw: string | null; vendor: { canonicalName: string } | null;
     clientRaw: string | null; client: { canonicalName: string } | null;
     clientAnonymised: boolean; clientDescriptor: string | null;
-    tcvCommittedUsd: number | null; tcvEstimateMidUsd: number | null;
-    tcvIsEstimate: boolean; tcvBasis: string;
+    tcvCommittedUsd: number | null; tcvEstimateLowUsd: number | null;
+    tcvEstimateMidUsd: number | null; tcvEstimateHighUsd: number | null;
+    tcvIsEstimate: boolean; tcvBasis: string; tcvConfidence: string;
     contractEventType: string | null; primaryMacroServiceLine: string | null; primaryMicroServiceLine: string | null;
     contractLengthMonths: number | null; scopeSummary: string | null;
   } | null;
@@ -56,21 +57,25 @@ function shapeEvent(e: {
     clientAnonymised: cd?.clientAnonymised ?? false,
     clientDescriptor: cd?.clientDescriptor ?? null,
     tcvCommittedUsd: cd?.tcvCommittedUsd ?? null,
-    // §4/§5 QUARANTINE — historic inferred TCV is withheld from every read path.
+    // §4/§5 QUARANTINE vs §15 APPROVED INFERENCE.
     //
-    // These 552 values were produced by an extraction LLM instructed to guess
-    // undisclosed contract values from industry benchmarks. That instruction is
-    // removed, and no approved inference engine exists, so no inferred value is
-    // currently defensible as market intelligence.
+    // Two kinds of estimate exist in this column. Values written by the old
+    // extraction prompt (which guessed from industry benchmarks) remain
+    // withheld — 552 rows, preserved in the database for audit but never
+    // surfaced. Values produced by the approved comparable engine carry
+    // INFERRED_BASIS and are surfaced as a RANGE.
     //
-    // The stored column is untouched (audit/history preserved); this suppresses
-    // it at the read layer only, so it is fully reversible by deleting this
-    // line. The property is kept and returned null rather than removed, so the
-    // API shape is unchanged and the UI falls through to its existing
-    // "Undisclosed" treatment instead of rendering a false "~$X" estimate.
-    //
-    // Re-enable ONLY when values come from an approved inference engine.
-    tcvEstimateMidUsd: null,
+    // Gated on basis, not on tcvIsEstimate, because both populations set that
+    // flag. Legacy rows have no low/high bounds, so they could not be rendered
+    // as a defensible range even if they were let through.
+    ...(cd?.tcvBasis === "comparable_inferred_v1"
+      ? {
+          tcvEstimateLowUsd: cd?.tcvEstimateLowUsd ?? null,
+          tcvEstimateHighUsd: cd?.tcvEstimateHighUsd ?? null,
+          tcvEstimateMidUsd: cd?.tcvEstimateMidUsd ?? null,
+        }
+      : { tcvEstimateLowUsd: null, tcvEstimateHighUsd: null, tcvEstimateMidUsd: null }),
+    tcvConfidence: cd?.tcvConfidence ?? null,
     tcvIsEstimate: cd?.tcvIsEstimate ?? false,
     tcvBasis: cd?.tcvBasis ?? null,
     contractEventType: cd?.contractEventType ?? null,
@@ -103,7 +108,8 @@ const eventInclude = {
       vendorRaw: true, vendor: { select: { canonicalName: true } },
       clientRaw: true, client: { select: { canonicalName: true } },
       clientAnonymised: true, clientDescriptor: true,
-      tcvCommittedUsd: true, tcvEstimateMidUsd: true, tcvIsEstimate: true, tcvBasis: true,
+      tcvCommittedUsd: true, tcvEstimateLowUsd: true, tcvEstimateMidUsd: true, tcvEstimateHighUsd: true,
+      tcvIsEstimate: true, tcvBasis: true, tcvConfidence: true,
       contractEventType: true, primaryMacroServiceLine: true, primaryMicroServiceLine: true, contractLengthMonths: true,
       scopeSummary: true,
     },
