@@ -1,6 +1,6 @@
 /** §15/§16/§19 validation for the comparable TCV engine. */
 import { prisma } from "../../src/lib/db";
-import { inferTcv, loadComparablePools, MIN_ANCHORS, MAX_SPREAD } from "../../src/lib/tcv/infer";
+import { inferTcv, loadComparablePools, clampEstimate, isApprovedEstimateBasis, MIN_ANCHORS } from "../../src/lib/tcv/infer";
 import { formatTcvDisplay } from "../../src/lib/types";
 
 let pass = 0, fail = 0;
@@ -8,34 +8,26 @@ const ok = (n: string, c: boolean, d = "") => { c ? pass++ : fail++; console.log
 
 async function main() {
   const pools = await loadComparablePools();
-  console.log(`comparable cells built: ${pools.size}  (gates: N>=${MIN_ANCHORS}, spread<=${MAX_SPREAD}x)\n`);
+  console.log(`comparable cells built: ${pools.size}  (min anchors ${MIN_ANCHORS}; line → segment → global fallback)\n`);
 
-  console.log("=== §15 GATES ===");
+  console.log("=== INFERENCE (2026-09-08 policy: estimate, label, never mix with disclosed) ===");
   const disclosed = await inferTcv({ serviceLine: "ITO", sourceType: "procurement_notice", contractLengthMonths: 36, disclosedUsd: 120_000_000 });
-  ok("disclosed value -> no inference attempted", disclosed.state === "NOT_RELIABLY_ESTIMABLE", disclosed.state === "NOT_RELIABLY_ESTIMABLE" ? disclosed.reason : "");
-
-  for (const generic of ["", "unspecified", "other", "general services"]) {
+  ok("disclosed value -> no inference attempted", disclosed.state === "NOT_RELIABLY_ESTIMABLE");
+  for (const generic of ["", "unspecified", "other"]) {
     const r = await inferTcv({ serviceLine: generic, sourceType: "wire_service", contractLengthMonths: 36 });
-    ok(`generic line "${generic || "(blank)"}" refused`, r.state === "NOT_RELIABLY_ESTIMABLE");
+    ok(`generic line "${generic || "(blank)"}" falls back to a wider pool`, r.state === "INFERRED" && r.tier !== "line", r.state === "INFERRED" ? r.basis : r.reason);
   }
-
   const bpo = await inferTcv({ serviceLine: "BPO", sourceType: "procurement_notice", contractLengthMonths: 36 });
-  ok("over-dispersed pool (BPO 24.7x) refused", bpo.state === "NOT_RELIABLY_ESTIMABLE", bpo.state === "NOT_RELIABLY_ESTIMABLE" ? bpo.reason : "");
-
-  const ito = await inferTcv({ serviceLine: "ITO", sourceType: "wire_service", contractLengthMonths: 60 });
-  ok("ANNOUNCED/ITO (9.8x) refused", ito.state === "NOT_RELIABLY_ESTIMABLE", ito.state === "NOT_RELIABLY_ESTIMABLE" ? ito.reason : "");
-
+  ok("dispersed pool still answers with a range", bpo.state === "INFERRED" && bpo.lowUsd > 0 && bpo.highUsd > bpo.lowUsd, bpo.state === "INFERRED" ? `${formatTcvDisplay({ tcvCommittedUsd: null, tcvEstimateLowUsd: bpo.lowUsd, tcvEstimateHighUsd: bpo.highUsd })} (${bpo.anchors} anchors, ${bpo.tier})` : bpo.reason);
   const unknownLine = await inferTcv({ serviceLine: "Underwater Basket Weaving", sourceType: "wire_service", contractLengthMonths: 12 });
-  ok("unknown service line refused", unknownLine.state === "NOT_RELIABLY_ESTIMABLE");
-
-  console.log("\n=== §15 ACCEPTED CELLS ===");
-  for (const [line, st] of [["ITO", "procurement_notice"], ["AI & Analytics", "wire_service"], ["Cybersecurity", "wire_service"]] as const) {
-    const r = await inferTcv({ serviceLine: line, sourceType: st, contractLengthMonths: 36 });
-    if (r.state === "INFERRED") {
-      const sane = r.lowUsd > 0 && r.highUsd > r.lowUsd && r.anchors >= MIN_ANCHORS;
-      ok(`${line} (${st}) -> range`, sane, `${formatTcvDisplay({ tcvCommittedUsd: null, tcvEstimateLowUsd: r.lowUsd, tcvEstimateHighUsd: r.highUsd })} from ${r.anchors} anchors`);
-    } else ok(`${line} (${st}) -> range`, false, r.reason);
-  }
+  ok("unknown service line falls back to the segment", unknownLine.state === "INFERRED" && unknownLine.tier === "segment");
+  const ito = await inferTcv({ serviceLine: "ITO", sourceType: "wire_service", contractLengthMonths: 60 });
+  ok("specific line uses its own cell", ito.state === "INFERRED" && ito.tier === "line" && ito.basis.startsWith("comparable_inferred_v2:line"), ito.state === "INFERRED" ? ito.basis : ito.reason);
+  const c = await clampEstimate("wire_service", 1_000, 5_000_000_000_000);
+  ok("absurd model range is clamped to the segment envelope", c.clamped && c.lowUsd >= 1_000 && c.highUsd < 5_000_000_000_000, `${c.lowUsd}–${c.highUsd}`);
+  const c2 = await clampEstimate("wire_service", 20_000_000, 60_000_000);
+  ok("plausible model range passes untouched", !c2.clamped && c2.lowUsd === 20_000_000 && c2.highUsd === 60_000_000);
+  ok("basis helper accepts v1, v2 and model estimates only", isApprovedEstimateBasis("comparable_inferred_v1") && isApprovedEstimateBasis("comparable_inferred_v2:segment") && isApprovedEstimateBasis("model_estimated_v2: five-year global deal") && !isApprovedEstimateBasis("model_estimated") && !isApprovedEstimateBasis("general IT-services benchmark; term and geography adjusted"));
 
   console.log("\n=== §16 PRESENTATION ===");
   ok("disclosed renders as fact", formatTcvDisplay({ tcvCommittedUsd: 120_000_000, tcvEstimateLowUsd: null, tcvEstimateHighUsd: null }) === "$120m");
@@ -44,16 +36,15 @@ async function main() {
   ok("no midpoint presented as fact", !/^\$\d/.test(rng), rng);
   ok("withheld renders honestly", formatTcvDisplay({ tcvCommittedUsd: null, tcvEstimateLowUsd: null, tcvEstimateHighUsd: null }) === "Not reliably estimable");
 
-  console.log("\n=== §19 POPULATION PATHOLOGY ===");
+  console.log("\n=== POPULATION SANITY ===");
   const verdicts = [];
   for (const [line, st] of [["ITO","procurement_notice"],["Digital & Cloud","procurement_notice"],["AI & Analytics","wire_service"],
                             ["Engineering IT","wire_service"],["Cybersecurity","wire_service"],["Network & Telco","wire_service"]] as const) {
     const r = await inferTcv({ serviceLine: line, sourceType: st, contractLengthMonths: 36 });
-    if (r.state === "INFERRED") verdicts.push({ line, low: r.lowUsd, high: r.highUsd });
+    if (r.state === "INFERRED") verdicts.push({ line, low: r.lowUsd, high: r.highUsd, tier: r.tier });
   }
-  const identical = new Set(verdicts.map(v => `${v.low}|${v.high}`)).size;
-  ok("no identical-range clustering", identical === verdicts.length, `${verdicts.length} cells, ${identical} distinct ranges`);
-  ok("ranges are bounded (high/low <= 6x)", verdicts.every(v => v.high / v.low <= MAX_SPREAD + 0.01));
+  ok("every populated line answers", verdicts.length === 6, `${verdicts.length}/6`);
+  ok("line-level cells give distinct ranges", new Set(verdicts.filter(v => v.tier === "line").map(v => `${v.low}|${v.high}`)).size === verdicts.filter(v => v.tier === "line").length);
 
   console.log(`\n${pass} passed, ${fail} failed`);
   await prisma.$disconnect();

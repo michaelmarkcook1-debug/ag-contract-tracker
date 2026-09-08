@@ -62,6 +62,13 @@ model SourceEvent {
   extractionConfidence Float    @default(0)
   processingStatus     String   @default("pending")
   processingError      String?
+  // Why an article was excluded ("rules:hard_exclude", "rules:vendor_gate",
+  // "model:no_tracked_vendor", "model:excluded_noise", …). Written with
+  // processingStatus "excluded" so the URL is never re-triaged — before this,
+  // model rejections left no row and were re-bought on every run.
+  exclusionReason      String?
+  // Publisher URL behind an aggregator redirect (Google News), once resolved.
+  publisherUrl         String?
   ingestionRunId       String?
   ingestionRun         IngestionRun? @relation(fields: [ingestionRunId], references: [id])
 
@@ -70,6 +77,7 @@ model SourceEvent {
 
   @@index([processingStatus])
   @@index([publicationDate])
+  @@index([publisherUrl])
 }
 
 // ─── Canonical Market Events ──────────────────────────────────────────────────
@@ -92,6 +100,12 @@ model CanonicalMarketEvent {
   analystInsight           String?
   analystInsightConfidence Float?
   originalArticleUrl       String?
+  // Machine-readable reason the event sits in needs_review, e.g.
+  // "low_confidence:0.55" or "event_type_invalid:technology_alliance".
+  reviewReason             String?
+  // Counterparty as extracted (client / target / partner), every family.
+  // Basis for cross-run dedup; the family detail tables are not always filled.
+  counterpartyRaw          String?
 
   primaryEntityId String?
   primaryEntity   Entity? @relation("PrimaryEntity", fields: [primaryEntityId], references: [id])
@@ -305,6 +319,13 @@ model IngestionRun {
   eventsExtracted Int      @default(0)
   eventsPublished Int      @default(0)
   eventsQueued    Int      @default(0)
+  // Funnel stages between "found" and "extracted", so a run is auditable.
+  articlesRelevant Int     @default(0) // survived rules, vendor gate, age cutoff
+  articlesStale    Int     @default(0) // skipped: older than maxArticleAgeDays
+  articlesTriaged  Int     @default(0) // sent to the triage model
+  articlesExcluded Int     @default(0) // triage/analysis judged out of scope
+  articlesDeferred Int     @default(0) // relevant, not reached within the budget
+  articlesMerged   Int     @default(0) // attached to an existing event (dedup)
   errors          String   @default("[]")
   // Real LLM spend for the run, summed from Messages API usage fields.
   inputTokens     Int      @default(0)

@@ -29,6 +29,7 @@ interface RunResult {
     message?: string;
     phase?: string; sourcesAvailable?: number; sourcesProcessed?: number; sourcesTotal?: number;
     articlesFound?: number; articlesDuped?: number; eventsExtracted?: number;
+    articlesStale?: number; articlesRelevant?: number; articlesTriaged?: number; articlesExcluded?: number;
     eventsPublished?: number; eventsQueued?: number; eventsDeferred?: number; errors?: string[];
   };
 }
@@ -53,10 +54,16 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
     setLastResult(null);
     setBatchProgress("");
 
-    const BATCH_SIZE = 10; // sources per API call — fits in 60s timeout
+    // Sources per API call. The route runs under a 300s ceiling with a 200s
+    // model budget, so a batch this size finishes with room to spare.
+    const BATCH_SIZE = 30;
     const limit = maxSources === "all" ? 999 : parseInt(maxSources);
     let offset = 0;
     let totalArticles = 0;
+    let totalStale = 0;
+    let totalRelevant = 0;
+    let totalTriaged = 0;
+    let totalExcluded = 0;
     let totalPublished = 0;
     let totalQueued = 0;
     let totalDeferred = 0;
@@ -98,6 +105,10 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
         const r = data.result;
         if (r) {
           totalArticles += r.articlesFound ?? 0;
+          totalStale += r.articlesStale ?? 0;
+          totalRelevant += r.articlesRelevant ?? 0;
+          totalTriaged += r.articlesTriaged ?? 0;
+          totalExcluded += r.articlesExcluded ?? 0;
           totalPublished += r.eventsPublished ?? 0;
           totalQueued += r.eventsQueued ?? 0;
           totalDeferred += r.eventsDeferred ?? 0;
@@ -120,6 +131,10 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
         result: {
           message: `Pipeline complete — ${batchNum} batches.`,
           articlesFound: totalArticles,
+          articlesStale: totalStale,
+          articlesRelevant: totalRelevant,
+          articlesTriaged: totalTriaged,
+          articlesExcluded: totalExcluded,
           eventsPublished: totalPublished,
           eventsQueued: totalQueued,
           eventsDeferred: totalDeferred,
@@ -161,7 +176,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
       {status.hasApiKey && (
         <div className="flex items-center gap-2 text-xs text-emerald-400">
           <CheckCircle2 className="h-3.5 w-3.5" />
-          LLM extraction enabled (Claude claude-haiku-4-5)
+          LLM extraction enabled (triage: Haiku 4.5 · analysis: Sonnet 5)
         </div>
       )}
 
@@ -223,9 +238,14 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
                       <div><div className="font-mono font-bold text-base text-amber-400">{lastResult.result.eventsQueued}</div>needs review</div>
                     </div>
                   )}
+                  {lastResult.result.articlesTriaged != null && (
+                    <p className="text-muted-foreground mt-1 font-mono">
+                      {lastResult.result.articlesRelevant} candidates · {lastResult.result.articlesTriaged} triaged · {lastResult.result.articlesExcluded} excluded by the model · {lastResult.result.articlesStale} skipped as stale
+                    </p>
+                  )}
                   {(lastResult.result.eventsDeferred ?? 0) > 0 && (
                     <p className="text-muted-foreground mt-1">
-                      {lastResult.result.eventsDeferred} relevant articles deferred to the next run (per-run LLM budget). Run again to ingest more.
+                      {lastResult.result.eventsDeferred} candidates deferred to the next run (model budget). Run again to ingest more.
                     </p>
                   )}
                   {(lastResult.result.errors?.length ?? 0) > 0 && (

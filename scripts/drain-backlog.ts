@@ -13,6 +13,13 @@ const CONCURRENCY     = 6;
 const PER_BATCH_MS    = 8 * 60_000;
 const MAX_ROUNDS      = 12;
 
+// A dropped Neon WebSocket surfaces as an unhandled ErrorEvent outside any
+// awaited chain and would kill the whole run; log it and carry on — the
+// pipeline retries nothing, but the next batch reconnects.
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandled rejection (continuing):", String(reason).slice(0, 200));
+});
+
 async function main() {
   const t0 = Date.now();
   const batches = Math.ceil(TOTAL_SOURCES / WINDOW);

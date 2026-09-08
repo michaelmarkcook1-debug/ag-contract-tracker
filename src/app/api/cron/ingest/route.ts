@@ -1,28 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { runPipeline, TOTAL_SOURCES } from "@/lib/ingestion/pipeline";
+import { runPipeline, SCHEDULED_SWEEP } from "@/lib/ingestion/pipeline";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
-// Sources crawled per fire. Crawling is cheap; the LLM cap is the real limiter,
-// so we crawl a wide window but only extract up to `maxExtractions`.
-const WINDOW = 15;
-
-// ⏸  SCHEDULE PAUSED (2026-08-22) pending vendor-universe sign-off.
-// The endpoint still works when called manually; only the automatic daily
-// trigger is switched off, so no unattended run fires against the expanded
-// 114-source universe before scope is agreed.
+// GET /api/cron/ingest — invoked by Vercel Cron once a day (vercel.json).
 //
-// To resume, add this back to vercel.json (Hobby allows at most one run/day):
-//   "crons": [{ "path": "/api/cron/ingest", "schedule": "0 7 * * *" }]
-// Note vercel.json rejects any key outside its schema — the schedule cannot be
-// "commented out" in that file, it has to be removed or restored wholesale.
-//
-// GET /api/cron/ingest — invoked by Vercel Cron on a schedule.
-// Each fire processes one rotating window of sources so that, over successive
-// runs, the whole source list is covered. The window advances automatically by
-// counting prior "cron" runs — no cursor table needed.
+// One fire crawls EVERY source. With date-bounded Google News queries and
+// persisted exclusions, a day's worth of new candidates is a few hundred
+// articles, which fits the 300s Fluid Compute ceiling at concurrency 4. The
+// previous design rotated a 15-source window with 12 model calls per fire,
+// which needed ten days to visit each source once and looked at almost
+// nothing. Anything deferred by the budget is picked up on the next fire.
 export async function GET(req: NextRequest) {
   // If CRON_SECRET is configured, require it (Vercel Cron sends it as a Bearer
   // token). If it's unset, allow the request so the job works out of the box.
@@ -35,25 +24,18 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const priorCronRuns = await prisma.ingestionRun.count({ where: { runType: "cron" } });
-    const sourceOffset = TOTAL_SOURCES > 0 ? (priorCronRuns * WINDOW) % TOTAL_SOURCES : 0;
-
-    const result = await runPipeline({
-      sourceFilter: "all",
-      maxSourcesPerRun: WINDOW,
-      sourceOffset,
-      maxExtractions: 12,
-      runType: "cron",
-    });
-
+    const result = await runPipeline({ ...SCHEDULED_SWEEP, runType: "cron" });
     return NextResponse.json({
       success: true,
-      window: { offset: sourceOffset, size: WINDOW, totalSources: TOTAL_SOURCES },
       result: {
         articlesFound: result.articlesFound,
+        articlesRelevant: result.articlesRelevant,
+        articlesTriaged: result.articlesTriaged,
+        articlesExcluded: result.articlesExcluded,
         eventsPublished: result.eventsPublished,
         eventsQueued: result.eventsQueued,
         eventsDeferred: result.eventsDeferred,
+        costUsd: result.usage.costUsd,
         errors: result.errors.length,
       },
     });

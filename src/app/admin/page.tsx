@@ -80,12 +80,12 @@ export default async function AdminPage() {
                 <Separator />
                 <div className="space-y-2 text-xs text-muted-foreground">
                   {[
-                    ["1. Crawl", "Fetch RSS/API sources. Hash each article URL."],
-                    ["2. Dedup", "Skip articles already in SourceEvent table."],
-                    ["3. Relevance filter", "Rule-based title scan — exclude financial results."],
-                    ["4. Extract", "LLM (Haiku) or rule-based → family, entities, TCV, dates."],
-                    ["5. Confidence gate", "≥0.72 → auto-publish. <0.72 → needs_review queue."],
-                    ["6. Store", "SourceEvent + CanonicalMarketEvent + family detail record."],
+                    ["1. Crawl", "Fetch RSS/API sources (Google News queries are date-bounded)."],
+                    ["2. Dedup", "Skip URLs already stored — including ones previously excluded."],
+                    ["3. Select", "Age cutoff (60 days), noise rules, tracked-vendor gate. Every rejection is recorded with its reason."],
+                    ["4. Retrieve + triage", "Publisher page fetched (Google News links decoded). Haiku: family, vendor, counterparty. Out-of-scope articles are recorded, not re-bought."],
+                    ["5. Dedupe + analyse", "Re-reports attach to the stored event as extra sources (vendor, counterparty, ±14 days). Sonnet on contracts and M&A: scope, value (only if stated)."],
+                    ["6. Gate + store", "Evidence gate: vendor resolved, counterparty named, event type valid, award language present. Otherwise needs_review with the reasons."],
                   ].map(([step, desc]) => (
                     <div key={step} className="flex gap-3">
                       <span className="text-zinc-500 font-mono w-28 shrink-0">{step}</span>
@@ -136,9 +136,13 @@ export default async function AdminPage() {
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Started</th>
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Type</th>
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Status</th>
-                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">Articles</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">Found</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Survived dedup, age cutoff and rules">Candidates</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">Triaged</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Judged out of scope by the model">Excluded</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Published</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Queued</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">Deferred</th>
                 </tr>
               </thead>
               <tbody>
@@ -154,12 +158,16 @@ export default async function AdminPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesFound}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesRelevant}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesTriaged}</td>
+                    <td className="px-3 py-2 text-right font-mono text-zinc-500">{run.articlesExcluded}</td>
                     <td className="px-3 py-2 text-right font-mono text-emerald-400">{run.eventsPublished}</td>
                     <td className="px-3 py-2 text-right font-mono text-amber-400">{run.eventsQueued}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesDeferred}</td>
                   </tr>
                 ))}
                 {runs.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">No runs yet</td></tr>
+                  <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">No runs yet</td></tr>
                 )}
               </tbody>
             </table>

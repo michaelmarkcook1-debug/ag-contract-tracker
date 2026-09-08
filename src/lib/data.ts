@@ -1,12 +1,14 @@
 import { prisma } from "./db";
 import { EventSummary, EventFilters, EventsResponse, DashboardStats, VendorProfile } from "./types";
 import { TRACKED_VENDORS } from "./ingestion/sources";
+import { isApprovedEstimateBasis } from "./tcv/infer";
 
 function shapeEvent(e: {
   id: string; family: string; eventType: string; canonicalTitle: string;
   announcementDate: Date | null; geography: string; industry: string | null;
   confidenceScore: number; commercialRelevanceScore: number; publicationStatus: string;
   analystInsight: string | null; originalArticleUrl: string | null;
+  reviewReason?: string | null;
   primaryEntity: { canonicalName: string; slug: string } | null;
   contractDetails: {
     vendorRaw: string | null; vendor: { canonicalName: string } | null;
@@ -48,6 +50,7 @@ function shapeEvent(e: {
     confidenceScore: e.confidenceScore,
     commercialRelevanceScore: e.commercialRelevanceScore,
     publicationStatus: e.publicationStatus,
+    reviewReason: e.reviewReason ?? null,
     analystInsight: e.analystInsight,
     primaryEntityName: e.primaryEntity?.canonicalName ?? null,
     primaryEntitySlug: e.primaryEntity?.slug ?? null,
@@ -57,18 +60,13 @@ function shapeEvent(e: {
     clientAnonymised: cd?.clientAnonymised ?? false,
     clientDescriptor: cd?.clientDescriptor ?? null,
     tcvCommittedUsd: cd?.tcvCommittedUsd ?? null,
-    // §4/§5 QUARANTINE vs §15 APPROVED INFERENCE.
-    //
-    // Two kinds of estimate exist in this column. Values written by the old
-    // extraction prompt (which guessed from industry benchmarks) remain
-    // withheld — 552 rows, preserved in the database for audit but never
-    // surfaced. Values produced by the approved comparable engine carry
-    // INFERRED_BASIS and are surfaced as a RANGE.
-    //
-    // Gated on basis, not on tcvIsEstimate, because both populations set that
-    // flag. Legacy rows have no low/high bounds, so they could not be rendered
-    // as a defensible range even if they were let through.
-    ...(cd?.tcvBasis === "comparable_inferred_v1"
+    // Estimates are surfaced as a RANGE when they come from an approved method
+    // (the comparable engine, or the extraction model's labelled range — see
+    // tcv/infer.ts). Rows written by the pre-2026 prompt, which guessed a single
+    // number from benchmarks and kept no bounds, stay withheld until the
+    // backfill replaces them. Gated on basis, not tcvIsEstimate, because both
+    // populations set that flag.
+    ...(isApprovedEstimateBasis(cd?.tcvBasis)
       ? {
           tcvEstimateLowUsd: cd?.tcvEstimateLowUsd ?? null,
           tcvEstimateHighUsd: cd?.tcvEstimateHighUsd ?? null,

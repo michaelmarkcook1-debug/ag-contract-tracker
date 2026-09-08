@@ -6,11 +6,23 @@
 import { prisma } from "../src/lib/db";
 import { runPipeline, TOTAL_SOURCES } from "../src/lib/ingestion/pipeline";
 
-const WINDOW = 15;             // sources per batch
-const MAX_EXTRACTIONS = 40;    // per batch
-const COST_CAP_USD = 5.0;
-const TIME_CAP_MS = 25 * 60 * 1000;
+const WINDOW = 30;             // sources per batch
+const MAX_EXTRACTIONS = 400;   // per batch
+const CONCURRENCY = 6;
+const BATCH_BUDGET_MS = 8 * 60 * 1000;   // model budget per batch (measured after the crawl)
+const COST_CAP_USD = Number(process.env.COST_CAP ?? 8);
+const TIME_CAP_MS = Number(process.env.TIME_CAP_MIN ?? 40) * 60 * 1000;
 const MAX_ROUNDS = 3;
+// REPROCESS_EXCLUDED=1 re-evaluates URLs previously recorded as excluded — for a
+// sweep right after a rule change, so articles the old rules dropped get another look.
+const REPROCESS = process.env.REPROCESS_EXCLUDED === "1";
+
+// A dropped Neon WebSocket surfaces as an unhandled ErrorEvent outside any
+// awaited chain and would kill the whole run; log it and carry on — the
+// pipeline retries nothing, but the next batch reconnects.
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandled rejection (continuing):", String(reason).slice(0, 200));
+});
 
 async function main() {
   const t0 = Date.now();
@@ -30,14 +42,15 @@ async function main() {
       const offset = b * WINDOW;
       const p = await runPipeline({
         sourceFilter: "all", maxSourcesPerRun: WINDOW, sourceOffset: offset,
-        maxExtractions: MAX_EXTRACTIONS, runType: "manual",
+        maxExtractions: MAX_EXTRACTIONS, concurrency: CONCURRENCY, timeBudgetMs: BATCH_BUDGET_MS,
+        reprocessExcluded: REPROCESS, runType: "manual",
       });
       cost += p.usage.costUsd; inTok += p.usage.inputTokens; outTok += p.usage.outputTokens;
       found += p.articlesFound; duped += p.articlesDuped; irrelevant += p.articlesIrrelevant;
       extracted += p.eventsExtracted; published += p.eventsPublished; queued += p.eventsQueued;
       deferred = p.eventsDeferred; errors += p.errors.length;
       roundNew += p.eventsPublished + p.eventsQueued;
-      console.log(`r${round} b${b+1}/${batches} src${offset}-${offset+WINDOW}: found=${String(p.articlesFound).padStart(4)} new=${String(p.eventsPublished+p.eventsQueued).padStart(3)} (pub ${p.eventsPublished}/rev ${p.eventsQueued}) defer=${String(p.eventsDeferred).padStart(4)} $${p.usage.costUsd.toFixed(4)} cum=$${cost.toFixed(3)}`);
+      console.log(`r${round} b${b+1}/${batches} src${offset}-${offset+WINDOW}: found=${String(p.articlesFound).padStart(4)} stale=${String(p.articlesStale).padStart(4)} relevant=${String(p.articlesRelevant).padStart(4)} triaged=${String(p.articlesTriaged).padStart(4)} excl=${String(p.articlesExcluded).padStart(3)} new=${String(p.eventsPublished+p.eventsQueued).padStart(3)} (pub ${p.eventsPublished}/rev ${p.eventsQueued}) defer=${String(p.eventsDeferred).padStart(4)} $${p.usage.costUsd.toFixed(4)} cum=$${cost.toFixed(3)}`);
     }
     console.log(`— round ${round} added ${roundNew} events —`);
     if (roundNew === 0) { console.log("no new events; stopping early"); break; }

@@ -227,6 +227,11 @@ function ReviewCard({ event, isProcessing, isSelected, onToggleSelect, onApprove
             <span className={cn("text-[10px] font-mono ml-auto", confColor)}>
               {(confidence * 100).toFixed(0)}% conf
             </span>
+            {event.reviewReason && (
+              <span className="text-[10px] font-mono text-zinc-500" title="Why this event is in the review queue">
+                {event.reviewReason}
+              </span>
+            )}
           </div>
 
           {/* Title */}

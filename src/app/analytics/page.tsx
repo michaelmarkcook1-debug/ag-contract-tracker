@@ -53,7 +53,7 @@ export default async function AnalyticsPage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total Visible TCV" value={`$${data.totalTcvBn.toFixed(1)}bn`} sub={`${tcvCoverage}% of deals have TCV`} icon={DollarSign} color="text-emerald-400" />
+        <KpiCard label="Total Visible TCV" value={`$${data.totalTcvBn.toFixed(1)}bn`} sub={`${tcvCoverage}% of deals valued · ${data.dealsDisclosed} disclosed, ${data.dealsEstimated} estimated`} icon={DollarSign} color="text-emerald-400" />
         <KpiCard label="Total Deals" value={data.totalDeals.toLocaleString()} sub="published contract records" icon={FileText} color="text-blue-400" />
         <KpiCard label="Avg Deal Value" value={`$${data.avgTcvM.toFixed(0)}m`} sub={`median $${data.medianTcvM.toFixed(0)}m`} icon={TrendingUp} color="text-amber-400" />
         <KpiCard label="Largest Single Deal" value={`$${data.topVendorsByTcv[0]?.tcvBn.toFixed(1) ?? "—"}bn`} sub={data.topVendorsByTcv[0]?.vendor ?? "—"} icon={BarChart3} color="text-violet-400" />

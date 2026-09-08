@@ -51,7 +51,9 @@ async function main() {
   const a = await llmExtract(art("Provider X signs five-year outsourcing agreement with Client Y",
     "Infosys has signed a five-year application outsourcing agreement with Deutsche Bank covering core platforms. No financial terms were disclosed.", "wire_service"));
   ok("A  undisclosed -> tcvUsd null", !!a && a.tcvUsd === null, `tcvUsd=${a?.tcvUsd}`);
-  ok("A  undisclosed -> not estimate", !!a && a.tcvIsEstimate === false, `isEstimate=${a?.tcvIsEstimate}`);
+  // Policy 2026-09-08: an undisclosed value gets a LABELLED estimate range, kept apart from tcvUsd.
+  ok("A  undisclosed -> labelled estimate range", !!a && (a.tcvEstimateLowUsd ?? 0) > 0 && (a.tcvEstimateHighUsd ?? 0) >= (a.tcvEstimateLowUsd ?? 0),
+     `range=${a?.tcvEstimateLowUsd}–${a?.tcvEstimateHighUsd} (${a?.tcvEstimateRationale ?? "no rationale"})`);
 
   // Case B — disclosed value must still extract
   const b = await llmExtract(art("Provider X signs five-year agreement worth $90 million",

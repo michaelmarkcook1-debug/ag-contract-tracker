@@ -1,6 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import { trackedEventScope } from "@/lib/data";
+
+// Contract value for aggregation: the disclosed figure when there is one,
+// otherwise the midpoint of an APPROVED estimate range (comparable engine or the
+// extraction model's labelled range — tcv/infer.ts). Older single-number guesses
+// carry other bases and stay out. Every KPI that sums or averages uses this, and
+// reports how many values are disclosed vs estimated.
+const TCV = Prisma.raw(`COALESCE(cd."tcvCommittedUsd", CASE WHEN cd."tcvIsEstimate" AND (cd."tcvBasis" LIKE 'comparable_inferred_v%' OR cd."tcvBasis" LIKE 'model_estimated_v2%') THEN cd."tcvEstimateMidUsd" END)`);
 
 export interface AnalyticsData {
   // Summary KPIs
@@ -8,7 +16,10 @@ export interface AnalyticsData {
   totalTcvBn: number;
   avgTcvM: number;
   medianTcvM: number;
+  /** Contracts with a value (disclosed or approved estimate). */
   dealsWithTcv: number;
+  dealsDisclosed: number;
+  dealsEstimated: number;
 
   // Time series: annual deal volume + TCV
   byYear: { year: string; deals: number; tcvBn: number; avgM: number }[];
@@ -36,22 +47,25 @@ export interface AnalyticsData {
   monthlyMomentum: { month: string; deals: number; tcvBn: number }[];
 }
 
-// SQLite doesn't have PERCENTILE_CONT, so we approximate median via offset
-async function getMedianTcv(): Promise<number> {
-  const scope = await trackedEventScope();
-  const total = await prisma.contractDetails.count({
-    where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
-  });
-  if (total === 0) return 0;
-  const mid = Math.floor(total / 2);
-  const rows = await prisma.contractDetails.findMany({
-    where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
-    orderBy: { tcvCommittedUsd: "asc" },
-    skip: mid,
-    take: 1,
-    select: { tcvCommittedUsd: true },
-  });
-  return (rows[0]?.tcvCommittedUsd ?? 0) / 1_000_000;
+/** Median, total, mean and disclosed/estimated counts over published contracts' values. */
+async function getTcvSummary(): Promise<{ medianM: number; totalBn: number; avgM: number; withTcv: number; disclosed: number; estimated: number }> {
+  const rows = await prisma.$queryRaw<{ v: number | null; disclosed: boolean }[]>`
+    SELECT ${TCV} v, cd."tcvCommittedUsd" IS NOT NULL disclosed
+    FROM "ContractDetails" cd
+    JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
+    WHERE cme."publicationStatus"='published'
+  `;
+  const vals = rows.map(r => r.v).filter((v): v is number => v != null && v > 0).sort((a, b) => a - b);
+  const disclosed = rows.filter(r => r.disclosed).length;
+  const total = vals.reduce((s, v) => s + v, 0);
+  return {
+    medianM: vals.length ? vals[Math.floor(vals.length / 2)] / 1_000_000 : 0,
+    totalBn: total / 1_000_000_000,
+    avgM: vals.length ? total / vals.length / 1_000_000 : 0,
+    withTcv: vals.length,
+    disclosed,
+    estimated: vals.length - disclosed,
+  };
 }
 
 // Geography is stored as JSON array — extract with raw SQL grouping
@@ -89,27 +103,19 @@ export async function GET() {
   // Scope every metric to the tracked vendor universe.
   const scope = await trackedEventScope();
   const [
-    totalDeals, dealsWithTcv, tcvAgg,
+    totalDeals,
     byYearRaw, topVendorsByTcvRaw, topVendorsByDealsRaw,
     serviceLinesRaw, topIndustriesRaw, eventTypesRaw,
-    monthlyRaw, medianTcvM, topGeographies,
+    monthlyRaw, tcvSummary, topGeographies,
   ] = await Promise.all([
     // Total deals
     prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", ...scope } }),
-    // Deals with TCV
-    prisma.contractDetails.count({ where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } } }),
-    // TCV aggregate
-    prisma.contractDetails.aggregate({
-      where: { tcvCommittedUsd: { not: null }, canonicalEvent: { publicationStatus: "published", ...scope } },
-      _sum: { tcvCommittedUsd: true },
-      _avg: { tcvCommittedUsd: true },
-    }),
     // By year
     prisma.$queryRaw<{ yr: string; deals: bigint; tcv: number; avgtcv: number }[]>`
       SELECT TO_CHAR(cme."announcementDate", 'YYYY') yr,
              COUNT(*) deals,
-             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv,
-             COALESCE(AVG(cd."tcvCommittedUsd"),0)/1000000.0 avgtcv
+             COALESCE(SUM(${TCV}),0)/1000000000.0 tcv,
+             COALESCE(AVG(${TCV}),0)/1000000.0 avgtcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
       WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
@@ -119,18 +125,18 @@ export async function GET() {
     // Top vendors by TCV
     prisma.$queryRaw<{ name: string; slug: string; deals: bigint; tcv: number }[]>`
       SELECT e."canonicalName" name, e.slug, COUNT(*) deals,
-             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+             COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published' AND cd."tcvCommittedUsd" IS NOT NULL
-        AND cd."tcvCommittedUsd" < 10000000000
+      WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL
+        AND ${TCV} < 10000000000
       GROUP BY e.id ORDER BY tcv DESC LIMIT 20
     `,
     // Top vendors by deal count
     prisma.$queryRaw<{ name: string; slug: string; deals: bigint; tcv: number }[]>`
       SELECT e."canonicalName" name, e.slug, COUNT(*) deals,
-             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+             COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
@@ -140,7 +146,7 @@ export async function GET() {
     // Service lines
     prisma.$queryRaw<{ line: string; deals: bigint; tcv: number }[]>`
       SELECT cd."primaryMacroServiceLine" line, COUNT(*) deals,
-             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+             COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "ContractDetails" cd
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
       WHERE cme."publicationStatus"='published' AND cd."primaryMacroServiceLine" IS NOT NULL
@@ -149,7 +155,7 @@ export async function GET() {
     // Top industries
     prisma.$queryRaw<{ industry: string; deals: bigint; tcv: number }[]>`
       SELECT cme.industry, COUNT(*) deals,
-             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+             COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
       WHERE cme."publicationStatus"='published' AND cme.family='CONTRACT'
@@ -168,19 +174,20 @@ export async function GET() {
     prisma.$queryRaw<{ ym: string; deals: bigint; tcv: number }[]>`
       SELECT TO_CHAR(cme."announcementDate", 'YYYY-MM') ym,
              COUNT(*) deals,
-             COALESCE(SUM(cd."tcvCommittedUsd"),0)/1000000000.0 tcv
+             COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
       WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
         AND cme."announcementDate" >= NOW() - INTERVAL '24 months'
       GROUP BY 1 ORDER BY 1
     `,
-    getMedianTcv(),
+    getTcvSummary(),
     getTopGeographies(),
   ]);
 
-  const totalTcvBn = (tcvAgg._sum.tcvCommittedUsd ?? 0) / 1_000_000_000;
-  const avgTcvM = (tcvAgg._avg.tcvCommittedUsd ?? 0) / 1_000_000;
+  const totalTcvBn = tcvSummary.totalBn;
+  const avgTcvM = tcvSummary.avgM;
+  const medianTcvM = tcvSummary.medianM;
   const totalDealLines = serviceLinesRaw.reduce((s, r) => s + Number(r.deals), 0);
 
   const dealSizeBuckets = [
@@ -193,16 +200,16 @@ export async function GET() {
   ];
   const sizeCounts = await prisma.$queryRaw<{ bucket: string; cnt: bigint }[]>`
     SELECT CASE
-      WHEN cd."tcvCommittedUsd" < 10000000    THEN 'Under $10m'
-      WHEN cd."tcvCommittedUsd" < 50000000    THEN '$10–50m'
-      WHEN cd."tcvCommittedUsd" < 100000000   THEN '$50–100m'
-      WHEN cd."tcvCommittedUsd" < 500000000   THEN '$100–500m'
-      WHEN cd."tcvCommittedUsd" < 1000000000  THEN '$500m–$1bn'
+      WHEN ${TCV} < 10000000    THEN 'Under $10m'
+      WHEN ${TCV} < 50000000    THEN '$10–50m'
+      WHEN ${TCV} < 100000000   THEN '$50–100m'
+      WHEN ${TCV} < 500000000   THEN '$100–500m'
+      WHEN ${TCV} < 1000000000  THEN '$500m–$1bn'
       ELSE 'Over $1bn'
     END bucket, COUNT(*) cnt
     FROM "ContractDetails" cd
     JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-    WHERE cme."publicationStatus"='published' AND cd."tcvCommittedUsd" IS NOT NULL
+    WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL
     GROUP BY 1
   `;
   const sizeMap = new Map(sizeCounts.map(r => [r.bucket, Number(r.cnt)]));
@@ -212,7 +219,9 @@ export async function GET() {
     totalTcvBn,
     avgTcvM,
     medianTcvM,
-    dealsWithTcv,
+    dealsWithTcv: tcvSummary.withTcv,
+    dealsDisclosed: tcvSummary.disclosed,
+    dealsEstimated: tcvSummary.estimated,
     byYear: byYearRaw.map(r => ({ year: r.yr, deals: Number(r.deals), tcvBn: r.tcv, avgM: r.avgtcv })),
     topVendorsByTcv: topVendorsByTcvRaw.map(r => ({ vendor: r.name, slug: r.slug, deals: Number(r.deals), tcvBn: r.tcv })),
     topVendorsByDeals: topVendorsByDealsRaw.map(r => ({ vendor: r.name, slug: r.slug, deals: Number(r.deals), tcvBn: r.tcv })),

@@ -46,6 +46,8 @@ export interface EventSummary {
   confidenceScore: number;
   commercialRelevanceScore: number;
   publicationStatus: string;
+  /** Why the event sits in needs_review (machine-readable); null once published. */
+  reviewReason?: string | null;
   primaryEntityName: string | null;
   primaryEntitySlug: string | null;
   analystInsight: string | null;
