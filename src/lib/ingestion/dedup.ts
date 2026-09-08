@@ -13,9 +13,10 @@ const LEGAL_SUFFIX = /\b(inc|incorporated|ltd|limited|plc|llc|llp|corp|corporati
 /** Lower-case, strip parentheticals, punctuation and legal suffixes. */
 export function normaliseOrg(name: string | null | undefined): string {
   if (!name) return "";
+  // Parenthetical names stay as tokens: "Porsche (MHP)" must match "MHP".
   return name
     .toLowerCase()
-    .replace(/\([^)]*\)/g, " ")
+    .replace(/[()]/g, " ")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(LEGAL_SUFFIX, " ")

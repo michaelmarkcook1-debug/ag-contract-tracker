@@ -39,7 +39,7 @@ ok("completed counts as publishable", decidePublication(res({ eventStatus: "comp
 
 console.log("\n=== Organisation matching ===");
 ok("normalise strips suffixes", normaliseOrg("Porsche AG") === "porsche" && normaliseOrg("Tata Consultancy Services Ltd.") === "tata consultancy services");
-ok("parenthetical removed", normaliseOrg("Millicom (Tigo)") === "millicom");
+ok("parenthetical kept as a token", normaliseOrg("Millicom (Tigo)") === "millicom tigo" && orgsMatch("Millicom (Tigo)", "Millicom") && orgsMatch("Porsche (MHP)", "MHP"));
 ok("Porsche vs Porsche AG", orgsMatch("Porsche", "Porsche AG"));
 ok("Porsche vs Porsche (MHP)", orgsMatch("Porsche (MHP)", "Porsche"));
 ok("ITC Infotech vs ITC Infotech India Ltd", orgsMatch("ITC Infotech", "ITC Infotech India Ltd"));

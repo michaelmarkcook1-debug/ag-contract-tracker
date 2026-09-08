@@ -338,7 +338,8 @@ const READING_RULES = `Read the WHOLE text and judge it the way an analyst would
    financial results or guidance.
    - A stock note, opinion piece, listicle or analyst commentary that
      nonetheless reports such an event COUNTS: classify the event it reports,
-     not the article's genre.
+     not the article's genre. A finance-site write-up of the vendor's own
+     quarterly or annual results, guidance or dividend IS FINANCIAL_RESULTS.
    - Only the listed entity itself counts — not a parent, sister company or
      similarly named firm (NTT Docomo is not NTT DATA; Tata Motors is not TCS;
      Hitachi Energy is not Hitachi Digital Services). For Deloitte, EY, PwC and
@@ -352,7 +353,11 @@ const READING_RULES = `Read the WHOLE text and judge it the way an analyst would
      thought leadership; conference appearances; job ads and people profiles;
      securities filings, buybacks and fund stake changes; share-price
      commentary that reports no deal; a tender or RFP not yet awarded;
-     criticism or scrutiny of an existing contract with no new award.
+     criticism or scrutiny of an existing contract with no new award;
+     vendor case studies, customer stories and marketing pages describing
+     work already delivered (undated, client often unnamed — collateral, not
+     news of an award); a tracked vendor BUYING goods or services from another
+     supplier (that is the supplier's win, not the vendor's).
      Then family = "EXCLUDED" (never put a status word in "family").
 3. What is the STATUS of the event? "announced" (a new award, deal, launch or
    appointment), "completed" (closed, delivered, go-live), "opportunity"
@@ -366,10 +371,10 @@ const READING_RULES = `Read the WHOLE text and judge it the way an analyst would
    automotive OEM", "a US regional bank") and leave clientRaw null. Never
    invent a link to a tracked vendor.`;
 
-const ARTICLE_TYPES = "announcement|news_report|stock_or_analyst_note|opinion_or_thought_leadership|listicle_or_roundup|tender_or_rfp|award_or_ranking|sponsorship_or_csr|research_or_report|event_or_webinar|job_or_people_profile|other";
+const ARTICLE_TYPES = "announcement|news_report|stock_or_analyst_note|opinion_or_thought_leadership|listicle_or_roundup|tender_or_rfp|award_or_ranking|sponsorship_or_csr|research_or_report|case_study_or_marketing|event_or_webinar|job_or_people_profile|other";
 const EVENT_STATUSES = "announced|completed|opportunity|terminated|disputed|none";
 /** Article types that cannot carry a market event, whatever family the model chose. */
-const NON_EVENT_TYPES = new Set(["sponsorship_or_csr", "award_or_ranking", "research_or_report", "job_or_people_profile", "event_or_webinar"]);
+const NON_EVENT_TYPES = new Set(["sponsorship_or_csr", "award_or_ranking", "research_or_report", "case_study_or_marketing", "job_or_people_profile", "event_or_webinar"]);
 const STATUS_WORDS = new Set(["ANNOUNCED", "COMPLETED", "OPPORTUNITY", "TERMINATED", "DISPUTED", "NONE"]);
 
 /**
