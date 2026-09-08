@@ -514,6 +514,22 @@ export function matchTrackedVendorPreferring(text: string, priority: readonly st
   return matchTrackedVendor(text);
 }
 
+/**
+ * Structural selection — the only pre-model filter the pipeline applies.
+ * Market-wide wire feeds carry every company's press releases, so an item
+ * that names no tracked vendor is dropped before any spend. Everything else
+ * goes to the model, which reads the article and decides what it is. The
+ * headline regexes below (isRelevantArticle) now serve only the rule-based
+ * fallback used when no API key is configured.
+ */
+export function selectArticle(a: { title: string; snippet: string | null; provider: string }): { relevant: boolean; reason?: string } {
+  if (!a.title.trim()) return { relevant: false, reason: "rules:no_title" };
+  if (a.provider === "Market Wide" && !mentionsTrackedVendor(`${a.title} ${a.snippet ?? ""}`)) {
+    return { relevant: false, reason: "rules:vendor_gate" };
+  }
+  return { relevant: true };
+}
+
 export interface RelevanceVerdict {
   relevant: boolean;
   family: string;

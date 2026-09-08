@@ -5,35 +5,37 @@
 import { decidePublication } from "../../src/lib/ingestion/gate";
 import { normaliseOrg, orgsMatch, titleCounterparty, withinDays, titleSimilarity, titleAmount, amountsConflict } from "../../src/lib/ingestion/dedup";
 import type { ExtractionResult } from "../../src/lib/ingestion/classifier";
-import type { RawArticle } from "../../src/lib/ingestion/crawler";
 import { EMPTY_USAGE } from "../../src/lib/ingestion/classifier";
 
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => { cond ? pass++ : fail++; console.log(`  ${cond ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`); };
 
-const art = (title: string, bodyText: string | null = null): RawArticle =>
-  ({ title, url: "https://x/1", publishedAt: "2026-09-01", snippet: null, sourceId: "t", provider: "TCS", sourceType: "wire_service", bodyText, publisherUrl: null });
 const res = (o: Partial<ExtractionResult>): ExtractionResult => ({
   family: "CONTRACT", eventType: "new_win", canonicalTitle: "t", vendorRaw: "TCS", clientRaw: "Porsche", tcvUsd: null, tcvIsEstimate: false,
   contractLengthMonths: null, primaryMacroServiceLine: null, geography: [], industry: null, confidenceScore: 0.55,
   extractionMethod: "llm", summary: null, analystInsight: null, missingCritical: [], eventTypeValid: true, exclusionReason: null, usage: EMPTY_USAGE, ...o,
 });
 
-console.log("\n=== Evidence gate ===");
-const wellAttested = decidePublication(res({}), art("TCS secures €1.25 billion five-year strategic deal with Porsche", "Tata Consultancy Services has signed a five-year agreement with Porsche AG. Financial terms were not disclosed."), "ent_1");
-ok("attested contract with undisclosed value PUBLISHES at 0.55", wellAttested.status === "published", `${wellAttested.reason}`);
-ok("unresolved vendor → review", decidePublication(res({}), art("TCS wins deal"), null).reason === "vendor_unresolved");
-ok("no counterparty → review", decidePublication(res({ clientRaw: null }), art("TCS wins a large deal", "TCS signed an agreement."), "e").reason === "no_counterparty");
-ok("invalid event type → review", decidePublication(res({ eventType: "technology_alliance", eventTypeValid: false }), art("TCS signs deal with Porsche"), "e").reason?.startsWith("event_type_invalid:technology_alliance") === true);
-ok("rule-based extraction → review", decidePublication(res({ extractionMethod: "rule_fallback" }), art("TCS signs deal with Porsche"), "e").reason === "rule_based_extraction");
-ok("tender is not an award → review", decidePublication(res({}), art("Authority issues tender for five-year managed services contract"), "e").reason?.includes("opportunity_not_award") === true);
-ok("contract dispute → review", decidePublication(res({}), art("Serco's Caledonian Sleeper contract to be axed next year", "The contract with Serco will be terminated."), "e").reason?.includes("contract_dispute_or_termination") === true);
-ok("no award language anywhere → review", decidePublication(res({}), art("TCS and Porsche in talks about the future of mobility"), "e").reason === "no_award_language");
-ok("very low confidence → review", decidePublication(res({ confidenceScore: 0.3 }), art("TCS signs deal with Porsche"), "e").reason === "low_confidence:0.30");
-ok("multiple reasons are all reported", decidePublication(res({ confidenceScore: 0.3, clientRaw: null }), art("TCS wins something"), null).reason === "vendor_unresolved,no_counterparty,low_confidence:0.30");
-ok("partnership needs a counterparty", decidePublication(res({ family: "PARTNERSHIP", eventType: "technology_alliance", clientRaw: null }), art("Coforge expands partnership"), "e").reason === "no_counterparty");
-ok("results publish without counterparty", decidePublication(res({ family: "FINANCIAL_RESULTS", eventType: "quarterly_results", clientRaw: null, confidenceScore: 0.9 }), art("Bechtle Q2 results"), "e").status === "published");
-ok("M&A publishes on entity + target", decidePublication(res({ family: "M_AND_A", eventType: "acquisition", clientRaw: "Healthcare IT Leaders", confidenceScore: 0.6 }), art("Kyndryl to buy Healthcare IT Leaders"), "e").status === "published");
+console.log("\n=== Publication gate (on the model's reading) ===");
+const announced = res({ eventStatus: "announced", articleType: "news_report" });
+ok("announced contract with undisclosed value PUBLISHES at 0.55", decidePublication(announced, "ent_1").status === "published", `${decidePublication(announced, "ent_1").reason}`);
+ok("stock note that reports a deal publishes (genre is not the event)", decidePublication(res({ eventStatus: "announced", articleType: "stock_or_analyst_note" }), "e").status === "published");
+ok("unresolved vendor → review", decidePublication(announced, null).reason === "vendor_unresolved");
+ok("no counterparty → review", decidePublication(res({ eventStatus: "announced", clientRaw: null }), "e").reason === "no_counterparty");
+ok("invalid event type → review", decidePublication(res({ eventStatus: "announced", eventType: "technology_alliance", eventTypeValid: false }), "e").reason?.startsWith("event_type_invalid:technology_alliance") === true);
+ok("rule-based extraction → review", decidePublication(res({ eventStatus: "announced", extractionMethod: "rule_fallback" }), "e").reason === "rule_based_extraction");
+ok("tender → review", decidePublication(res({ eventStatus: "opportunity" }), "e").reason === "opportunity_not_award");
+ok("terminated contract → review", decidePublication(res({ eventStatus: "terminated" }), "e").reason === "contract_terminated");
+ok("disputed contract → review", decidePublication(res({ eventStatus: "disputed" }), "e").reason === "contract_disputed");
+ok("loss to a named competitor publishes as displacement", decidePublication(res({ eventStatus: "terminated", eventType: "incumbent_displacement" }), "e").status === "published");
+ok("no status → review", decidePublication(res({ eventStatus: null }), "e").reason === "no_event_status");
+ok("very low confidence → review", decidePublication(res({ eventStatus: "announced", confidenceScore: 0.3 }), "e").reason === "low_confidence:0.30");
+ok("multiple reasons are all reported", decidePublication(res({ eventStatus: "opportunity", confidenceScore: 0.3, clientRaw: null }), null).reason === "vendor_unresolved,no_counterparty,opportunity_not_award,low_confidence:0.30");
+ok("partnership needs a counterparty", decidePublication(res({ family: "PARTNERSHIP", eventType: "technology_alliance", eventStatus: "announced", clientRaw: null }), "e").reason === "no_counterparty");
+ok("results publish without counterparty", decidePublication(res({ family: "FINANCIAL_RESULTS", eventType: "quarterly_results", eventStatus: "announced", clientRaw: null, confidenceScore: 0.9 }), "e").status === "published");
+ok("M&A publishes on entity + target", decidePublication(res({ family: "M_AND_A", eventType: "acquisition", eventStatus: "announced", clientRaw: "Healthcare IT Leaders", confidenceScore: 0.6 }), "e").status === "published");
+ok("described-but-unnamed client publishes as anonymised", decidePublication(res({ eventStatus: "announced", clientRaw: null, clientDescriptor: "a leading European automotive OEM" }), "e").status === "published");
+ok("completed counts as publishable", decidePublication(res({ eventStatus: "completed" }), "e").status === "published");
 
 console.log("\n=== Organisation matching ===");
 ok("normalise strips suffixes", normaliseOrg("Porsche AG") === "porsche" && normaliseOrg("Tata Consultancy Services Ltd.") === "tata consultancy services");
@@ -69,7 +71,6 @@ ok("parses crore", titleAmount("ITC Infotech to buy stake for ₹1,330 crore") =
 ok("no amount → null", titleAmount("Serco wins RAF Fylingdales contract") === null);
 ok("different amounts conflict", amountsConflict("X awarded AUD 0.33m contract", "X awarded AUD 0.35m contract") === false && amountsConflict("X awarded AUD 0.79m contract", "X awarded AUD 0.34m contract") === true);
 ok("missing amount never conflicts", !amountsConflict("X awarded contract", "X awarded £5m contract"));
-ok("gate catches model-labelled scrutiny", decidePublication(res({ canonicalTitle: "Serco | Contract Scrutiny | ATO | BPO" }), art("Serco call centre deal questioned by auditors", "The ATO contract with Serco was reviewed."), "e").reason?.includes("contract_dispute_or_termination") === true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

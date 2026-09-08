@@ -6,7 +6,7 @@
  * model was keeping WITHOUT catching real contract headlines; event types are
  * validated per family; Google News queries are date-bounded.
  */
-import { isRelevantArticle, GOOGLE_NEWS_SOURCES, TRACKED_VENDORS, GNEWS_WINDOW_DAYS } from "../../src/lib/ingestion/sources";
+import { isRelevantArticle, selectArticle, GOOGLE_NEWS_SOURCES, TRACKED_VENDORS, GNEWS_WINDOW_DAYS } from "../../src/lib/ingestion/sources";
 import { isValidEventType, defaultEventType, FAMILY_EVENT_TYPES, ruleBasedExtract } from "../../src/lib/ingestion/classifier";
 
 let pass = 0, fail = 0;
@@ -15,7 +15,15 @@ const ok = (name: string, cond: boolean, detail = "") => {
   console.log(`  ${cond ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`);
 };
 
-console.log("\n=== Noise rules: junk the model was keeping must be rejected by rules ===");
+console.log("\n=== Structural selection (the only pre-model filter the pipeline applies) ===");
+ok("vendor-feed stock note goes to the model", selectArticle({ title: "Serco stock holds steady after results", snippet: null, provider: "Serco" }).relevant);
+ok("vendor-feed sponsorship goes to the model", selectArticle({ title: "Accenture and Salford City Football Club Announce Partnership", snippet: null, provider: "Accenture" }).relevant);
+ok("vendor-feed blog post goes to the model", selectArticle({ title: "AI Agents Need an Offboarding Plan Too", snippet: null, provider: "Capgemini" }).relevant);
+ok("market-wide item naming no tracked vendor is dropped", selectArticle({ title: "MANTECH Awarded $345 Million Contract for IAC MAC MXL Cyber Task Order", snippet: "ManTech …", provider: "Market Wide" }).reason === "rules:vendor_gate");
+ok("market-wide item naming a tracked vendor goes to the model", selectArticle({ title: "Kyndryl announces agreement to purchase Healthcare IT Leaders", snippet: null, provider: "Market Wide" }).relevant);
+ok("empty title dropped", selectArticle({ title: "  ", snippet: null, provider: "TCS" }).reason === "rules:no_title");
+
+console.log("\n=== Headline rules (rule-based FALLBACK only — the pipeline no longer gates on these) ===");
 const junk: [string, string][] = [
   ["stock award filing",   "Conduent (NASDAQ: CNDT) ties executive stock award to share-price targets - Stock Titan"],
   ["RSU grant",            "ADP (NASDAQ: ADP) CFO gets 6,464 RSUs vesting over 3 years - Stock Titan"],

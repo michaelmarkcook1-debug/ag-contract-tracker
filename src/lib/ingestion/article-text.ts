@@ -18,7 +18,7 @@
 const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const FETCH_TIMEOUT_MS = 12_000;
 const MAX_HTML_BYTES = 1_500_000;
-export const DEFAULT_MAX_CHARS = 3_500;
+export const DEFAULT_MAX_CHARS = 5_000;
 
 const GOOGLE_NEWS_ARTICLE = /^https?:\/\/news\.google\.com\/(?:rss\/)?articles\/([^/?#]+)/;
 

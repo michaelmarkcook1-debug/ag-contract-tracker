@@ -133,6 +133,12 @@ export interface ExtractionResult {
   summary: string | null;
   analystInsight: string | null;
   missingCritical: string[];
+  /** The text's description of an unnamed counterparty; the client is then anonymised. */
+  clientDescriptor?: string | null;
+  /** What kind of article the model judged this to be (see ARTICLE_TYPES); null for rule-based results. */
+  articleType?: string | null;
+  /** Status of the reported event: announced | completed | opportunity | terminated | disputed | none. */
+  eventStatus?: string | null;
   /** Model-estimated value range (USD) when no value was stated — labelled, never mixed with tcvUsd. */
   tcvEstimateLowUsd?: number | null;
   tcvEstimateHighUsd?: number | null;
@@ -321,135 +327,137 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
 // gate, and this prompt together. Nothing here needs changing.
 const VENDOR_UNIVERSE = TRACKED_VENDORS.join(", ");
 
-const EXTRACTION_SYSTEM = `You are a senior IT services market analyst coding events for a competitive intelligence platform used by enterprise sales teams. Your output must be thorough and commercially actionable.
+const READING_RULES = `Read the WHOLE text and judge it the way an analyst would.
+
+1. What KIND of article is this? (articleType)
+2. Does it report a MARKET EVENT in which one of the tracked vendors is a PARTY?
+   The vendor wins, renews, extends, expands or loses a contract; forms a
+   delivery or technology partnership with a named partner or client;
+   acquires, merges or divests; launches an offering or opens a delivery
+   centre; changes senior leadership or restructures; or reports its own
+   financial results or guidance.
+   - A stock note, opinion piece, listicle or analyst commentary that
+     nonetheless reports such an event COUNTS: classify the event it reports,
+     not the article's genre.
+   - Only the listed entity itself counts — not a parent, sister company or
+     similarly named firm (NTT Docomo is not NTT DATA; Tata Motors is not TCS;
+     Hitachi Energy is not Hitachi Digital Services). For Deloitte, EY, PwC and
+     KPMG, audit, tax and assurance engagements do not count; consulting,
+     technology, digital and managed-services work does.
+   - NO event: the vendor is mentioned in passing; sponsorships and CSR —
+     a sponsor, "official partner" or "technology partner" arrangement with a
+     sports club, event, team or celebrity is a SPONSORSHIP, not a partnership,
+     unless the vendor delivers technology or services to that organisation as
+     a client; industry awards and analyst rankings; research reports and
+     thought leadership; conference appearances; job ads and people profiles;
+     securities filings, buybacks and fund stake changes; share-price
+     commentary that reports no deal; a tender or RFP not yet awarded;
+     criticism or scrutiny of an existing contract with no new award.
+     Then family = "EXCLUDED" (never put a status word in "family").
+3. What is the STATUS of the event? "announced" (a new award, deal, launch or
+   appointment), "completed" (closed, delivered, go-live), "opportunity"
+   (tender, RFP, bid, shortlist — not yet awarded), "terminated" (ended,
+   cancelled, insourced, lost), "disputed" (criticism, investigation, legal
+   action about an existing contract), "none".
+4. Who are the parties? "vendorRaw" MUST be spelled EXACTLY as in the list
+   (e.g. "TCS", not "Tata Consultancy Services Ltd"); the other party — client,
+   target, partner — goes in "clientRaw". When the text does not name it,
+   put the text's own description in "clientDescriptor" ("a leading European
+   automotive OEM", "a US regional bank") and leave clientRaw null. Never
+   invent a link to a tracked vendor.`;
+
+const ARTICLE_TYPES = "announcement|news_report|stock_or_analyst_note|opinion_or_thought_leadership|listicle_or_roundup|tender_or_rfp|award_or_ranking|sponsorship_or_csr|research_or_report|event_or_webinar|job_or_people_profile|other";
+const EVENT_STATUSES = "announced|completed|opportunity|terminated|disputed|none";
+/** Article types that cannot carry a market event, whatever family the model chose. */
+const NON_EVENT_TYPES = new Set(["sponsorship_or_csr", "award_or_ranking", "research_or_report", "job_or_people_profile", "event_or_webinar"]);
+const STATUS_WORDS = new Set(["ANNOUNCED", "COMPLETED", "OPPORTUNITY", "TERMINATED", "DISPUTED", "NONE"]);
+
+/**
+ * Normalise the model's family / status / type trio. Haiku sometimes writes
+ * the status into "family" ("DISPUTED"), and a sponsorship occasionally comes
+ * back as a "technology partnership"; both are settled here, not by regex.
+ */
+function normaliseReading(famIn: string | null, statusIn: string | null, typeIn: string | null): { family: string; eventStatus: string | null; articleType: string | null; reason: string | null } {
+  let family = (famIn ?? "EXCLUDED").toUpperCase();
+  let eventStatus = statusIn?.toLowerCase() ?? null;
+  const articleType = typeIn?.toLowerCase() ?? null;
+  if (STATUS_WORDS.has(family)) { eventStatus = eventStatus ?? family.toLowerCase(); family = "EXCLUDED"; return { family, eventStatus, articleType, reason: `model:${eventStatus}_contract` }; }
+  if (family !== "EXCLUDED" && !CANONICAL_FAMILIES.has(family)) return { family: "EXCLUDED", eventStatus, articleType, reason: `model:invalid_family:${family.slice(0, 40)}` };
+  if (family !== "EXCLUDED" && articleType && NON_EVENT_TYPES.has(articleType)) return { family: "EXCLUDED", eventStatus, articleType, reason: `model:${articleType}` };
+  if (family === "EXCLUDED") return { family, eventStatus, articleType, reason: `model:${(articleType ?? "no_event").slice(0, 40)}` };
+  return { family, eventStatus, articleType, reason: null };
+}
+
+const EXTRACTION_SYSTEM = `You are a senior IT-services market analyst coding events for a competitive-intelligence platform used by enterprise sales teams. Your output must be thorough and commercially actionable.
 
 TRACKED VENDOR UNIVERSE — the ${TRACKED_VENDORS.length} providers this platform covers:
 ${VENDOR_UNIVERSE}
 
-Rules:
-0. SCOPE: an event only matters if one of the TRACKED VENDORS above is a party to
-   it (as provider, acquirer, target, or partner). If no tracked vendor is
-   involved, return family "EXCLUDED" with eventType "excluded_noise" — do not
-   invent a link to a tracked vendor. Only the listed entity itself counts —
-   not a parent, sister company or similarly named firm (NTT Docomo and NTT
-   Communications are not NTT DATA; Tata Motors is not TCS; Hitachi Energy is
-   not Hitachi Digital Services). For Deloitte, EY, PwC and KPMG only
-   technology, consulting and managed-services work counts; audit, tax,
-   assurance, deal-advisory and corporate-finance mandates are EXCLUDED.
-   A CONTRACT requires the tracked vendor to be the PROVIDER. When the tracked
-   vendor is the buyer of hardware, software or services, return EXCLUDED.
-   ORG_CHANGE is a change at the tracked vendor itself; a former employee's
-   appointment elsewhere is EXCLUDED. For telecom groups tracked for their IT
-   arms (Singtel/NCS, Orange Business, T-Systems, Telefónica Tech), consumer
-   products, network news and sponsorships are EXCLUDED.
-   "vendorRaw" MUST be written EXACTLY as spelled in the list above (e.g. "TCS",
-   not "Tata Consultancy Services Ltd"; "HCLTech", not "HCL Technologies") so it
-   resolves against our entity records. If the article names a non-tracked firm
-   as the counterparty, put that name in clientRaw, not vendorRaw.
-1. Extract ALL available structured data from the text.
-2. CONTRACT VALUE. Return tcvUsd ONLY when the evidence explicitly states a
-   monetary value for this contract ("valued at $120 million", "a £80 million
-   agreement"); convert to USD. Never put an estimate in tcvUsd.
-   When NO value is stated, ESTIMATE a plausible range instead: set
-   tcvEstimateLowUsd / tcvEstimateHighUsd (USD, low ≤ high, typically a 2–4x
-   band) and tcvEstimateRationale (≤25 words: scope, term, client size,
-   geography, comparable deals), and set tcvIsEstimate = true. A range for
-   every contract is wanted; the UI labels it as an estimate. Do not derive it
-   from the vendor's total revenue or bookings.
-3. Analyst insight must be 3-5 sentences of ACTIONABLE competitive intelligence:
-   - What does this mean for the vendor's market position?
-   - Which competitors should be concerned? Name specific rival vendors.
-   - What client pattern or industry trend does this signal?
-   - What follow-on opportunities might exist?
-4. Summary must capture the key facts in 2-3 sentences for a busy executive.
-5. FINANCIAL_RESULTS is a tracked category — classify the company's OWN
-   earnings, quarterly/annual results, guidance updates and bookings/TCV
-   disclosures as FINANCIAL_RESULTS. Do NOT discard them. An article whose
-   subject is the share price or stock performance is EXCLUDED even if it
-   cites results — UNLESS it reports a specific deal, contract or acquisition
-   ("shares jump after bagging $75M deal"): then classify that event. For these, set tcvUsd to the disclosed bookings/TCV
-   figure when one is stated, otherwise null (do NOT estimate a TCV from
-   revenue). If an article is primarily about a specific deal or acquisition,
-   prefer CONTRACT / M_AND_A over FINANCIAL_RESULTS.
-   Still exclude analyst-firm rankings (Gartner/Forrester), marketing and
-   thought-leadership pieces as EXCLUDED.
-6. NOT market events, even when a tracked vendor is named — return EXCLUDED:
-   vendor/industry awards and analyst rankings; sponsorships (sports, arts,
-   community); conference appearances, showcases and keynotes; securities
-   filings, executive stock grants, buybacks and fund stake changes;
-   share-price commentary and analyst ratings.
-7. PARTNERSHIP requires a delivery or technology element between the vendor
-   and a named partner or client (joint offering, platform alliance,
-   co-delivery). A brand or sponsorship tie-up is EXCLUDED.
-8. eventType MUST be one of the types listed for the chosen family in the
-   schema. Do not invent types.
-9. A story ABOUT an existing contract — criticism, dispute, termination,
-   scrutiny, performance — is not a CONTRACT event. Return EXCLUDED, unless it
-   reports a named competitor taking the work (incumbent_displacement).
+${READING_RULES}
+
+Extraction rules:
+5. Extract ALL structured data the text supports. "eventType" MUST be one of
+   the types listed for the chosen family in the schema — do not invent types.
+6. CONTRACT VALUE. Return tcvUsd ONLY when the text states a monetary value
+   for this contract ("valued at $120 million", "a £80 million agreement");
+   convert to USD. Never put an estimate in tcvUsd. When NO value is stated,
+   ESTIMATE a plausible range: tcvEstimateLowUsd / tcvEstimateHighUsd (USD,
+   typically a 2–4x band) with tcvEstimateRationale (≤25 words: scope, term,
+   client size, geography, comparable deals), and set tcvIsEstimate = true.
+   Do not derive it from the vendor's total revenue or bookings.
+7. FINANCIAL_RESULTS is the vendor's OWN earnings, results, guidance or
+   bookings; set tcvUsd to a disclosed bookings/TCV figure if one is stated.
+8. Analyst insight: 3–5 sentences of ACTIONABLE competitive intelligence —
+   market position, which named competitors should be concerned, the client
+   or industry pattern, follow-on opportunities.
+9. Summary: the key facts in 2–3 sentences for a busy executive.
 10. Return JSON only — no prose, no markdown fences.`;
 
 const EXTRACTION_SCHEMA = `{
+  "articleType": "${ARTICLE_TYPES}",
+  "eventStatus": "${EVENT_STATUSES}",
   "family": "CONTRACT|FINANCIAL_RESULTS|M_AND_A|PARTNERSHIP|NEW_OFFERING|ORG_CHANGE|EXCLUDED",
   "eventType": "one of the family's types — ${Object.entries(FAMILY_EVENT_TYPES).map(([f, ts]) => `${f}: ${ts.join("|")}`).join("; ")}; EXCLUDED: excluded_noise",
+  "why": "≤15 words: what the article is and why it is or is not an event",
   "canonicalTitle": "concise title, max 120 chars — format: Vendor | EventType | Client | ServiceLine",
-  "vendorRaw": "MUST be one of the TRACKED VENDORS, spelled exactly as listed; null if none involved",
-  "clientRaw": "client/buyer organisation name or null",
-  "tcvUsd": "number in USD — ONLY if explicitly stated in the evidence; null otherwise. Never an estimate.",
+  "vendorRaw": "MUST be one of the TRACKED VENDORS, spelled exactly as listed; null if none is a party",
+  "clientRaw": "client / target / partner organisation NAME, or null when not named",
+  "clientDescriptor": "when clientRaw is null: the text's description of the counterparty, or null",
+  "tcvUsd": "number in USD — ONLY if explicitly stated in the text; null otherwise. Never an estimate.",
   "tcvEstimateLowUsd": "number in USD or null — low end of a plausible range when no value is stated",
   "tcvEstimateHighUsd": "number in USD or null — high end of that range",
   "tcvEstimateRationale": "≤25 words on what the range rests on, or null",
   "tcvIsEstimate": "true when tcvUsd is null and an estimate range is given; false otherwise",
-  "contractLengthMonths": "integer or null",
+  "contractLengthMonths": "integer months when a term is stated ('four years' → 48, 'through 2030' → months remaining), else null",
   "primaryMacroServiceLine": "ITO|Application Services|Digital & Cloud|BPO|Cybersecurity|AI & Analytics|Consulting & Advisory|ERP & Enterprise Apps|Network & Telco|Engineering IT|null",
   "geography": ["array of countries/regions mentioned"],
   "industry": "BFSI|Public Sector|Healthcare & Life Sciences|Telecommunications|Manufacturing & Automotive|Retail|Aerospace & Defence|Energy & Resources|Insurance|Technology|Transportation & Logistics|Media & Entertainment|Education|null",
-  "confidenceScore": "0.0-1.0 — how confident you are in the extraction accuracy",
-  "summary": "2-3 sentence factual summary of the deal/event for an executive audience",
-  "analystInsight": "3-5 sentences of competitive intelligence: market positioning, competitor implications, industry trends, follow-on opportunities. Name specific competitor vendors where relevant.",
-  "missingCritical": ["list fields that could not be determined"]
+  "confidenceScore": "0.0-1.0 — confidence that the family, parties and status are right",
+  "summary": "2-3 sentence factual summary of the event for an executive audience",
+  "analystInsight": "3-5 sentences of competitive intelligence naming specific competitor vendors where relevant",
+  "missingCritical": ["fields that could not be determined"]
 }`;
 
 const TRIAGE_SCHEMA = `{
+  "articleType": "${ARTICLE_TYPES}",
   "family": "CONTRACT|FINANCIAL_RESULTS|M_AND_A|PARTNERSHIP|NEW_OFFERING|ORG_CHANGE|EXCLUDED",
-  "vendorRaw": "MUST be one of the TRACKED VENDORS, spelled exactly as listed; null if none involved",
-  "clientRaw": "counterparty organisation name or null",
+  "eventStatus": "${EVENT_STATUSES}",
+  "vendorRaw": "one of the TRACKED VENDORS, spelled exactly as listed; null if none is a party",
+  "clientRaw": "counterparty organisation NAME (client, target, partner) or null when not named",
+  "clientDescriptor": "when clientRaw is null: the text's description of the counterparty, or null",
   "canonicalTitle": "concise title, max 120 chars",
-  "confidenceScore": "0.0-1.0"
+  "confidenceScore": "0.0-1.0 — confidence that the family and parties are right",
+  "why": "≤15 words"
 }`;
 
-const TRIAGE_SYSTEM = `You are triaging IT services news for a competitive intelligence platform. Be fast and decisive.
+const TRIAGE_SYSTEM = `You are an IT-services market analyst reading news for a competitive-intelligence platform. Be decisive.
 
 TRACKED VENDOR UNIVERSE — the ${TRACKED_VENDORS.length} providers this platform covers:
 ${VENDOR_UNIVERSE}
 
-Rules:
-1. If no tracked vendor is a party to the event, return family "EXCLUDED".
-   Only the listed entity itself counts — not a parent, sister company or
-   similarly named firm (NTT Docomo is not NTT DATA; Tata Motors is not TCS).
-   For Deloitte, EY, PwC and KPMG only technology, consulting and managed-
-   services work counts; audit, tax, assurance and deal-advisory mandates are
-   EXCLUDED. A CONTRACT needs the tracked vendor as PROVIDER — as a buyer it
-   is EXCLUDED. ORG_CHANGE is a change at the vendor itself, not a former
-   employee's move elsewhere. Telecom groups tracked for their IT arms
-   (Singtel/NCS, Orange Business, T-Systems, Telefónica Tech): consumer
-   products, network news and sponsorships are EXCLUDED.
-2. "vendorRaw" MUST be spelled EXACTLY as in the list above (e.g. "TCS", not
-   "Tata Consultancy Services Ltd"). A non-tracked counterparty goes in clientRaw.
-3. Classify the company's OWN earnings/results/guidance announcements as
-   FINANCIAL_RESULTS — do not discard them. An article whose subject is the
-   share price or stock performance is EXCLUDED even if it cites results —
-   UNLESS it reports a specific deal, contract or acquisition ("shares jump
-   after bagging $75M deal"): then classify that event; the price move is
-   incidental. Exclude analyst-firm rankings, marketing and thought-leadership.
-4. NOT market events, even when a tracked vendor is named — return EXCLUDED:
-   vendor/industry awards; sponsorships (sports, arts, community); conference
-   appearances, showcases, keynotes; securities filings, executive stock
-   grants, buybacks, fund stake changes; share-price commentary and ratings.
-5. PARTNERSHIP requires a delivery or technology element between the vendor
-   and a named partner or client. A brand or sponsorship tie-up is EXCLUDED.
-6. A story ABOUT an existing contract (criticism, dispute, termination,
-   scrutiny) is not a CONTRACT event — return EXCLUDED.
-7. Return JSON only — no prose, no markdown fences.`;
+${READING_RULES}
+
+Return JSON only — no prose, no markdown fences.`;
 
 interface ClaudeCall { parsed: Record<string, unknown> | null; usage: TokenUsage; }
 
@@ -545,7 +553,7 @@ Extract and return this JSON schema:
 ${schema}`;
 }
 
-/** Families worth paying the deeper analysis model for. */
+/** Legacy single-call path (llmExtract) still limits the deep tier to these; the pipeline analyses every in-scope family. */
 const HIGH_VALUE_FAMILIES = new Set(["CONTRACT", "M_AND_A"]);
 
 /** Outcome of the cheap triage pass — enough to dedupe on, before paying for analysis. */
@@ -556,10 +564,15 @@ export interface TriageResult {
   canonicalTitle: string;
   confidenceScore: number;
   usage: TokenUsage;
-  /** True when this article warrants the expensive analysis tier. */
+  /** True when this article warrants the analysis tier (every in-scope family). */
   needsAnalysis: boolean;
-  /** "model:excluded_noise" | "model:no_tracked_vendor" | "model:invalid_family:X"; null when in scope. */
+  /** "model:<articleType>" | "model:no_tracked_vendor" | "model:invalid_family:X"; null when in scope. */
   exclusionReason: string | null;
+  articleType: string | null;
+  eventStatus: string | null;
+  why: string | null;
+  /** The text's description of an unnamed counterparty ("a leading European automotive OEM"). */
+  clientDescriptor: string | null;
 }
 
 /**
@@ -578,24 +591,26 @@ export async function triageArticle(article: RawArticle): Promise<TriageResult |
   );
   if (!triage.parsed) return null;
   const t = triage.parsed as Record<string, unknown>;
-  const famRaw = typeof t.family === "string" ? t.family : "EXCLUDED";
-  const vendorRaw = typeof t.vendorRaw === "string" ? t.vendorRaw : null;
-  const modelExcluded = famRaw === "EXCLUDED";
-  const invalidFamily = !modelExcluded && !CANONICAL_FAMILIES.has(famRaw);
-  const inScope = !modelExcluded && !invalidFamily && !!vendorRaw;
-  const exclusionReason = inScope ? null
-    : modelExcluded ? "model:excluded_noise"
-    : invalidFamily ? `model:invalid_family:${famRaw.slice(0, 40)}`
-    : "model:no_tracked_vendor";
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const vendorRaw = str(t.vendorRaw);
+  const r = normaliseReading(str(t.family), str(t.eventStatus), str(t.articleType));
+  const { articleType, eventStatus } = r;
+  const inScope = r.family !== "EXCLUDED" && !!vendorRaw;
+  // The reason names the article type the model saw, so exclusion metrics say why.
+  const exclusionReason = inScope ? null : (r.reason ?? "model:no_tracked_vendor");
   return {
-    family: inScope ? famRaw : "EXCLUDED",
+    family: inScope ? r.family : "EXCLUDED",
     vendorRaw: inScope ? vendorRaw : null,
-    clientRaw: typeof t.clientRaw === "string" ? t.clientRaw : null,
-    canonicalTitle: typeof t.canonicalTitle === "string" ? t.canonicalTitle : article.title,
+    clientRaw: str(t.clientRaw),
+    clientDescriptor: str(t.clientDescriptor),
+    canonicalTitle: str(t.canonicalTitle) ?? article.title,
     confidenceScore: typeof t.confidenceScore === "number" ? t.confidenceScore : 0.5,
     usage: triage.usage,
-    needsAnalysis: inScope && HIGH_VALUE_FAMILIES.has(famRaw),
+    // Every in-scope article gets the full read — partnerships, launches and
+    // leadership changes carry counterparties and detail worth extracting too.
+    needsAnalysis: inScope,
     exclusionReason,
+    articleType, eventStatus, why: str(t.why),
   };
 }
 
@@ -618,6 +633,9 @@ export function resultFromTriage(article: RawArticle, t: TriageResult): Extracti
     eventType: defaultEventType(t.family, `${article.title} ${article.snippet ?? ""}`),
     eventTypeValid: true,
     exclusionReason: null,
+    articleType: t.articleType,
+    eventStatus: t.eventStatus,
+    clientDescriptor: t.clientDescriptor,
     vendorRaw: t.vendorRaw,
     clientRaw: t.clientRaw,
     canonicalTitle: t.canonicalTitle,
@@ -646,19 +664,20 @@ export async function analyseArticle(article: RawArticle, t: TriageResult): Prom
   const num = (v: unknown) => (typeof v === "number" ? v : null);
   const str = (v: unknown) => (typeof v === "string" ? v : null);
   const text = `${article.title} ${article.snippet ?? ""}`;
-  // A family outside the canonical six is a model invention, not an event.
-  const famRaw = str(parsed.family) ?? t.family;
-  const family = CANONICAL_FAMILIES.has(famRaw) ? famRaw : "EXCLUDED";
+  const r = normaliseReading(str(parsed.family) ?? t.family, str(parsed.eventStatus) ?? t.eventStatus, str(parsed.articleType) ?? t.articleType);
+  const family = r.family;
   const eventType = family === "EXCLUDED" ? "excluded_noise" : (str(parsed.eventType) ?? defaultEventType(family, text));
   return {
     family,
     eventType,
     eventTypeValid: family !== "EXCLUDED" && isValidEventType(family, eventType),
-    exclusionReason: family !== "EXCLUDED" ? null
-      : famRaw === "EXCLUDED" ? "model:excluded_noise" : `model:invalid_family:${famRaw.slice(0, 40)}`,
+    exclusionReason: r.reason,
+    articleType: r.articleType,
+    eventStatus: r.eventStatus,
     canonicalTitle: str(parsed.canonicalTitle) ?? article.title,
     vendorRaw: str(parsed.vendorRaw) ?? t.vendorRaw,
     clientRaw: str(parsed.clientRaw) ?? t.clientRaw,
+    clientDescriptor: str(parsed.clientDescriptor) ?? t.clientDescriptor,
     tcvUsd: num(parsed.tcvUsd),
     tcvIsEstimate: parsed.tcvIsEstimate === true,
     ...estimateRange(parsed),

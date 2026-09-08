@@ -82,10 +82,10 @@ export default async function AdminPage() {
                   {[
                     ["1. Crawl", "Fetch RSS/API sources (Google News queries are date-bounded)."],
                     ["2. Dedup", "Skip URLs already stored — including ones previously excluded."],
-                    ["3. Select", "Age cutoff (60 days), noise rules, tracked-vendor gate. Every rejection is recorded with its reason."],
-                    ["4. Retrieve + triage", "Publisher page fetched (Google News links decoded). Haiku: family, vendor, counterparty. Out-of-scope articles are recorded, not re-bought."],
-                    ["5. Dedupe + analyse", "Re-reports attach to the stored event as extra sources (vendor, counterparty, ±14 days). Sonnet on contracts and M&A: scope, value (only if stated)."],
-                    ["6. Gate + store", "Evidence gate: vendor resolved, counterparty named, event type valid, award language present. Otherwise needs_review with the reasons."],
+                    ["3. Select", "Structural only: age cutoff (60 days) and, for market-wide wires, a tracked-vendor name. Every rejection is recorded with its reason."],
+                    ["4. Read + triage", "Publisher page fetched (Google News links decoded). Haiku reads the article: article type, event status, family, vendor, counterparty. Out-of-scope articles are recorded with their type, not re-bought."],
+                    ["5. Dedupe + analyse", "Re-reports attach to the stored event as extra sources (vendor, counterparty, ±14 days). Sonnet reads every in-scope article: scope, parties, value (stated or a labelled estimate), insight."],
+                    ["6. Gate + store", "Publishes on the model's reading: vendor resolved, counterparty named, event type valid, event announced or completed. Tenders, terminations, disputes and low confidence go to needs_review with the reasons."],
                   ].map(([step, desc]) => (
                     <div key={step} className="flex gap-3">
                       <span className="text-zinc-500 font-mono w-28 shrink-0">{step}</span>

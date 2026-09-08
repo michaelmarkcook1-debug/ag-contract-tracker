@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES,
-         GNEWS_ITEM_CAP, SourceDefinition, isRelevantArticle, mentionsTrackedVendor } from "./sources";
+         GNEWS_ITEM_CAP, SourceDefinition, selectArticle } from "./sources";
 import { crawlSource, RawArticle } from "./crawler";
 import { ExtractionResult, EMPTY_USAGE, TokenUsage, CANONICAL_FAMILIES, defaultEventType,
          triageArticle, analyseArticle, resultFromTriage, TriageResult } from "./classifier";
@@ -12,8 +12,8 @@ import { orgsMatch, titleCounterparty, titleSimilarity, withinDays, amountsConfl
          SAME_EVENT_WINDOW_DAYS, SAME_EVENT_WINDOW_DAYS_NO_COUNTERPARTY, TITLE_MATCH_THRESHOLD,
          TITLE_FALLBACK_THRESHOLD, VENDOR_WINDOW_FAMILIES, RESULTS_TITLE_THRESHOLD, COUNTERPARTY_FAMILIES } from "./dedup";
 
-/** Body text passed to the cheap triage tier; analysis gets the full excerpt. */
-const TRIAGE_BODY_CHARS = 1_500;
+/** Body text passed to triage — most of the page, so the model reads the article rather than a headline. */
+const TRIAGE_BODY_CHARS = 4_000;
 
 export interface PipelineOptions {
   sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
@@ -201,7 +201,7 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
   // Publication gate — evidence rules (see gate.ts). Every routing to review
   // carries its reasons; an event type the model invented is normalised to
   // the family default rather than stored.
-  const { status: publicationStatus, reason: reviewReason } = decidePublication(result, article, vendorId);
+  const { status: publicationStatus, reason: reviewReason } = decidePublication(result, vendorId);
   const eventType = result.eventTypeValid
     ? result.eventType
     : defaultEventType(result.family, `${article.title} ${article.bodyText ?? article.snippet ?? ""}`);
@@ -285,6 +285,8 @@ async function storeEvent(article: RawArticle, result: ExtractionResult, runId: 
           clientRaw: result.clientRaw,
           clientId: clientId ?? undefined,
           clientConfidence: clientId ? 0.85 : 0.5,
+          clientAnonymised: !result.clientRaw && !!result.clientDescriptor,
+          clientDescriptor: result.clientDescriptor ?? null,
           contractEventType: eventType,
           tcvCommittedUsd: disclosed,
           tcvEstimateLowUsd: estimate?.lowUsd ?? null,
@@ -673,23 +675,16 @@ export async function runPipeline(
   });
   progress.articlesStale = newArticles.length - freshArticles.length;
 
-  // Cheap relevance pre-filter BEFORE any LLM spend — drops obvious noise
-  // (rankings, marketing, opinion pieces) for free via regex.
-  //
-  // Market-wide sources (wire services, procurement) are not tied to a vendor
-  // and return large volumes of unrelated industry news, so they additionally
-  // must name one of the TRACKED_VENDORS. Vendor-specific sources (per-vendor
-  // Google News, vendor press, IR) are already scoped by construction.
-  //
+  // Structural selection only. Market-wide wire feeds carry every company's
+  // press releases, so an item naming no tracked vendor is dropped here for
+  // free; everything else goes to the model, which reads the article and
+  // decides what it is. The headline regexes that used to sit here excluded
+  // real awards ("LTTS shares jump 3% after bagging $75M deal") and are gone.
   // Every rejection is persisted with its reason (see persistExclusions).
   const ruleExclusions: { article: RawArticle; reason: string }[] = [];
   const relevantArticles = freshArticles.filter(a => {
-    const verdict = isRelevantArticle(a.title, a.sourceType);
+    const verdict = selectArticle(a);
     if (!verdict.relevant) { ruleExclusions.push({ article: a, reason: verdict.reason ?? "rules:excluded" }); return false; }
-    if (a.provider === "Market Wide" && !mentionsTrackedVendor(`${a.title} ${a.snippet ?? ""}`)) {
-      ruleExclusions.push({ article: a, reason: "rules:vendor_gate" });
-      return false;
-    }
     return true;
   });
   progress.articlesIrrelevant = freshArticles.length - relevantArticles.length;

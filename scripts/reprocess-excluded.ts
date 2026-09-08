@@ -35,7 +35,9 @@ async function main() {
     const provider = r.sourceName ?? "Market Wide";
     const verdict = isRelevantArticle(r.sourceTitle, r.sourceType);
     if (reason.startsWith("rules:")) {
-      if (!verdict.relevant) continue;                                   // still excluded by the current rules
+      // The headline regexes are gone from selection; every rule exclusion except the
+      // structural vendor gate is re-read by the model.
+      if (reason === "rules:vendor_gate" || reason === "rules:no_title") continue;
       if (provider === "Market Wide" && !mentionsTrackedVendor(`${r.sourceTitle} ${r.rawText ?? ""}`)) continue;
     } else if (!(SIGNAL.test(r.sourceTitle) && verdict.relevant)) continue;
     articles.push({

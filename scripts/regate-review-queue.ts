@@ -16,9 +16,11 @@
  *
  * Before gating, three gaps the old pipeline left are repaired, because they
  * are not evidence against the event, just fields it never filled:
- *   - counterparty missing on a contract / partnership / M&A row → one triage
- *     call (Haiku) over the title and summary extracts it; results are cached
- *     in REGATE_CACHE so --apply does not pay again;
+ *   - one triage read (Haiku) over the title, summary and any stored text gives
+ *     the event STATUS (announced / opportunity / terminated / disputed …) the
+ *     gate now judges on, and the counterparty where a contract / partnership
+ *     / M&A row has none; results are cached in REGATE_CACHE so --apply does
+ *     not pay again;
  *   - no primary entity although the title names a tracked vendor → resolved;
  *   - event type outside the family's set → normalised to the family default.
  *
@@ -35,7 +37,7 @@ import type { RawArticle } from "../src/lib/ingestion/crawler";
 const ARCHIVE_AFTER_YEARS = 2;
 const CACHE_PATH = process.env.REGATE_CACHE ?? "/tmp/regate-enrichment.json";
 type Outcome = "publish" | "archive" | "keep";
-type Enrichment = { clientRaw: string | null; vendorRaw: string | null };
+type Enrichment = { clientRaw: string | null; vendorRaw: string | null; eventStatus?: string | null; articleType?: string | null };
 
 async function resolveEntityId(name: string | null): Promise<string | null> {
   if (!name) return null;
@@ -81,22 +83,21 @@ async function main() {
 
   // ── enrichment (cached) ───────────────────────────────────────────────────
   const cache: Record<string, Enrichment> = fs.existsSync(CACHE_PATH) ? JSON.parse(fs.readFileSync(CACHE_PATH, "utf8")) : {};
-  const needEnrich = rows.filter(e => COUNTERPARTY_FAMILIES.has(e.family)
-    && !(e.counterpartyRaw ?? e.contractDetails?.clientRaw ?? e.maDetails?.targetRaw ?? e.partnershipDetails?.entityBRaw ?? titleCounterparty(e.canonicalTitle))
-    && !cache[e.id]);
+  const needEnrich = rows.filter(e => !cache[e.id] || cache[e.id].eventStatus === undefined);
   if (needEnrich.length && process.env.ANTHROPIC_API_KEY) {
     console.log(`enriching counterparties for ${needEnrich.length} rows via triage (cached to ${CACHE_PATH})…`);
     let cursor = 0; let spent = 0;
     await Promise.all(Array.from({ length: 5 }, async () => {
       while (cursor < needEnrich.length) {
         const e = needEnrich[cursor++]; const se = e.sourceEvents[0];
+        const body = se?.rawText && se.rawText.length > 300 && !se.rawText.trimStart().startsWith("<a ") ? se.rawText.slice(0, 4000) : null;
         const t = await triageArticle({
-          title: e.canonicalTitle, url: "", publishedAt: e.announcementDate?.toISOString() ?? null,
-          snippet: [se?.sourceTitle, e.contractDetails?.scopeSummary, e.analystInsight].filter(Boolean).join(" ").slice(0, 1200) || null,
-          sourceId: "", provider: e.primaryEntity?.canonicalName ?? "", sourceType: se?.sourceType ?? "wire_service",
+          title: se?.sourceTitle ?? e.canonicalTitle, url: "", publishedAt: e.announcementDate?.toISOString() ?? null,
+          snippet: [e.canonicalTitle, e.contractDetails?.scopeSummary, e.analystInsight].filter(Boolean).join(" ").slice(0, 1200) || null,
+          sourceId: "", provider: e.primaryEntity?.canonicalName ?? "", sourceType: se?.sourceType ?? "wire_service", bodyText: body,
         });
         spent += t?.usage.costUsd ?? 0;
-        cache[e.id] = { clientRaw: t?.clientRaw ?? null, vendorRaw: t?.vendorRaw ?? null };
+        cache[e.id] = { clientRaw: t?.clientRaw ?? cache[e.id]?.clientRaw ?? null, vendorRaw: t?.vendorRaw ?? cache[e.id]?.vendorRaw ?? null, eventStatus: t?.eventStatus ?? null, articleType: t?.articleType ?? null };
       }
     }));
     fs.writeFileSync(CACHE_PATH, JSON.stringify(cache));
@@ -132,6 +133,7 @@ async function main() {
       geography: [], industry: null, confidenceScore: e.confidenceScore, extractionMethod: "llm",
       summary: e.contractDetails?.scopeSummary ?? e.analystInsight ?? null, analystInsight: null, missingCritical: [],
       eventTypeValid: isValidEventType(e.family, eventType), exclusionReason: null, usage: EMPTY_USAGE,
+      eventStatus: cache[e.id]?.eventStatus ?? null, articleType: cache[e.id]?.articleType ?? null,
     };
     const article: RawArticle = {
       title: se?.sourceTitle ?? e.canonicalTitle, url: "", publishedAt: e.announcementDate?.toISOString() ?? null,
@@ -143,7 +145,8 @@ async function main() {
     let outcome: Outcome; let reason: string | null;
     if (stale && !counterparty) { outcome = "archive"; reason = "archived:stale_no_counterparty"; }
     else {
-      const g = decidePublication(result, article, vendorId);
+      void article;
+      const g = decidePublication(result, vendorId);
       outcome = g.status === "published" ? "publish" : "keep"; reason = g.reason;
     }
     tally[outcome]++;
