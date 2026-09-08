@@ -31,7 +31,7 @@ interface RunResult {
     message?: string;
     phase?: string; sourcesAvailable?: number; sourcesProcessed?: number; sourcesTotal?: number;
     articlesFound?: number; articlesDuped?: number; eventsExtracted?: number;
-    articlesStale?: number; articlesRelevant?: number; articlesTriaged?: number; articlesExcluded?: number;
+    articlesStale?: number; articlesRelevant?: number; articlesTriaged?: number; articlesExcluded?: number; articlesMerged?: number;
     eventsPublished?: number; eventsQueued?: number; eventsDeferred?: number; errors?: string[];
   };
 }
@@ -62,6 +62,8 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
     const limit = maxSources === "all" ? 999 : parseInt(maxSources);
     let offset = 0;
     let totalArticles = 0;
+    let totalStored = 0;
+    let totalMerged = 0;
     let totalStale = 0;
     let totalRelevant = 0;
     let totalTriaged = 0;
@@ -107,6 +109,8 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
         const r = data.result;
         if (r) {
           totalArticles += r.articlesFound ?? 0;
+          totalStored += r.articlesDuped ?? 0;
+          totalMerged += r.articlesMerged ?? 0;
           totalStale += r.articlesStale ?? 0;
           totalRelevant += r.articlesRelevant ?? 0;
           totalTriaged += r.articlesTriaged ?? 0;
@@ -133,6 +137,8 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
         result: {
           message: `Pipeline complete — ${batchNum} batches.`,
           articlesFound: totalArticles,
+          articlesDuped: totalStored,
+          articlesMerged: totalMerged,
           articlesStale: totalStale,
           articlesRelevant: totalRelevant,
           articlesTriaged: totalTriaged,
@@ -241,8 +247,8 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
                     </div>
                   )}
                   {lastResult.result.articlesTriaged != null && (
-                    <p className="text-muted-foreground mt-1 font-mono">
-                      {lastResult.result.articlesRelevant} candidates · {lastResult.result.articlesTriaged} triaged · {lastResult.result.articlesExcluded} excluded by the model · {lastResult.result.articlesStale} skipped as stale
+                    <p className="text-muted-foreground mt-1 font-mono" title="found → already stored on an earlier run (skipped free) → too old → candidates → triaged → excluded by the model → merged into events already stored → published / review">
+                      {lastResult.result.articlesDuped} already stored · {lastResult.result.articlesStale} too old · {lastResult.result.articlesRelevant} candidates · {lastResult.result.articlesTriaged} triaged · {lastResult.result.articlesExcluded} excluded by the model · {lastResult.result.articlesMerged} merged into existing events
                     </p>
                   )}
                   {(lastResult.result.eventsDeferred ?? 0) > 0 && (
