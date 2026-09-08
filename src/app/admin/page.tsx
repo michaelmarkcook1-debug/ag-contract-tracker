@@ -137,7 +137,8 @@ export default async function AdminPage() {
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Type</th>
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Status</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Found</th>
-                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Survived dedup, age cutoff and rules">Candidates</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="URLs ingested on an earlier run — skipped before any model spend">Already stored</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Survived the age cutoff, rules and vendor gate">Candidates</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Triaged</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Judged out of scope by the model">Excluded</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Published</th>
@@ -158,6 +159,7 @@ export default async function AdminPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesFound}</td>
+                    <td className="px-3 py-2 text-right font-mono text-zinc-500">{run.articlesDuped}</td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesRelevant}</td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesTriaged}</td>
                     <td className="px-3 py-2 text-right font-mono text-zinc-500">{run.articlesExcluded}</td>
@@ -167,7 +169,7 @@ export default async function AdminPage() {
                   </tr>
                 ))}
                 {runs.length === 0 && (
-                  <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">No runs yet</td></tr>
+                  <tr><td colSpan={11} className="px-3 py-8 text-center text-muted-foreground">No runs yet</td></tr>
                 )}
               </tbody>
             </table>

@@ -17,6 +17,8 @@ interface IngestionStatus {
     startedAt: string; completedAt: string | null;
     articlesFound: number; articlesDuped: number;
     eventsExtracted: number; eventsPublished: number; eventsQueued: number;
+    articlesRelevant?: number; articlesStale?: number; articlesTriaged?: number;
+    articlesExcluded?: number; articlesDeferred?: number; articlesMerged?: number;
   } | null;
 }
 
@@ -273,10 +275,32 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
           </CardHeader>
           <CardContent className="text-xs space-y-1.5 text-muted-foreground">
             <div className="flex justify-between"><span>Started</span><span className="font-mono">{new Date(status.lastRun.startedAt).toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}</span></div>
+            {/* The funnel, top to bottom. "Already stored" is URLs ingested on an
+                earlier run (as events or recorded exclusions) and skipped before any
+                model spend — not duplicate events. A feed re-crawled soon after a
+                sweep is expected to be almost entirely already stored. */}
             <div className="flex justify-between"><span>Articles found</span><span className="font-mono">{status.lastRun.articlesFound}</span></div>
-            <div className="flex justify-between"><span>Dupes skipped</span><span className="font-mono">{status.lastRun.articlesDuped}</span></div>
+            <div className="flex justify-between" title="URLs ingested on an earlier run — skipped before any model spend"><span>Already stored</span><span className="font-mono">{status.lastRun.articlesDuped}</span></div>
+            {status.lastRun.articlesStale != null && status.lastRun.articlesStale > 0 && (
+              <div className="flex justify-between" title="Older than the age cutoff"><span>Too old</span><span className="font-mono">{status.lastRun.articlesStale}</span></div>
+            )}
+            {status.lastRun.articlesRelevant != null && (
+              <div className="flex justify-between" title="Survived the rules, vendor gate and age cutoff"><span>Candidates</span><span className="font-mono">{status.lastRun.articlesRelevant}</span></div>
+            )}
+            {status.lastRun.articlesTriaged != null && (
+              <div className="flex justify-between"><span>Triaged by the model</span><span className="font-mono">{status.lastRun.articlesTriaged}</span></div>
+            )}
+            {status.lastRun.articlesExcluded != null && (
+              <div className="flex justify-between" title="Judged out of scope by the model; recorded so they are never re-bought"><span>Excluded by the model</span><span className="font-mono text-zinc-500">{status.lastRun.articlesExcluded}</span></div>
+            )}
+            {status.lastRun.articlesMerged != null && status.lastRun.articlesMerged > 0 && (
+              <div className="flex justify-between" title="Re-reports attached to an event already stored"><span>Merged into existing</span><span className="font-mono">{status.lastRun.articlesMerged}</span></div>
+            )}
             <div className="flex justify-between"><span>Published</span><span className="font-mono text-emerald-400">{status.lastRun.eventsPublished}</span></div>
             <div className="flex justify-between"><span>Queued for review</span><span className="font-mono text-amber-400">{status.lastRun.eventsQueued}</span></div>
+            {status.lastRun.articlesDeferred != null && status.lastRun.articlesDeferred > 0 && (
+              <div className="flex justify-between" title="Candidates not reached within the run's budget — picked up next run"><span>Deferred</span><span className="font-mono">{status.lastRun.articlesDeferred}</span></div>
+            )}
           </CardContent>
         </Card>
       )}

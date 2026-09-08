@@ -59,7 +59,7 @@ async function main() {
   const mins = ((Date.now() - t0) / 60000).toFixed(1);
   console.log(`\n════ SWEEP COMPLETE in ${mins} min ════`);
   console.log(`articles found (incl. re-crawls): ${found}`);
-  console.log(`already seen (deduped):           ${duped}`);
+  console.log(`already stored (skipped, free):   ${duped}`);
   console.log(`dropped by relevance/vendor gate: ${irrelevant}`);
   console.log(`extracted:                        ${extracted}`);
   console.log(`  published:                      ${published}`);
