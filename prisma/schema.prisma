@@ -69,6 +69,16 @@ model SourceEvent {
   exclusionReason      String?
   // Publisher URL behind an aggregator redirect (Google News), once resolved.
   publisherUrl         String?
+  // ── Reading provenance (AI Delivery Mandate §23) ──
+  // What the model read and with which policy, so a result is reproducible.
+  articleType          String?
+  articleTextHash      String?   // sha256 of the text actually analysed (not the URL)
+  articleTextChars     Int?
+  modelId              String?
+  promptPolicyVersion  String?
+  analysedAt           DateTime?
+  // A row re-admitted after an exclusion keeps the old verdict (§20): regression evidence.
+  previousExclusionReason String?
   ingestionRunId       String?
   ingestionRun         IngestionRun? @relation(fields: [ingestionRunId], references: [id])
 
@@ -106,6 +116,24 @@ model CanonicalMarketEvent {
   // Counterparty as extracted (client / target / partner), every family.
   // Basis for cross-run dedup; the family detail tables are not always filled.
   counterpartyRaw          String?
+  // ── AI Delivery Mandate commercial-event fields (§7, §8, §10, §11, §16) ──
+  // Deterministic identity independent of article URL: sha256 of provider |
+  // normalised buyer | commercial event type | first-observed month.
+  canonicalContractEventId String?  @unique
+  // NEW_WIN | RENEWAL | EXTENSION | EXPANSION | SCOPE_REDUCTION | RECOMPETE |
+  // COMPETITIVE_TAKEAWAY | REPLACEMENT | TERMINATION | CONTRACT_CHANGE |
+  // OTHER_COMMERCIAL_EVENT | UNKNOWN
+  commercialEventType      String?
+  // ANNOUNCED | COMPLETED | OPPORTUNITY | TERMINATED | DISPUTED | UNKNOWN
+  eventStatus              String?
+  // PRIVATE_SECTOR | PUBLIC_SECTOR | STATE_OWNED_OR_MIXED | NON_PROFIT | UNKNOWN
+  buyerSector              String?
+  // EXPLICIT_AI | AI_MATERIAL | AI_ADJACENT | NOT_AI_SPECIFIC | UNKNOWN
+  aiRelevance              String?
+  // JSON: claim → the article passage that supports it (grounding, §9)
+  supportingText           String?
+  // Prompt policy that produced this event
+  readerVersion            String?
 
   primaryEntityId String?
   primaryEntity   Entity? @relation("PrimaryEntity", fields: [primaryEntityId], references: [id])
@@ -126,6 +154,8 @@ model CanonicalMarketEvent {
   @@index([publicationStatus])
   @@index([announcementDate])
   @@index([primaryEntityId])
+  @@index([buyerSector])
+  @@index([commercialEventType])
 }
 
 // ─── Family Detail Tables ─────────────────────────────────────────────────────
@@ -158,6 +188,14 @@ model ContractDetails {
   contractEndDatePrecision   String    @default("unknown")
   contractLengthMonths       Int?
   contractLengthDescriptor   String?
+  // ── Commercial mechanics (AI Delivery Mandate §12) — only when the text supports them ──
+  pricingModel        String?   // fixed price | time and materials | capped | outcome-based | consumption | day rate | mixed
+  outcomePricing      Boolean?
+  feeAtRisk           Boolean?
+  consumptionModel    Boolean?
+  renewalPeriodMonths Int?
+  expansionValueUsd   Float?
+  acvUsd              Float?
 
   tcvCommittedUsd     Float?
   tcvCeilingUsd       Float?

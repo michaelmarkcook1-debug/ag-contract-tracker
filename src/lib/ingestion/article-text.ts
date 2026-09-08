@@ -192,6 +192,30 @@ export async function fetchArticleText(url: string, maxChars = DEFAULT_MAX_CHARS
  * Feed item URL → { publisherUrl, text }. Google News links are decoded first;
  * anything else is fetched directly. Every step is best-effort.
  */
+
+/**
+ * Is this string usable as an article, or only feed scaffolding?
+ *
+ * Google News RSS items carry an `<a href="…">headline</a>` blob as their
+ * description. Stored as a snippet it looks like text but contains no article.
+ * Reading it produces a confident "no commercial event" — a false negative
+ * dressed as a verdict, which §7 forbids. Anything that survives tag-stripping
+ * with less than `minChars` of prose is not an article.
+ */
+export function readableArticleText(raw: string | null | undefined, minChars = 400): string | null {
+  if (!raw) return null;
+  const stripped = raw
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/&[a-z]+;|&#\d+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped.length < minChars) return null;
+  return raw.includes("<") ? stripped : raw.trim();
+}
+
 export async function retrieveArticle(url: string, maxChars = DEFAULT_MAX_CHARS): Promise<{ publisherUrl: string | null; article: ArticleText | null }> {
   const publisherUrl = isGoogleNewsUrl(url) ? await resolveGoogleNewsUrl(url) : url;
   if (!publisherUrl) return { publisherUrl: null, article: null };

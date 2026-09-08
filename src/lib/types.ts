@@ -180,8 +180,11 @@ export const CONTRACT_EVENT_TYPE_LABELS: Record<string, string> = {
   rebid_win: "Rebid Win",
   incumbent_displacement: "Displacement",
   framework_award: "Framework",
+  scope_reduction: "Scope Reduction",
+  termination: "Termination",
+  contract_change: "Contract Change",
   call_off: "Call-Off",
-  unknown: "Unknown",
+  unknown: "Unclassified",
 };
 
 export const FINANCIAL_EVENT_TYPE_LABELS: Record<string, string> = {

@@ -1,0 +1,168 @@
+{
+ "_about": "Article-derived commercial contract events. Candidate evidence for analyst review; not an analytical value, and not a route into the claims ledger.",
+ "_pairsWith": "00-programme/contract-tracker/ct_projection.py — the public-procurement projection. Same event space, different discovery route.",
+ "builtAt": "2026-09-08T14:32:28Z",
+ "reader": {
+  "modelId": "claude-sonnet-5",
+  "promptPolicyVersion": "reader/2.1.0-2026-09-08"
+ },
+ "since": "2024-01-01",
+ "records": 1,
+ "distinctIdentities": 1,
+ "byBuyerSector": {
+  "PUBLIC_SECTOR": 1
+ },
+ "byEventType": {
+  "RENEWAL": 1
+ },
+ "byEventStatus": {
+  "ANNOUNCED": 1
+ },
+ "byAiRelevance": {
+  "NOT_AI_SPECIFIC": 1
+ },
+ "valueDisclosure": {
+  "disclosed": 0,
+  "undisclosed": 1
+ },
+ "knownGaps": {
+  "endDate": "no article states a contract end date; never derived from award date plus duration",
+  "priorValue": "the value of the contract a takeaway replaced is almost never published",
+  "aiAttribution": "no source states AI as the cause of an award; aiRelevance describes scope, not causation",
+  "disclosureBias": "articles over-represent large, named, announced awards; absence of an event is not evidence it did not happen"
+ },
+ "rowsSha256": "cf8cef35ee0f42308089f52d08eec44ef22b96c12ec9085e973419b48b85347b",
+ "rows": [
+  {
+   "canonicalContractEventId": "226536ab4ee2a3120e83166e",
+   "provider": "Serco",
+   "supplierNameAsPublished": "Serco",
+   "client": "UK Ministry of Defence",
+   "clientDescriptor": null,
+   "clientAnonymised": false,
+   "buyerSector": "PUBLIC_SECTOR",
+   "eventType": "RENEWAL",
+   "eventStatus": "ANNOUNCED",
+   "title": "Serco | Renewal | UK Ministry of Defence | Missile-warning radar operations & upgrade",
+   "awardDate": "2026-09-03",
+   "awardDateBasis": "explicit",
+   "startDate": "2027-04-01",
+   "endDate": null,
+   "durationMonths": 60,
+   "renewalPeriodMonths": 24,
+   "valueUsd": null,
+   "valueDisclosed": false,
+   "valueIsEstimate": false,
+   "valueOriginal": null,
+   "valueCurrency": null,
+   "valueBasis": "undisclosed",
+   "acvUsd": null,
+   "expansionValueUsd": null,
+   "pricingModel": null,
+   "outcomePricing": null,
+   "feeAtRisk": null,
+   "consumptionModel": null,
+   "incumbent": "Serco",
+   "incumbentDisplaced": true,
+   "aiRelevance": "NOT_AI_SPECIFIC",
+   "serviceScope": "ITO",
+   "scopeSummary": "Operate and maintain SSPAR missile-warning radar at RAF Fylingdales; install new Enhanced Spacetrack Processor for orbital object tracking and analysis.",
+   "geography": [
+    "United Kingdom"
+   ],
+   "industry": "Defense/Aerospace",
+   "publicationStatus": "published",
+   "supportingText": {
+    "incumbent": "The contract confirms that Serco will remain a key operator of this strategic radar site through at least the early 2030s",
+    "buyerSector": "UK Ministry of Defence"
+   },
+   "articles": [
+    {
+     "url": "https://www.ad-hoc-news.de/boerse/news/corporate-news/serco-stock-gains-new-contract-as-raf-fylingdales-deal-strengthens-defense/70051352",
+     "aggregatorUrl": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxNZV9hcWYySENQTnpqRnMyME1PSXRGM2xaRDd4TG9uVWR2Q1ZWcWpmdVkxQllMbmdvSS1qcEZpSkJJU2dsUjZYd01OVTZrWFVZWjNUVDZVSmREU1M4Y1IwUlg5aGJEd280bzBidGxSc0FzdXQzTU90WkpwTC04SE5lUzVQSVhnOXNTSmEwN3pmTDNjUTVYMl90OE9RZ205bzZkZ0JZNVV6RWxLWDg1YUdGX0tnWWxva0NHbG15ZUtDZjBzNVZYc3hlbnRVZnFKcjFSQ0Jv?oc=5",
+     "publisher": "Serco",
+     "title": "Serco stock gains new contract as RAF Fylingdales deal strengthens defense profile - AD HOC NEWS",
+     "publishedAt": "2026-09-03",
+     "articleType": "NEWS_REPORT",
+     "articleTextHash": "81f68f466262e9fd0c8e1b8b840a9977e25f95b590c149f36d5a1b5b0f4bc0ce",
+     "modelId": "claude-sonnet-5",
+     "promptPolicyVersion": "reader/2.0.0-2026-09-08",
+     "analysedAt": "2026-09-08T13:34:23.615Z"
+    },
+    {
+     "url": "https://thedefensepost.com/2026/09/03/uks-missile-warning-radar/",
+     "aggregatorUrl": "https://news.google.com/rss/articles/CBMickFVX3lxTE5VcGVwbUZqNGYtVTVLOTRBVTN5T2pxdThLU29aOEYyaVRiWlVVOHM2alZrRUxxdDZ6eFNWUGdiYzcwYXBNSThkVkU1S05WYVNpdnBXdFk4bzM0NGx1bVg0ZVlTUFU4UDFVR2RkRk5HQmNnQdIBd0FVX3lxTFAwdEdmcXVtSGprdUJxX1YxblMyMHBRMkdaaXowUnNnemdPZ3dWVDdaaEpqM3NzdU9CYWlRVFQ0NlZOVHpEQ3FmSl8xNEE3bms2U1JKNm9TQWUtSFNpVDB1cVlBQmg0R0VXamQwOFlyOWlsRURTeUd3?oc=5",
+     "publisher": "Serco",
+     "title": "Serco to Equip UK’s Missile-Warning Radar With New Space-Tracking System - The Defense Post",
+     "publishedAt": "2026-09-03",
+     "articleType": "NEWS_REPORT",
+     "articleTextHash": "ddd018e477571ddc1454188d7fb74f7d27cd4fba1dad2b097808e0f58f6799ee",
+     "modelId": "claude-sonnet-5",
+     "promptPolicyVersion": "reader/2.0.0-2026-09-08",
+     "analysedAt": "2026-09-08T13:34:03.196Z"
+    },
+    {
+     "url": "https://defence-industry.eu/serco-wins-five-year-contract-to-operate-raf-fylingdales-radar-supporting-u-s-missile-warning-and-low-earth-orbit-surveillance/",
+     "aggregatorUrl": "https://news.google.com/rss/articles/CBMi6wFBVV95cUxONm50X09acHBwdkU1Q0pwMnFwZ1hNbGIwMUxiZmx6S0dBTDNkeENxMDI2M3RQMmtlWHF2cHdsZlQ5b25adEhWY1pSLV9zYXA0LTBycDBWVXhzTTJ2UW1FNnJvUzRfdHdNU2REU1k0ZHIwS0FncG10VzcxT0pwNnJQQTRlbGJNRTd1VWw0MUk4Tkt5alM5a2g1MkpxZ0hwbnBWcmt6RDZiNzI1V1ZfR3pUX29ndnBzZVl3eTlYWWhBei05OHRKZVZYbVBpWXVkaVNuWVh3MjBfdW5FanFuYXdpLXlkOXNWVnQ1ZU9F?oc=5",
+     "publisher": "Serco",
+     "title": "Serco wins five-year contract to operate RAF Fylingdales radar supporting U.S. missile warning and low Earth orbit surveillance - Defence Industry Europe",
+     "publishedAt": "2026-09-03",
+     "articleType": "NEWS_REPORT",
+     "articleTextHash": "e146932ecf6130a83cbb05566ec1bcaa2d92817e46c82d39ebb0a035c66d8d0d",
+     "modelId": "claude-sonnet-5",
+     "promptPolicyVersion": "reader/2.0.0-2026-09-08",
+     "analysedAt": "2026-09-08T13:34:16.779Z"
+    },
+    {
+     "url": "https://militaryembedded.com/radar-ew/rf-and-microwave/early-warning-radar-to-be-operated-for-uk-ministry-of-defence-by-serco",
+     "aggregatorUrl": "https://news.google.com/rss/articles/CBMiwwFBVV95cUxOQVR2Ni0xZEg0RE9YZl9BWXpfOGRXWkljVHFWYmttWklMZXJGV3BQanI0dEVsWXRPaG1ERG94NE90R2hpRFhqWldmaXpvVzExWlpmdnpMLTRtSnNOLUhnWkVZcjdVdGxYdElYSy1BWDI3UkxFeFhNX0lmeUpRaEIwMzZVSWRMRjM4Qkk0ZFc2c0dUc2x5dVBHcjN1aFRoc1czVG56YkI5cktMSnNOUFFocW5icUxkRUJqRUg5NENVQVRuUDg?oc=5",
+     "publisher": "Serco",
+     "title": "Early warning radar to be operated for UK Ministry of Defence by Serco - militaryembedded.com",
+     "publishedAt": "2026-09-03",
+     "articleType": "NEWS_REPORT",
+     "articleTextHash": "eb3ab9019591f41899e6f722720e9adfa6ee88b96412fccdddbe549f0f25ce23",
+     "modelId": "claude-sonnet-5",
+     "promptPolicyVersion": "reader/2.0.0-2026-09-08",
+     "analysedAt": "2026-09-08T13:34:19.082Z"
+    },
+    {
+     "url": "https://thedefensewatch.com/defense-contracts/serco-raf-fylingdales-radar-contract/",
+     "aggregatorUrl": "https://news.google.com/rss/articles/CBMiiwFBVV95cUxNcFl6R0Z4UmNwLVMzVkRaSjlmZWloTGh3NFpWUGItb2UtQTZxZHcxRGpDRDJxVFpjTEEtODlFTmtuSzlVNEhjZGp2a01tV2RBYy1rdGY0Nk1DbDk4R0FLU1J1RU44bFd0WUZ3SXdfR3ZydW9RQlBoWXlxZ0hadjVqeUpVSG1yVm1DRTQ0?oc=5",
+     "publisher": "Serco",
+     "title": "Serco Secures Five Year Deal To Operate RAF Fylingdales Radar Supporting U.S. Missile Warning - The Defense Watch",
+     "publishedAt": "2026-09-04",
+     "articleType": "NEWS_REPORT",
+     "articleTextHash": "198c1d5d50e15b394c63710a27a1886edb584dfdb24df5e486b257ee15e744c5",
+     "modelId": "claude-sonnet-5",
+     "promptPolicyVersion": "reader/2.0.0-2026-09-08",
+     "analysedAt": "2026-09-08T13:34:08.724Z"
+    },
+    {
+     "url": "https://ukdefencejournal.org.uk/serco-wins-raf-fylingdales-radar-support-contract/",
+     "aggregatorUrl": "https://news.google.com/rss/articles/CBMiigFBVV95cUxObGxQNktJTk9Dc1VIYThWNlNUVk5uaGRlMXBuQ1RPRmJMeVZENXlTXzhHYU5jOTVxLV9HZ1VGR2JnVFMwemlIOW5TTkdtSjVKNUtfb2czS0tRcWxVZkl5VnN4SENBR2NTS0NoVmFvRld4Z3hWc2lGakpjVHZGdGlocjBpbG5qdTNlbFE?oc=5",
+     "publisher": "Serco",
+     "title": "Serco wins RAF Fylingdales radar support contract - UK Defence Journal",
+     "publishedAt": "2026-09-02",
+     "articleType": "NEWS_REPORT",
+     "articleTextHash": "61fd63286483128329866336c6952fb57eca6e3a7adaefdaf2e5a26ebd0089ac",
+     "modelId": "claude-sonnet-5",
+     "promptPolicyVersion": "reader/2.0.0-2026-09-08",
+     "analysedAt": "2026-09-08T13:34:04.488Z"
+    },
+    {
+     "url": "https://www.yorkpress.co.uk/news/26514932.serco-renews-contract-fylingdales-help-defence-sector/",
+     "aggregatorUrl": "https://news.google.com/rss/articles/CBMinAFBVV95cUxQVUR3X1drelRsV0x2N01DcXdTSWx2MU92NnVkWEM2SmVLQjVyMzFYSHI2TlVyU3RIa3FUX2RTQ2RkR1lEVnVSekRVYjVTTzdGWk5iYnEwMzMwRE5BbTZES1VaTDFfelprVFpjYmhnQ0NVYXlTcnFuS29HcnA1UWdDTFdwWS1pdzVnaWFaYmhHUF81Ung0NHREUVIxeVI?oc=5",
+     "publisher": "Serco",
+     "title": "Serco secures radar contract for major North York Moors site - The York Press",
+     "publishedAt": "2026-09-02",
+     "articleType": "NEWS_REPORT",
+     "articleTextHash": "27935128a24108afd13c7fafea00b0a8c6e794307dd2695c35222aeba77169ef",
+     "modelId": "claude-sonnet-5",
+     "promptPolicyVersion": "reader/2.0.0-2026-09-08",
+     "analysedAt": "2026-09-08T13:34:04.499Z"
+    }
+   ],
+   "articleCount": 7
+  }
+ ]
+}

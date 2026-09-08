@@ -3,17 +3,13 @@ import { prisma } from "@/lib/db";
 import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES,
          GNEWS_ITEM_CAP, SourceDefinition, selectArticle } from "./sources";
 import { crawlSource, RawArticle } from "./crawler";
-import { ExtractionResult, EMPTY_USAGE, TokenUsage, CANONICAL_FAMILIES, defaultEventType,
-         triageArticle, analyseArticle, resultFromTriage, TriageResult } from "./classifier";
-import { inferTcv, clampEstimate, MODEL_ESTIMATE_BASIS } from "@/lib/tcv/infer";
-import { retrieveArticle } from "./article-text";
-import { decidePublication } from "./gate";
-import { orgsMatch, titleCounterparty, titleSimilarity, withinDays, amountsConflict,
-         SAME_EVENT_WINDOW_DAYS, SAME_EVENT_WINDOW_DAYS_NO_COUNTERPARTY, TITLE_MATCH_THRESHOLD,
-         TITLE_FALLBACK_THRESHOLD, VENDOR_WINDOW_FAMILIES, RESULTS_TITLE_THRESHOLD, COUNTERPARTY_FAMILIES } from "./dedup";
+import { EMPTY_USAGE, TokenUsage } from "./classifier";
+import { retrieveArticle, readableArticleText } from "./article-text";
+import { readArticle, type Reading } from "./reader";
+import { storeReading, storeNonEvent, storePending, storeUnreadable } from "./store";
 
-/** Body text passed to triage — most of the page, so the model reads the article rather than a headline. */
-const TRIAGE_BODY_CHARS = 4_000;
+/** The reader gets the whole page; this only bounds pathological documents. */
+const READER_MAX_CHARS = 60_000;
 
 export interface PipelineOptions {
   sourceFilter?: "vendor_rss" | "investor_relations" | "wire" | "procurement" | "all";
@@ -101,6 +97,8 @@ export interface PipelineProgress {
   articlesExcluded: number;
   /** Attached to an already-stored event instead of creating a new one. */
   articlesMerged: number;
+  /** Read failed (model unavailable / unreadable output) — kept as pending for a later run, never regex-classified. */
+  articlesPending: number;
   /** Real token spend for this run. */
   usage: TokenUsage;
   currentSource?: string;
@@ -163,326 +161,6 @@ function pickSources(filter: PipelineOptions["sourceFilter"]) {
   if (filter === "procurement") return PROCUREMENT_SOURCES;
   if (filter === "wire") return [...WIRE_SOURCES, ...GOOGLE_NEWS_SOURCES];
   return ALL_SOURCES;
-}
-
-async function resolveVendorId(vendorName: string | null): Promise<string | null> {
-  if (!vendorName) return null;
-  const entity = await prisma.entity.findFirst({
-    where: {
-      OR: [
-        { canonicalName: { equals: vendorName } },
-        { aliases: { some: { alias: { equals: vendorName } } } },
-      ],
-    },
-    select: { id: true },
-  });
-  return entity?.id ?? null;
-}
-
-type StoreOutcome = { outcome: "published" | "queued" | "excluded"; eventId?: string };
-
-async function storeEvent(article: RawArticle, result: ExtractionResult, runId: string): Promise<StoreOutcome> {
-  if (result.family === "EXCLUDED") return { outcome: "excluded" };
-  // §3/§6/§23 — an unclassifiable article (e.g. a procurement notice with no
-  // award evidence, or a rule-based fallback after model failure) must not be
-  // stored under a guessed family. Withhold rather than manufacture an event.
-  if (!CANONICAL_FAMILIES.has(result.family)) return { outcome: "excluded" };
-
-  // Idempotent by sourceUrl. A row recorded as EXCLUDED is not "already
-  // processed": under reprocessExcluded the article has been re-evaluated and
-  // admitted, so the exclusion row gives way to the event. Anything else with
-  // this URL is a real earlier result.
-  const existing = await prisma.sourceEvent.findUnique({ where: { sourceUrl: article.url }, select: { id: true, processingStatus: true } });
-  if (existing && existing.processingStatus !== "excluded") return { outcome: "excluded" };
-  if (existing) await prisma.sourceEvent.delete({ where: { id: existing.id } });
-
-  const vendorId = await resolveVendorId(result.vendorRaw);
-
-  // Publication gate — evidence rules (see gate.ts). Every routing to review
-  // carries its reasons; an event type the model invented is normalised to
-  // the family default rather than stored.
-  const { status: publicationStatus, reason: reviewReason } = decidePublication(result, vendorId);
-  const eventType = result.eventTypeValid
-    ? result.eventType
-    : defaultEventType(result.family, `${article.title} ${article.bodyText ?? article.snippet ?? ""}`);
-
-  // Resolve the counterparty and run the comparable-TCV inference BEFORE the
-  // transaction. Both are round-trips; inside the transaction they pushed it
-  // past Prisma's 5s interactive limit under concurrency ("A query cannot be
-  // executed on an expired transaction") and the whole event rolled back.
-  const clientId = result.family === "CONTRACT" ? await resolveVendorId(result.clientRaw) : null;
-  // Value policy (2026-09-08): a disclosed figure is a fact and lives in
-  // tcvCommittedUsd; anything else is an ESTIMATE range, labelled with its
-  // basis. The extraction model's range (it read the article) is preferred and
-  // sanity-clamped to the segment's disclosed envelope; the comparable engine
-  // is the fallback. Undisclosed contracts should rarely be left without one.
-  const disclosed = result.tcvUsd && !result.tcvIsEstimate ? result.tcvUsd : null;
-  let estimate: { lowUsd: number; highUsd: number; basis: string } | null = null;
-  if (result.family === "CONTRACT" && !disclosed) {
-    if (result.tcvEstimateLowUsd && result.tcvEstimateHighUsd) {
-      const c = await clampEstimate(article.sourceType, result.tcvEstimateLowUsd, result.tcvEstimateHighUsd);
-      estimate = { lowUsd: c.lowUsd, highUsd: c.highUsd, basis: `${MODEL_ESTIMATE_BASIS}: ${(result.tcvEstimateRationale ?? "range from scope and term").slice(0, 160)}${c.clamped ? " (clamped)" : ""}` };
-    } else {
-      const v = await inferTcv({ serviceLine: result.primaryMacroServiceLine, sourceType: article.sourceType, contractLengthMonths: result.contractLengthMonths, disclosedUsd: null });
-      if (v.state === "INFERRED") estimate = { lowUsd: v.lowUsd, highUsd: v.highUsd, basis: v.basis };
-    }
-  }
-
-  let eventId = "";
-  await prisma.$transaction(async (tx) => {
-    const sourceEvent = await tx.sourceEvent.create({
-      data: {
-        sourceUrl: article.url,
-        rawTextHash: hashArticle(article.url),
-        sourceTitle: article.title.slice(0, 300),
-        sourceName: article.provider,
-        sourceType: article.sourceType,
-        publicationDate: parseDate(article.publishedAt),
-        rawText: article.bodyText ?? article.snippet ?? null,
-        publisherUrl: article.publisherUrl ?? null,
-        extractedFamily: result.family,
-        extractionConfidence: result.confidenceScore,
-        processingStatus: "extracted",
-        ingestionRunId: runId,
-      },
-    });
-
-    const event = await tx.canonicalMarketEvent.create({
-      data: {
-        family: result.family,
-        eventType,
-        canonicalTitle: result.canonicalTitle.slice(0, 500),
-        announcementDate: parseDate(article.publishedAt),
-        // §8 — provenance must reflect the evidence. This was hardcoded to
-        // "explicit", asserting a sourced date even when none existed. It is
-        // now derived: "explicit" only when the source supplied a date.
-        // Ingestion/processing timestamps are never used as a substitute.
-        announcementDateBasis: article.publishedAt ? "explicit" : "unavailable",
-        geography: JSON.stringify(result.geography),
-        industry: result.industry,
-        industryBasis: result.industry ? "classified" : "unavailable",
-        confidenceScore: result.confidenceScore,
-        commercialRelevanceScore: result.tcvUsd ? Math.min(0.95, 0.6 + result.confidenceScore * 0.35) : result.confidenceScore * 0.8,
-        humanReviewRequired: publicationStatus === "needs_review",
-        publicationStatus,
-        reviewReason,
-        counterpartyRaw: result.clientRaw,
-        analystInsight: result.analystInsight,
-        originalArticleUrl: article.publisherUrl ?? article.url,
-        primaryEntityId: vendorId,
-        sourceEvents: { connect: { id: sourceEvent.id } },
-      },
-    });
-
-    // Store family-specific details
-    if (result.family === "CONTRACT") {
-      await tx.contractDetails.create({
-        data: {
-          canonicalEventId: event.id,
-          vendorId: vendorId ?? undefined,
-          vendorRaw: result.vendorRaw,
-          vendorConfidence: vendorId ? 0.9 : 0.6,
-          clientRaw: result.clientRaw,
-          clientId: clientId ?? undefined,
-          clientConfidence: clientId ? 0.85 : 0.5,
-          clientAnonymised: !result.clientRaw && !!result.clientDescriptor,
-          clientDescriptor: result.clientDescriptor ?? null,
-          contractEventType: eventType,
-          tcvCommittedUsd: disclosed,
-          tcvEstimateLowUsd: estimate?.lowUsd ?? null,
-          tcvEstimateMidUsd: estimate ? Math.round((estimate.lowUsd + estimate.highUsd) / 2) : null,
-          tcvEstimateHighUsd: estimate?.highUsd ?? null,
-          tcvBasis: disclosed ? "official_disclosed" : (estimate ? estimate.basis : "insufficient_evidence"),
-          tcvIsEstimate: !!estimate,
-          // §10/§16 external vocabulary: KNOWN / ESTIMATED / NOT RELIABLY ESTIMABLE
-          tcvConfidence: disclosed ? "known" : (estimate ? "estimated" : "not_reliably_estimable"),
-          contractLengthMonths: result.contractLengthMonths,
-          primaryMacroServiceLine: result.primaryMacroServiceLine,
-          scopeSummary: result.summary ?? article.snippet?.slice(0, 500) ?? null,
-          platformsUsed: "[]",
-          clientServiceCoverageLocation: JSON.stringify(result.geography),
-          secondaryMacroServiceLines: "[]",
-          secondaryMicroServiceLines: "[]",
-        },
-      });
-    }
-    // Other families: store minimal details (can be enriched in review)
-    eventId = event.id;
-  }, { timeout: 20_000, maxWait: 10_000 });
-
-  return { outcome: publicationStatus === "published" ? "published" : "queued", eventId };
-}
-
-/**
- * Record an article as an additional source of an event that already exists —
- * a re-report from another outlet, or the same story on a later day. The
- * event keeps one row and gains corroboration; nothing is analysed twice.
- */
-async function attachSource(article: RawArticle, t: TriageResult, eventId: string, runId: string): Promise<void> {
-  const data = {
-    rawTextHash: hashArticle(article.url),
-    sourceTitle: article.title.slice(0, 300),
-    sourceName: article.provider,
-    sourceType: article.sourceType,
-    publicationDate: parseDate(article.publishedAt),
-    rawText: article.bodyText ?? article.snippet ?? null,
-    publisherUrl: article.publisherUrl ?? null,
-    extractedFamily: t.family,
-    extractionConfidence: t.confidenceScore,
-    processingStatus: "extracted",
-    exclusionReason: null,
-    ingestionRunId: runId,
-    canonicalEvents: { connect: { id: eventId } },
-  };
-  // Upsert: under reprocessExcluded the URL may already exist as an exclusion row.
-  await prisma.sourceEvent.upsert({ where: { sourceUrl: article.url }, create: { sourceUrl: article.url, ...data }, update: data });
-}
-
-/**
- * The stored event this article re-reports, if any.
- *  1. Same publisher page already stored (the same article under two vendor
- *     feeds) → its event; if that page was stored without an event (excluded),
- *     the article is skipped.
- *  2. Same family, same resolved vendor, announcement within ±14 days, and a
- *     counterparty that matches after normalisation → that event.
- * A missing vendor entity or counterparty is a weak key: no merge.
- */
-async function findStoredEvent(article: RawArticle, t: TriageResult, vendorId: string | null):
-  Promise<{ eventId: string } | { skip: true } | null> {
-  if (article.publisherUrl) {
-    const same = await prisma.sourceEvent.findFirst({
-      where: { publisherUrl: article.publisherUrl },
-      select: { processingStatus: true, canonicalEvents: { select: { id: true }, take: 1 } },
-    });
-    if (same) return same.canonicalEvents[0] ? { eventId: same.canonicalEvents[0].id } : { skip: true };
-  }
-  if (!vendorId) return null;
-  const when = parseDate(article.publishedAt);
-  if (!when) return null;
-  // With a counterparty the match is on the organisation within ±14 days.
-  // Without one (results, org changes, launches) it is a title match within a
-  // week — and only when the stored event has no counterparty either, so a
-  // contract is never merged into a different contract on wording alone.
-  const hasCounterparty = !!t.clientRaw?.trim();
-  const windowDays = hasCounterparty ? SAME_EVENT_WINDOW_DAYS : SAME_EVENT_WINDOW_DAYS_NO_COUNTERPARTY;
-  const pad = windowDays * 86_400_000;
-  const candidates = await prisma.canonicalMarketEvent.findMany({
-    where: {
-      family: t.family,
-      primaryEntityId: vendorId,
-      announcementDate: { gte: new Date(when.getTime() - pad), lte: new Date(when.getTime() + pad) },
-      publicationStatus: { not: "excluded_noise" },
-    },
-    select: { id: true, counterpartyRaw: true, canonicalTitle: true, announcementDate: true, contractDetails: { select: { clientRaw: true } } },
-    take: 50,
-  });
-  for (const c of candidates) {
-    if (!withinDays(when, c.announcementDate, windowDays)) continue;
-    if (amountsConflict(article.title, c.canonicalTitle)) continue;
-    const similar = titleSimilarity(t.canonicalTitle, c.canonicalTitle);
-    // Results announcements are re-reported under unrelated headlines within
-    // the week — but a results release and a same-week fundraise are two
-    // events, so the headlines must still share something.
-    if (VENDOR_WINDOW_FAMILIES.has(t.family)) { if (similar >= RESULTS_TITLE_THRESHOLD) return { eventId: c.id }; continue; }
-    const counterparty = c.counterpartyRaw ?? c.contractDetails?.clientRaw ?? titleCounterparty(c.canonicalTitle);
-    if (hasCounterparty) {
-      if (counterparty && orgsMatch(t.clientRaw, counterparty)) return { eventId: c.id };
-      // Acronym vs full name ("STTGDC" / "ST Telemedia Global Data Centres"): the headlines decide.
-      if (counterparty && similar >= TITLE_FALLBACK_THRESHOLD) return { eventId: c.id };
-    } else if (!counterparty && !COUNTERPARTY_FAMILIES.has(t.family) && similar >= TITLE_MATCH_THRESHOLD) {
-      return { eventId: c.id };
-    }
-  }
-  return null;
-}
-
-
-// ── Pre-extraction dedup ─────────────────────────────────────────────────────
-// Duplicates are cheapest to kill BEFORE the LLM runs. Each source reports the
-// same event under a slightly different headline, so URL-level dedup does not
-// catch them and every copy costs a full extraction (~$0.0068) to discover.
-// Measured: ~6% of new events duplicate something already stored, on top of
-// duplicates within the same batch.
-//
-// Deliberately conservative — Jaccard over UNION, a minimum token count and a
-// same-day-ish window. A looser rule risks discarding genuinely distinct deals
-// that merely share a vendor name, which is far worse than paying to extract a
-// duplicate we later collapse.
-const DUP_JACCARD = 0.75;
-const DUP_DAYS = 7;
-
-function titleTokens(t: string): Set<string> {
-  return new Set(
-    t.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim()
-      .split(" ").filter(w => w.length > 3),
-  );
-}
-
-function jaccard(a: Set<string>, b: Set<string>): number {
-  let inter = 0;
-  a.forEach(w => { if (b.has(w)) inter++; });
-  const union = a.size + b.size - inter;
-  return union === 0 ? 0 : inter / union;
-}
-
-/**
- * Drops articles that duplicate (a) an event already stored or (b) an earlier
- * article in this same batch. Returns the survivors.
- */
-async function dropDuplicateArticles(articles: RawArticle[]): Promise<{ kept: RawArticle[]; dropped: number }> {
-  if (articles.length === 0) return { kept: [], dropped: 0 };
-
-  const dates = articles.map(a => (a.publishedAt ? new Date(a.publishedAt).getTime() : 0)).filter(Boolean);
-  const pad = DUP_DAYS * 86_400_000;
-  const existing = await prisma.canonicalMarketEvent.findMany({
-    where: dates.length
-      ? { announcementDate: { gte: new Date(Math.min(...dates) - pad), lte: new Date(Math.max(...dates) + pad) } }
-      : {},
-    select: { canonicalTitle: true, announcementDate: true },
-    take: 20_000,
-  });
-  const priors = existing.map(e => ({ tk: titleTokens(e.canonicalTitle), t: e.announcementDate?.getTime() ?? 0 }));
-
-  const kept: RawArticle[] = [];
-  const batch: { tk: Set<string>; t: number }[] = [];
-  let dropped = 0;
-
-  for (const a of articles) {
-    const tk = titleTokens(a.title);
-    const t = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
-    if (tk.size < 4) { kept.push(a); batch.push({ tk, t }); continue; }
-    const clash = (list: { tk: Set<string>; t: number }[]) =>
-      list.some(o => Math.abs(o.t - t) / 86_400_000 <= DUP_DAYS && jaccard(tk, o.tk) >= DUP_JACCARD);
-    if (clash(priors) || clash(batch)) { dropped++; continue; }
-    kept.push(a);
-    batch.push({ tk, t });
-  }
-  return { kept, dropped };
-}
-
-
-/**
- * Same-run twin test: same family and vendor, and either matching
- * counterparties within ±14 days or — when neither names one — similar titles
- * within a week. Mirrors findStoredEvent for articles not yet stored.
- */
-function sameStagedEvent(a: { article: RawArticle; triage: TriageResult }, b: { article: RawArticle; triage: TriageResult }, whenB: Date | null): boolean {
-  if (a.triage.family !== b.triage.family) return false;
-  if ((a.triage.vendorRaw ?? "").toLowerCase() !== (b.triage.vendorRaw ?? "").toLowerCase()) return false;
-  const whenA = parseDate(a.article.publishedAt);
-  if (amountsConflict(a.article.title, b.article.title)) return false;
-  if (VENDOR_WINDOW_FAMILIES.has(a.triage.family)) {
-    return withinDays(whenA, whenB, SAME_EVENT_WINDOW_DAYS_NO_COUNTERPARTY)
-      && titleSimilarity(a.triage.canonicalTitle, b.triage.canonicalTitle) >= RESULTS_TITLE_THRESHOLD;
-  }
-  const ca = a.triage.clientRaw?.trim(), cb = b.triage.clientRaw?.trim();
-  if (ca && cb) {
-    if (!withinDays(whenA, whenB, SAME_EVENT_WINDOW_DAYS)) return false;
-    return orgsMatch(ca, cb) || titleSimilarity(a.triage.canonicalTitle, b.triage.canonicalTitle) >= TITLE_FALLBACK_THRESHOLD;
-  }
-  if (ca || cb || COUNTERPARTY_FAMILIES.has(a.triage.family)) return false;
-  return withinDays(whenA, whenB, SAME_EVENT_WINDOW_DAYS_NO_COUNTERPARTY)
-    && titleSimilarity(a.triage.canonicalTitle, b.triage.canonicalTitle) >= TITLE_MATCH_THRESHOLD;
 }
 
 // ── Sync source registry from definitions ─────────────────────────────────────
@@ -575,6 +253,7 @@ export async function runPipeline(
     articlesTriaged: 0,
     articlesExcluded: 0,
     articlesMerged: 0,
+    articlesPending: 0,
     usage: { ...EMPTY_USAGE, tiers: [] },
     errors: [],
   };
@@ -654,7 +333,8 @@ export async function runPipeline(
     const existing = await prisma.sourceEvent.findMany({
       where: {
         sourceUrl: { in: urls.slice(i, i + 2000) },
-        ...(reprocessExcluded ? { processingStatus: { not: "excluded" } } : {}),
+        // Pending rows (model failure on an earlier run) are always re-read (§22).
+        processingStatus: reprocessExcluded ? { notIn: ["excluded", "pending"] } : { not: "pending" },
       },
       select: { sourceUrl: true },
     });
@@ -693,25 +373,22 @@ export async function runPipeline(
     if (err) progress.errors.push(err);
   }
 
-  // Kill duplicates before the LLM sees them — the only point where a duplicate
-  // costs nothing instead of a full extraction.
-  const { kept: dedupedArticles, dropped: preDupes } = await dropDuplicateArticles(relevantArticles);
-  progress.articlesPreDeduped = preDupes;
+  // No headline-similarity pre-dedup: the mandate permits only exact duplicates
+  // before reading (§4). Re-reports are reconciled after the read, on identity.
+  const dedupedArticles = relevantArticles;
+  progress.articlesPreDeduped = 0;
   progress.articlesRelevant = dedupedArticles.length;
 
-  // Hard cap on LLM calls so a batch always finishes inside the time budget.
-  // Articles beyond the cap stay unstored and are re-crawled on the next run.
-  //
-  // Concurrency defaults to 1 (strictly sequential) so the serverless path is
-  // unchanged. Long-running backfills raise it to drain a backlog that would
-  // otherwise take hours at ~3s per extraction.
-  // ── PHASE 1: EXTRACT ────────────────────────────────────────────────────────
-  // Cheap triage on every candidate. Produces the entities we dedupe on.
+  // ── PHASE 1: READ ───────────────────────────────────────────────────────────
+  // The model reads each article in full (segmented when long) and returns the
+  // article type and every commercial event with its supporting passages. A
+  // model failure marks the article pending for a later run — never a regex
+  // fallback (§22). The budget applies to STARTING reads, measured from here.
   let llmCalls = 0;
   let cursor = 0;
   const llmStart = Date.now();
   const shouldStop = () => llmCalls >= maxExtractions || Date.now() - llmStart > timeBudgetMs;
-  const addUsageTo = (u: TokenUsage) => {
+  const addUsageTo = (u: Reading["usage"]) => {
     progress.usage = {
       inputTokens: progress.usage.inputTokens + u.inputTokens,
       outputTokens: progress.usage.outputTokens + u.outputTokens,
@@ -721,11 +398,12 @@ export async function runPipeline(
       tiers: progress.usage.tiers,
     };
   };
+  interface Read { article: RawArticle; text: string; reading: Reading }
+  const readings: Read[] = [];
+  const pendings: { article: RawArticle; text: string; error: string }[] = [];
+  const unreadable: { article: RawArticle }[] = [];
 
-  interface Staged { article: RawArticle; triage: TriageResult }
-  const staged: Staged[] = [];
-
-  async function triageWorker() {
+  async function readWorker() {
     while (true) {
       if (shouldStop()) return;
       const i = cursor++;
@@ -733,102 +411,59 @@ export async function runPipeline(
       const raw = dedupedArticles[i];
       llmCalls++;
       try {
-        // Publisher page first: a headline is not enough evidence to classify,
-        // dedupe or value an event, and for Google News items it is all the
-        // feed provides. Best-effort — a failed fetch falls back to the
-        // headline, never to a guess.
-        const { publisherUrl, article: body } = await retrieveArticle(raw.url);
-        const article: RawArticle = { ...raw, publisherUrl: publisherUrl ?? null, bodyText: body?.text ?? null };
-        const t = await triageArticle({ ...article, bodyText: article.bodyText?.slice(0, TRIAGE_BODY_CHARS) ?? null });
-        if (!t) continue;                        // model failure — not a fact (§23)
-        addUsageTo(t.usage);
-        staged.push({ article, triage: t });
+        // Fetch the publisher page (the whole page — §7). Supplied text (a stored
+        // row being re-read, or a test fixture) is the fallback when the page
+        // cannot be fetched, and wins when it is the longer copy.
+        const fetched = await retrieveArticle(raw.url, READER_MAX_CHARS).catch(() => ({ publisherUrl: null, article: null }));
+        const fetchedText = fetched.article?.text ?? null;
+        const supplied = raw.bodyText ?? null;
+        const bodyText = fetchedText && fetchedText.length >= (supplied?.length ?? 0) ? fetchedText : supplied;
+        const article: RawArticle = { ...raw, publisherUrl: fetched.publisherUrl ?? raw.publisherUrl ?? null, bodyText };
+        // Feed scaffolding is not an article: reading a link blob yields a
+        // confident "no event", which is a false negative, not a verdict (§7).
+        const text = readableArticleText(article.bodyText) ?? readableArticleText(article.snippet) ?? "";
+        if (!text) { unreadable.push({ article }); continue; }
+        const out = await readArticle({ title: article.title, text, provider: article.provider, sourceType: article.sourceType, publishedAt: article.publishedAt });
+        addUsageTo(out.ok ? out.reading.usage : out.usage);
+        if (!out.ok) { pendings.push({ article, text, error: out.error }); continue; }
+        readings.push({ article, text, reading: out.reading });
       } catch (err) {
-        progress.errors.push(`Triage error (${raw.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`);
+        progress.errors.push(`Read error (${raw.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, triageWorker));
-
-  progress.articlesTriaged = staged.length;
-
-  // ── PHASE 2: DEDUPE ─────────────────────────────────────────────────────────
-  // Collapse on extracted entities, before any analysis spend. Triage
-  // rejections stop here and are persisted with the model's reason.
-  const survivors: Staged[] = [];
-  const modelExclusions: { article: RawArticle; reason: string; confidence?: number }[] = [];
-  // Same-run re-reports of a survivor, attached to its event once stored.
-  const corroborations = new Map<number, Staged[]>();
-  for (const st of staged) {
-    if (st.triage.family === "EXCLUDED") {
-      modelExclusions.push({ article: st.article, reason: st.triage.exclusionReason ?? "model:excluded_noise", confidence: st.triage.confidenceScore });
-      continue;
-    }
-    const when = parseDate(st.article.publishedAt);
-    const twin = survivors.findIndex(sv => sameStagedEvent(sv, st, when));
-    if (twin >= 0) {
-      progress.articlesEntityDeduped++;
-      corroborations.set(twin, [...(corroborations.get(twin) ?? []), st]);
-      continue;
-    }
-    survivors.push(st);
+  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, readWorker));
+  progress.articlesTriaged = readings.length + pendings.length;
+  for (const u of unreadable) {
+    try { await storeUnreadable(u.article, run.id); }
+    catch (err) { progress.errors.push(`Unreadable store error (${u.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
   }
+  for (const p of pendings) {
+    try { await storePending(p.article, p.text, p.error, run.id); }
+    catch (err) { progress.errors.push(`Pending store error (${p.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
+  }
+  progress.articlesPending = pendings.length;
 
-  // ── PHASE 3: ANALYSE ────────────────────────────────────────────────────────
-  // Expensive tier only for survivors that warrant it.
-  let aCursor = 0;
-  async function analyseWorker() {
-    while (true) {
-      const i = aCursor++;
-      if (i >= survivors.length) return;
-      const { article, triage: t } = survivors[i];
-      try {
-        // Already stored from another feed or an earlier run? Attach, don't analyse.
-        const vendorId = await resolveVendorId(t.vendorRaw);
-        const stored = await findStoredEvent(article, t, vendorId);
-        if (stored && "skip" in stored) continue;
-        if (stored) {
-          await attachSource(article, t, stored.eventId, run.id);
-          for (const twin of corroborations.get(i) ?? []) await attachSource(twin.article, twin.triage, stored.eventId, run.id).catch(() => {});
-          progress.articlesMerged += 1 + (corroborations.get(i)?.length ?? 0);
-          continue;
-        }
-        let result: ExtractionResult;
-        if (t.needsAnalysis && Date.now() - llmStart <= timeBudgetMs) {
-          result = await analyseArticle(article, t);
-          addUsageTo(result.usage);   // analysis spend only — triage counted in phase 1
-        } else {
-          result = resultFromTriage(article, t);
-        }
-        if (result.family === "EXCLUDED") {
-          modelExclusions.push({ article, reason: result.exclusionReason ?? "model:excluded_noise", confidence: result.confidenceScore });
-          continue;
-        }
-        progress.eventsExtracted++;
-        progress.phase = "storing";
-        const { outcome, eventId } = await storeEvent(article, result, run.id);
-        if (outcome === "published") progress.eventsPublished++;
-        else if (outcome === "queued") progress.eventsQueued++;
-        if (eventId) {
-          for (const twin of corroborations.get(i) ?? []) {
-            await attachSource(twin.article, twin.triage, eventId, run.id).catch(() => {});
-            progress.articlesMerged++;
-          }
-        }
-      } catch (err) {
-        progress.errors.push(`Analysis error (${article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`);
-      }
+  // ── PHASE 2: STORE ──────────────────────────────────────────────────────────
+  // Sequential by design: a re-report must be able to see the event stored a
+  // moment earlier and attach to it rather than duplicate it.
+  for (const r of readings) {
+    try {
+      progress.phase = "storing";
+      if (r.reading.events.length === 0) { await storeNonEvent(r.article, r.text, r.reading, run.id); progress.articlesExcluded++; continue; }
+      const c = await storeReading(r.article, r.text, r.reading, run.id);
+      progress.eventsPublished += c.published;
+      progress.eventsQueued += c.queued;
+      progress.articlesMerged += c.merged;
+      progress.eventsExtracted += c.published + c.queued;
+      if (c.published + c.queued + c.merged === 0) progress.articlesExcluded++;   // events, but none with a tracked provider
+    } catch (err) {
+      progress.errors.push(`Store error (${r.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, analyseWorker));
 
   progress.articlesProcessed = Math.min(cursor, dedupedArticles.length);
   progress.eventsDeferred = Math.max(0, dedupedArticles.length - cursor);
-  progress.articlesExcluded = modelExclusions.length;
-  {
-    const err = await persistExclusions(modelExclusions, run.id);
-    if (err) progress.errors.push(err);
-  }
 
   progress.phase = "done";
   await prisma.ingestionRun.update({

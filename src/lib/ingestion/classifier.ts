@@ -158,7 +158,7 @@ export const CANONICAL_FAMILIES = new Set([
 
 /** Event types the schema allows per family. Anything else is a model invention. */
 export const FAMILY_EVENT_TYPES: Record<string, readonly string[]> = {
-  CONTRACT: ["new_win", "renewal", "extension", "expansion", "rebid_win", "incumbent_displacement", "framework_award"],
+  CONTRACT: ["new_win", "renewal", "extension", "expansion", "rebid_win", "incumbent_displacement", "framework_award", "scope_reduction", "termination", "contract_change", "unknown"],
   M_AND_A: ["acquisition", "merger", "divestiture"],
   PARTNERSHIP: ["technology_alliance", "co_delivery_agreement"],
   NEW_OFFERING: ["service_launch", "platform_launch", "delivery_centre_opening"],
