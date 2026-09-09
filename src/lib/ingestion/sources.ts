@@ -39,38 +39,39 @@ export interface SourceDefinition {
 // DELIBERATELY EXCLUDED — US federal IT primes (SAIC, Leidos, Booz Allen, CACI,
 // GDIT, Peraton). These are covered by the separate FedSpend product. They
 // appear heavily in the legacy imported data and are screened out here.
+/**
+ * Retired from tracking 2026-09-09, on measured yield. Nothing is deleted:
+ * their stored events remain in the database and only fall out of the product's
+ * tracked scope. Re-add a name here to TRACKED_VENDORS to resume its feed.
+ *
+ *  · resellers and licensing partners — high article volume, tiny deals: their
+ *    "contracts" are Microsoft licensing paper through procurement portals
+ *    (Insight Enterprises averaged $1.1m across 315 contracts)
+ *  · no contract event ever produced, or none since 2025, despite the feed running
+ */
+export const RETIRED_VENDORS = [
+  // resellers / licensing partners
+  "Insight Enterprises", "Computacenter", "SoftwareOne", "Bechtle", "Advania", "Cancom", "Crayon",
+  // never produced a contract event
+  "[24]7.ai", "Alight", "ALTEN", "Cyient", "eClerx", "Everise", "Getronics", "HGS", "IGT Solutions",
+  "KPIT", "NNIT", "ResultsCX", "Sonata Software", "Startek", "Tata Elxsi", "Transcom", "VXI Global",
+  // produced events once, nothing since 2025
+  "Rackspace", "Arvato", "Reply", "TaskUs",
+] as const;
+
 export const TRACKED_VENDORS = [
-  "Accenture", "ADP", "Alight", "Alorica", "Amdocs", "Arvato", "Atento", "Atos", "AWS",
-  "Birlasoft", "Broadridge",
-  "Capgemini", "Capita", "CGI", "Coforge", "Cognizant", "Computacenter", "Concentrix", "Conduent", "CSS Corp",
-  "Datamatics", "Deloitte", "Dell Technologies", "DXC Technology",
-  "Endava", "EPAM", "EXL", "EY",
-  "Firstsource", "Foundever", "Fujitsu",
-  "Genpact", "Globant", "Google Cloud",
-  "HCLTech", "Hexaware", "HGS", "Hitachi Digital Services",
-  "IBM", "Infosys", "iQor",
-  "KPMG", "Kyndryl",
-  "L&T Technology Services", "LTIMindtree",
-  "Majorel", "Mastek", "Maximus", "Microsoft", "Mphasis",
-  "Nagarro", "NEC", "Netcompany", "NICE", "NTT DATA",
-  "Oracle", "Orange Business",
-  "Persistent", "PwC",
-  "SAP", "Searce", "Serco", "Singtel", "Softtek", "Sopra Steria", "Startek", "Stefanini", "Sutherland", "Synechron",
-  "TaskUs", "TCS", "Tech Mahindra", "Teleperformance", "TELUS International", "Thoughtworks", "Tietoevry", "Transcom", "T-Systems", "TTEC",
-  "Unisys", "UST",
-  "Virtusa",
-  "Wipro", "WNS",
-  // ── BPO / CX specialists ──
-  "eClerx", "IGT Solutions", "[24]7.ai", "Everise", "VXI Global", "ResultsCX",
-  // ── ITO / infrastructure & managed services ──
-  "Insight Enterprises", "Rackspace", "Ensono", "SoftwareOne", "Bechtle", "Cancom",
-  "Inetum", "Indra", "Reply", "Devoteam", "Kainos", "Version 1", "Claranet",
-  "Crayon", "Advania", "NNIT", "Getronics", "Telefonica Tech",
-  // ── Engineering / R&D services ──
-  "Cyient", "KPIT", "Tata Elxsi", "Quest Global", "ALTEN", "Expleo", "Akkodis",
-  // ── India mid-tier IT ──
-  "Happiest Minds", "Sonata Software",
-  "Zensar",
+  "Accenture", "ADP", "Alorica", "Amdocs", "Atento", "Atos", "AWS", "Birlasoft",
+  "Broadridge", "Capgemini", "Capita", "CGI", "Coforge", "Cognizant", "Concentrix", "Conduent",
+  "CSS Corp", "Datamatics", "Deloitte", "Dell Technologies", "DXC Technology", "Endava", "EPAM", "EXL",
+  "EY", "Firstsource", "Foundever", "Fujitsu", "Genpact", "Globant", "Google Cloud", "HCLTech",
+  "Hexaware", "Hitachi Digital Services", "IBM", "Infosys", "iQor", "KPMG", "Kyndryl", "L&T Technology Services",
+  "LTIMindtree", "Majorel", "Mastek", "Maximus", "Microsoft", "Mphasis", "Nagarro", "NEC",
+  "Netcompany", "NICE", "NTT DATA", "Oracle", "Orange Business", "Persistent", "PwC", "SAP",
+  "Searce", "Serco", "Singtel", "Softtek", "Sopra Steria", "Stefanini", "Sutherland", "Synechron",
+  "TCS", "Tech Mahindra", "Teleperformance", "TELUS International", "Thoughtworks", "Tietoevry", "T-Systems", "TTEC",
+  "Unisys", "UST", "Virtusa", "Wipro", "WNS", "Ensono", "Inetum", "Indra",
+  "Devoteam", "Kainos", "Version 1", "Claranet", "Telefonica Tech", "Quest Global", "Expleo", "Akkodis",
+  "Happiest Minds", "Zensar",
 ] as const;
 
 /**
@@ -424,6 +425,13 @@ export const AG_COHORT_VENDORS = [
   "Teleperformance", "TELUS International", "Tietoevry", "TTEC", "Unisys", "UST", "Virtusa", "WNS", "Wipro",
 ] as const;
 
+/**
+ * Major outsourcers the AG roster omits but the corpus shows as significant:
+ * Serco ($10.0bn disclosed across 50 published contracts) and Maximus
+ * ($15.7bn across 25). Added to the backfill cohort 2026-09-09.
+ */
+export const ADDED_OUTSOURCERS = ["Serco", "Maximus"] as const;
+
 /** Hyperscalers, run alongside the AG cohort in historical backfills. */
 export const HYPERSCALER_VENDORS = ["AWS", "Microsoft", "Google Cloud", "Oracle"] as const;
 
@@ -431,7 +439,7 @@ export const HYPERSCALER_VENDORS = ["AWS", "Microsoft", "Google Cloud", "Oracle"
 export const AG_COHORT_UNTRACKED = ["Caylent", "FactSet", "Perficient", "phData"] as const;
 
 /** The historical-backfill cohort: AG's providers plus the hyperscalers. */
-export const BACKFILL_COHORT = [...AG_COHORT_VENDORS, ...HYPERSCALER_VENDORS] as readonly string[];
+export const BACKFILL_COHORT = [...AG_COHORT_VENDORS, ...ADDED_OUTSOURCERS, ...HYPERSCALER_VENDORS] as readonly string[];
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 

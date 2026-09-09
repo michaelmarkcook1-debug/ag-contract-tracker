@@ -16,7 +16,14 @@ import fs from "fs";
 import os from "os";
 import { prisma } from "@/lib/db";
 
-interface RawRow { id?: string; ocid?: string; end_date?: string | null; end_date_estimated?: boolean | null; value_amount?: number | null; value_currency?: string | null }
+// value_amount arrives as a string in some feeds (Contracts Finder) and a
+// number in others; normalise before writing a Float column.
+interface RawRow { id?: string; ocid?: string; end_date?: string | null; end_date_estimated?: boolean | null; value_amount?: number | string | null; value_currency?: string | null }
+const num = (v: number | string | null | undefined): number | null => {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/[^0-9.eE+-]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 const FILES: [string, string][] = [["fts_raw.json", "UK_FTS"], ["contracts_finder_raw.json", "UK_ContractsFinder"], ["canadabuys_raw.json", "CA_CanadaBuys"], ["austender_raw.json", "AU_AusTender"]];
 
 (async () => {
@@ -36,14 +43,15 @@ const FILES: [string, string][] = [["fts_raw.json", "UK_FTS"], ["contracts_finde
     const url = e.sourceEvents[0]?.sourceUrl ?? ""; const key = url.replace(/^procurement:\/\//, "");
     const r = raw.get(key); const cd = e.contractDetails; if (!r || !cd) continue;
     matched++;
-    const data: Record<string, unknown> = {};
+    const data: { contractEndDatePrecision?: string; contractLengthDescriptor?: string; tcvOriginalCurrency?: string; tcvOriginalValue?: number } = {};
     if (r.end_date_estimated && cd.contractEndDatePrecision === "day") {
       data.contractEndDatePrecision = "estimated";
       data.contractLengthDescriptor = "derived_from_estimated_end_date (source notice flags the end date as an estimate)";
       flaggedEstimated++;
     }
-    if (r.value_currency && r.value_amount && cd.tcvCommittedUsd != null && (cd.tcvOriginalCurrency === "USD" || !cd.tcvOriginalCurrency) && r.value_currency !== "USD") {
-      data.tcvOriginalCurrency = r.value_currency; data.tcvOriginalValue = r.value_amount;
+    const amount = num(r.value_amount);
+    if (r.value_currency && amount && cd.tcvCommittedUsd != null && (cd.tcvOriginalCurrency === "USD" || !cd.tcvOriginalCurrency) && r.value_currency !== "USD") {
+      data.tcvOriginalCurrency = r.value_currency; data.tcvOriginalValue = amount;
       currency++;
     }
     if (apply && Object.keys(data).length) await prisma.contractDetails.update({ where: { id: cd.id }, data });

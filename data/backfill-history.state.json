@@ -1,4 +1,19 @@
 {
+ "runs": [
+  {
+   "month": "2026-08",
+   "windows": 70,
+   "read": 1083,
+   "published": 366,
+   "merged": 308,
+   "capped": 0,
+   "errored": 0,
+   "costUsd": 21.337721999999996,
+   "good": true,
+   "at": "2026-09-09T15:42:36.745Z"
+  }
+ ],
+ "goodRuns": 1,
  "done": {
   "gnews-backfill-infosys-2025-03": {
    "found": 37,
@@ -35,6 +50,727 @@
    "capped": false,
    "costUsd": 0.0676134,
    "at": "2026-09-08T18:30:29.982Z"
+  },
+  "gnews-backfill-accenture-2026-08-01-2026-09-01": {
+   "found": 65,
+   "read": 50,
+   "published": 17,
+   "merged": 24,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 1.3248699999999998,
+   "at": "2026-09-09T15:46:36.705Z"
+  },
+  "gnews-backfill-adp-2026-08-01-2026-09-01": {
+   "found": 77,
+   "read": 36,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.3061900000000001,
+   "at": "2026-09-09T15:47:24.351Z"
+  },
+  "gnews-backfill-alorica-2026-08-01-2026-09-01": {
+   "found": 2,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T15:47:25.413Z"
+  },
+  "gnews-backfill-amdocs-2026-08-01-2026-09-01": {
+   "found": 15,
+   "read": 4,
+   "published": 3,
+   "merged": 3,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.11244200000000001,
+   "at": "2026-09-09T15:48:03.865Z"
+  },
+  "gnews-backfill-atento-2026-08-01-2026-09-01": {
+   "found": 2,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T15:48:05.906Z"
+  },
+  "gnews-backfill-atos-2026-08-01-2026-09-01": {
+   "found": 12,
+   "read": 6,
+   "published": 1,
+   "merged": 1,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.05746999999999999,
+   "at": "2026-09-09T15:48:26.356Z"
+  },
+  "gnews-backfill-birlasoft-2026-08-01-2026-09-01": {
+   "found": 5,
+   "read": 2,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.004854,
+   "at": "2026-09-09T15:48:36.252Z"
+  },
+  "gnews-backfill-broadridge-2026-08-01-2026-09-01": {
+   "found": 20,
+   "read": 7,
+   "published": 4,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.193708,
+   "at": "2026-09-09T15:50:02.233Z"
+  },
+  "gnews-backfill-capgemini-2026-08-01-2026-09-01": {
+   "found": 31,
+   "read": 16,
+   "published": 10,
+   "merged": 2,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.423826,
+   "at": "2026-09-09T15:51:40.949Z"
+  },
+  "gnews-backfill-capita-2026-08-01-2026-09-01": {
+   "found": 45,
+   "read": 8,
+   "published": 1,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.08101799999999999,
+   "at": "2026-09-09T15:52:13.882Z"
+  },
+  "gnews-backfill-cgi-2026-08-01-2026-09-01": {
+   "found": 3,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T15:52:14.895Z"
+  },
+  "gnews-backfill-coforge-2026-08-01-2026-09-01": {
+   "found": 56,
+   "read": 17,
+   "published": 7,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.195616,
+   "at": "2026-09-09T15:53:37.648Z"
+  },
+  "gnews-backfill-cognizant-2026-08-01-2026-09-01": {
+   "found": 46,
+   "read": 24,
+   "published": 6,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.437256,
+   "at": "2026-09-09T15:56:04.683Z"
+  },
+  "gnews-backfill-concentrix-2026-08-01-2026-09-01": {
+   "found": 28,
+   "read": 8,
+   "published": 6,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.116972,
+   "at": "2026-09-09T15:56:54.705Z"
+  },
+  "gnews-backfill-conduent-2026-08-01-2026-09-01": {
+   "found": 8,
+   "read": 1,
+   "published": 0,
+   "merged": 1,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.026652,
+   "at": "2026-09-09T15:57:16.519Z"
+  },
+  "gnews-backfill-css-corp-2026-08-01-2026-09-01": {
+   "found": 0,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T15:57:17.345Z"
+  },
+  "gnews-backfill-datamatics-2026-08-01-2026-09-01": {
+   "found": 3,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T15:57:18.243Z"
+  },
+  "gnews-backfill-dell-technologies-2026-08-01-2026-09-01": {
+   "found": 63,
+   "read": 25,
+   "published": 12,
+   "merged": 3,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.5192700000000001,
+   "at": "2026-09-09T15:59:06.027Z"
+  },
+  "gnews-backfill-deloitte-2026-08-01-2026-09-01": {
+   "found": 48,
+   "read": 42,
+   "published": 8,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.5694619999999999,
+   "at": "2026-09-09T16:00:28.294Z"
+  },
+  "gnews-backfill-dxc-technology-2026-08-01-2026-09-01": {
+   "found": 37,
+   "read": 5,
+   "published": 2,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.060947999999999995,
+   "at": "2026-09-09T16:00:54.419Z"
+  },
+  "gnews-backfill-epam-2026-08-01-2026-09-01": {
+   "found": 14,
+   "read": 4,
+   "published": 1,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.043916,
+   "at": "2026-09-09T16:01:10.964Z"
+  },
+  "gnews-backfill-exl-2026-08-01-2026-09-01": {
+   "found": 30,
+   "read": 11,
+   "published": 6,
+   "merged": 1,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.271318,
+   "at": "2026-09-09T16:02:40.084Z"
+  },
+  "gnews-backfill-ey-2026-08-01-2026-09-01": {
+   "found": 62,
+   "read": 44,
+   "published": 8,
+   "merged": 1,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 1.200702,
+   "at": "2026-09-09T16:04:35.808Z"
+  },
+  "gnews-backfill-firstsource-2026-08-01-2026-09-01": {
+   "found": 16,
+   "read": 3,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.013658,
+   "at": "2026-09-09T16:04:44.620Z"
+  },
+  "gnews-backfill-foundever-2026-08-01-2026-09-01": {
+   "found": 6,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:04:45.535Z"
+  },
+  "gnews-backfill-fujitsu-2026-08-01-2026-09-01": {
+   "found": 28,
+   "read": 19,
+   "published": 11,
+   "merged": 5,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.38513000000000003,
+   "at": "2026-09-09T16:06:32.052Z"
+  },
+  "gnews-backfill-genpact-2026-08-01-2026-09-01": {
+   "found": 21,
+   "read": 3,
+   "published": 1,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.041746000000000005,
+   "at": "2026-09-09T16:06:48.440Z"
+  },
+  "gnews-backfill-hcltech-2026-08-01-2026-09-01": {
+   "found": 69,
+   "read": 48,
+   "published": 26,
+   "merged": 16,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 1.10533,
+   "at": "2026-09-09T16:10:39.651Z"
+  },
+  "gnews-backfill-hexaware-2026-08-01-2026-09-01": {
+   "found": 37,
+   "read": 9,
+   "published": 5,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.127614,
+   "at": "2026-09-09T16:11:38.790Z"
+  },
+  "gnews-backfill-hitachi-digital-services-2026-08-01-2026-09-01": {
+   "found": 4,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:11:40.309Z"
+  },
+  "gnews-backfill-ibm-2026-08-01-2026-09-01": {
+   "found": 100,
+   "read": 61,
+   "published": 35,
+   "merged": 22,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 1.3476399999999997,
+   "at": "2026-09-09T16:16:42.968Z"
+  },
+  "gnews-backfill-ibm-2026-08-01-2026-08-16": {
+   "found": 54,
+   "read": 5,
+   "published": 4,
+   "merged": 4,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.142614,
+   "at": "2026-09-09T16:17:33.920Z"
+  },
+  "gnews-backfill-ibm-2026-08-16-2026-09-01": {
+   "found": 48,
+   "read": 2,
+   "published": 0,
+   "merged": 1,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.065132,
+   "at": "2026-09-09T16:18:26.503Z"
+  },
+  "gnews-backfill-infosys-2026-08-01-2026-09-01": {
+   "found": 52,
+   "read": 35,
+   "published": 4,
+   "merged": 12,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.61861,
+   "at": "2026-09-09T16:20:51.833Z"
+  },
+  "gnews-backfill-kpmg-2026-08-01-2026-09-01": {
+   "found": 74,
+   "read": 59,
+   "published": 11,
+   "merged": 9,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.9153780000000001,
+   "at": "2026-09-09T16:23:53.727Z"
+  },
+  "gnews-backfill-kyndryl-2026-08-01-2026-09-01": {
+   "found": 13,
+   "read": 9,
+   "published": 3,
+   "merged": 3,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.14854599999999998,
+   "at": "2026-09-09T16:24:34.754Z"
+  },
+  "gnews-backfill-ltimindtree-2026-08-01-2026-09-01": {
+   "found": 10,
+   "read": 2,
+   "published": 1,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.049726,
+   "at": "2026-09-09T16:25:10.394Z"
+  },
+  "gnews-backfill-l-t-technology-services-2026-08-01-2026-09-01": {
+   "found": 29,
+   "read": 3,
+   "published": 1,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.033008,
+   "at": "2026-09-09T16:25:28.470Z"
+  },
+  "gnews-backfill-globant-2026-08-01-2026-09-01": {
+   "found": 10,
+   "read": 5,
+   "published": 1,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.118816,
+   "at": "2026-09-09T16:26:49.189Z"
+  },
+  "gnews-backfill-majorel-2026-08-01-2026-09-01": {
+   "found": 0,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:26:50.101Z"
+  },
+  "gnews-backfill-mastek-2026-08-01-2026-09-01": {
+   "found": 9,
+   "read": 1,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.014318,
+   "at": "2026-09-09T16:27:03.520Z"
+  },
+  "gnews-backfill-mphasis-2026-08-01-2026-09-01": {
+   "found": 26,
+   "read": 10,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.05451,
+   "at": "2026-09-09T16:27:14.382Z"
+  },
+  "gnews-backfill-nagarro-2026-08-01-2026-09-01": {
+   "found": 9,
+   "read": 3,
+   "published": 1,
+   "merged": 2,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.088074,
+   "at": "2026-09-09T16:27:49.087Z"
+  },
+  "gnews-backfill-nec-2026-08-01-2026-09-01": {
+   "found": 7,
+   "read": 3,
+   "published": 5,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.10117999999999999,
+   "at": "2026-09-09T16:28:51.207Z"
+  },
+  "gnews-backfill-nice-2026-08-01-2026-09-01": {
+   "found": 5,
+   "read": 1,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.087032,
+   "at": "2026-09-09T16:29:56.591Z"
+  },
+  "gnews-backfill-ntt-data-2026-08-01-2026-09-01": {
+   "found": 40,
+   "read": 23,
+   "published": 8,
+   "merged": 7,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.541946,
+   "at": "2026-09-09T16:31:51.706Z"
+  },
+  "gnews-backfill-orange-business-2026-08-01-2026-09-01": {
+   "found": 0,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:31:52.615Z"
+  },
+  "gnews-backfill-persistent-2026-08-01-2026-09-01": {
+   "found": 68,
+   "read": 31,
+   "published": 9,
+   "merged": 30,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 1.027562,
+   "at": "2026-09-09T16:35:30.268Z"
+  },
+  "gnews-backfill-pwc-2026-08-01-2026-09-01": {
+   "found": 61,
+   "read": 46,
+   "published": 8,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.5031919999999999,
+   "at": "2026-09-09T16:36:53.282Z"
+  },
+  "gnews-backfill-searce-2026-08-01-2026-09-01": {
+   "found": 0,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:36:54.197Z"
+  },
+  "gnews-backfill-singtel-2026-08-01-2026-09-01": {
+   "found": 39,
+   "read": 18,
+   "published": 5,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.344838,
+   "at": "2026-09-09T16:38:13.687Z"
+  },
+  "gnews-backfill-sopra-steria-2026-08-01-2026-09-01": {
+   "found": 9,
+   "read": 4,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.057106000000000004,
+   "at": "2026-09-09T16:38:35.875Z"
+  },
+  "gnews-backfill-stefanini-2026-08-01-2026-09-01": {
+   "found": 6,
+   "read": 3,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.014459999999999999,
+   "at": "2026-09-09T16:38:42.865Z"
+  },
+  "gnews-backfill-sutherland-2026-08-01-2026-09-01": {
+   "found": 54,
+   "read": 23,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.093656,
+   "at": "2026-09-09T16:39:04.003Z"
+  },
+  "gnews-backfill-synechron-2026-08-01-2026-09-01": {
+   "found": 4,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:39:05.005Z"
+  },
+  "gnews-backfill-tcs-2026-08-01-2026-09-01": {
+   "found": 69,
+   "read": 51,
+   "published": 27,
+   "merged": 69,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 1.633514,
+   "at": "2026-09-09T16:45:21.377Z"
+  },
+  "gnews-backfill-tech-mahindra-2026-08-01-2026-09-01": {
+   "found": 55,
+   "read": 36,
+   "published": 11,
+   "merged": 24,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.6326379999999999,
+   "at": "2026-09-09T16:47:44.644Z"
+  },
+  "gnews-backfill-teleperformance-2026-08-01-2026-09-01": {
+   "found": 9,
+   "read": 1,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.048867999999999995,
+   "at": "2026-09-09T16:47:59.507Z"
+  },
+  "gnews-backfill-telus-international-2026-08-01-2026-09-01": {
+   "found": 1,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:48:00.357Z"
+  },
+  "gnews-backfill-tietoevry-2026-08-01-2026-09-01": {
+   "found": 2,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:48:01.150Z"
+  },
+  "gnews-backfill-ttec-2026-08-01-2026-09-01": {
+   "found": 6,
+   "read": 1,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.006352,
+   "at": "2026-09-09T16:48:05.347Z"
+  },
+  "gnews-backfill-unisys-2026-08-01-2026-09-01": {
+   "found": 8,
+   "read": 3,
+   "published": 0,
+   "merged": 1,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.137618,
+   "at": "2026-09-09T16:49:22.659Z"
+  },
+  "gnews-backfill-ust-2026-08-01-2026-09-01": {
+   "found": 39,
+   "read": 13,
+   "published": 1,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.06503199999999999,
+   "at": "2026-09-09T16:49:39.462Z"
+  },
+  "gnews-backfill-virtusa-2026-08-01-2026-09-01": {
+   "found": 3,
+   "read": 0,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0,
+   "at": "2026-09-09T16:49:41.010Z"
+  },
+  "gnews-backfill-wns-2026-08-01-2026-09-01": {
+   "found": 10,
+   "read": 2,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.09038800000000001,
+   "at": "2026-09-09T16:50:48.678Z"
+  },
+  "gnews-backfill-wipro-2026-08-01-2026-09-01": {
+   "found": 52,
+   "read": 41,
+   "published": 7,
+   "merged": 23,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.6896960000000001,
+   "at": "2026-09-09T16:53:57.603Z"
+  },
+  "gnews-backfill-serco-2026-08-01-2026-09-01": {
+   "found": 22,
+   "read": 14,
+   "published": 5,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.10996800000000001,
+   "at": "2026-09-09T16:54:29.343Z"
+  },
+  "gnews-backfill-maximus-2026-08-01-2026-09-01": {
+   "found": 31,
+   "read": 8,
+   "published": 0,
+   "merged": 0,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.04062,
+   "at": "2026-09-09T16:54:45.226Z"
+  },
+  "gnews-backfill-aws-2026-08-01-2026-09-01": {
+   "found": 74,
+   "read": 53,
+   "published": 33,
+   "merged": 12,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 1.5999120000000002,
+   "at": "2026-09-09T16:59:26.519Z"
+  },
+  "gnews-backfill-microsoft-2026-08-01-2026-09-01": {
+   "found": 57,
+   "read": 39,
+   "published": 12,
+   "merged": 1,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.5824940000000001,
+   "at": "2026-09-09T17:01:47.504Z"
+  },
+  "gnews-backfill-google-cloud-2026-08-01-2026-09-01": {
+   "found": 55,
+   "read": 32,
+   "published": 22,
+   "merged": 10,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.75515,
+   "at": "2026-09-09T17:04:33.951Z"
+  },
+  "gnews-backfill-oracle-2026-08-01-2026-09-01": {
+   "found": 64,
+   "read": 50,
+   "published": 17,
+   "merged": 21,
+   "capped": false,
+   "errors": 0,
+   "costUsd": 0.9581599999999998,
+   "at": "2026-09-09T17:08:03.517Z"
   }
- }
+ },
+ "handedOver": "2026-09-09T17:08:03.611Z"
 }
