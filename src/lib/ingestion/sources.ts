@@ -224,6 +224,18 @@ export const VENDOR_RSS_SOURCES: SourceDefinition[] = [
   pressSource("ibm-press-rss",          "IBM Newsroom",               "IBM",              "https://newsroom.ibm.com/announcements?pagetemplate=rss", 6),
   pressSource("nagarro-press-rss",      "Nagarro Newsroom",           "Nagarro",          "https://www.nagarro.com/en/news-press-release/rss.xml", 12),
   pressSource("nttdata-news-rss",       "NTT DATA News",              "NTT DATA",         "https://www.nttdata.com/global/en/rss/news", 6),
+  // Added 2026-09-09 after probing feed patterns across the 77 vendors that had
+  // no primary source. These four answered with items; the rest of the estate
+  // (Accenture, Infosys, TCS, Wipro, DXC, CGI, Capita, Serco, Sopra Steria,
+  // Tech Mahindra, Deloitte, KPMG, EY, Fujitsu…) either has no RSS any more or
+  // returns 403/404 to every client, so those stay on their Google News feeds.
+  pressSource("oracle-press-rss",       "Oracle Press Releases",      "Oracle",           "https://www.oracle.com/corporate/press/rss/rss-pr.xml", 6),
+  pressSource("sap-news-rss",           "SAP News Center",            "SAP",              "https://news.sap.com/feed/", 6),
+  pressSource("microsoft-news-rss",     "Microsoft News",             "Microsoft",        "https://news.microsoft.com/feed/", 6),
+  // AWS public-sector blog: customer deployments, which is where AWS public
+  // wins are described. The product "what's new" feed is release notes, not
+  // contracts, and is deliberately not included.
+  pressSource("aws-pubsec-rss",         "AWS Public Sector Blog",     "AWS",              "https://aws.amazon.com/blogs/publicsector/feed/", 12),
 ];
 
 // ── Tier-1: Investor Relations RSS ──────────────────────────────────────────
@@ -291,6 +303,51 @@ export const WIRE_SOURCES: SourceDefinition[] = [
   wire("globenewswire-contracts-rss","GlobeNewsWire Business Contracts",  "https://www.globenewswire.com/RssFeed/subjectcode/7-Business%20Contracts/feedTitle/GlobeNewswire%20-%20Business%20Contracts"),
   wire("globenewswire-compsvc-rss",  "GlobeNewsWire Computer Services",   "https://www.globenewswire.com/RssFeed/industry/9533-Computer%20Services/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Computer%20Services"),
   wire("globenewswire-software-rss", "GlobeNewsWire Software",            "https://www.globenewswire.com/RssFeed/industry/9537-Software/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Software"),
+];
+
+/**
+ * BUYER-SIDE market feeds (added 2026-09-09).
+ *
+ * Every vendor feed searches for the PROVIDER's name, so it only finds stories
+ * where the provider is the subject. A large share of awards are announced by
+ * the BUYER — "STC Bahrain picks Tata Consultancy Services to modernise IT",
+ * "Mizuho Bank Selects Oracle…", "PeaceHealth partners with Tech Mahindra…" —
+ * and those headlines lead with the client, so a vendor-name query ranks them
+ * low or misses them entirely.
+ *
+ * Measured on 2026-09-09: four buyer-side queries returned 109 items, 14 named
+ * a tracked vendor, and 5 of those were URLs the store had never seen despite
+ * 90 vendor feeds running daily.
+ *
+ * These are "Market Wide", so selectArticle drops anything naming no tracked
+ * vendor before the model sees it — the noise costs nothing.
+ */
+function buyerSide(id: string, name: string, query: string, windowDays = 14): SourceDefinition {
+  return {
+    id: `gnews-buyerside-${id}`,
+    name,
+    provider: "Market Wide",
+    url: `https://news.google.com/rss/search?q=${encodeURIComponent(`when:${windowDays}d ${query}`)}&hl=en&gl=US&ceid=US:en`,
+    sourceType: "wire_service",
+    tier: "tier_2_secondary",
+    fetchMethod: "rss",
+    refreshHours: 12,
+  };
+}
+
+export const BUYER_SIDE_SOURCES: SourceDefinition[] = [
+  buyerSide("selects-provider", "Buyer side — selects a provider",
+    `("selects" OR "picks" OR "taps" OR "partners with" OR "signs with" OR "appoints") ("to modernise" OR "to modernize" OR "to transform" OR outsourcing OR "managed services" OR "IT services" OR "transformation programme" OR "digital transformation")`),
+  buyerSide("awards-contract", "Buyer side — awards a contract",
+    `("awards contract" OR "awarded a contract" OR "awards a contract" OR "has been awarded" OR "wins contract to") ("IT services" OR outsourcing OR "managed services" OR "application services" OR BPO OR "service desk" OR "digital transformation")`),
+  buyerSide("public-sector-awards", "Buyer side — public sector awards",
+    `(council OR NHS OR ministry OR "department of" OR agency OR government OR "local authority") ("awards" OR "awarded" OR "selects" OR "appoints") contract (IT OR digital OR technology OR software OR outsourcing)`),
+  buyerSide("enterprise-modernisation", "Buyer side — enterprise modernisation",
+    `(bank OR insurer OR retailer OR airline OR telecom OR manufacturer OR utility OR "health system") ("selects" OR "partners with" OR "taps" OR "picks") ("to modernise" OR "to modernize" OR "core banking" OR "cloud migration" OR "managed services" OR outsourcing)`),
+  buyerSide("renewal-extension", "Buyer side — renewals and extensions",
+    `("extends contract" OR "renews contract" OR "contract extension" OR "renews its partnership" OR "extends its partnership") ("IT services" OR outsourcing OR "managed services" OR "digital transformation" OR BPO)`),
+  buyerSide("takeaway-replacement", "Buyer side — incumbent replaced",
+    `("replaces" OR "drops" OR "switches from" OR "ends contract with" OR "terminates contract") ("IT supplier" OR "IT provider" OR outsourcing OR "managed services" OR "service provider")`),
 ];
 
 // ── Tier-2: Google News keyword RSS (aggregator) ────────────────────────────
@@ -523,7 +580,10 @@ export const PROCUREMENT_SOURCES: SourceDefinition[] = [
     fetchMethod: "api",
     refreshHours: 12,
   },
-  {
+  // SAM.gov is retired (2026-09-09): the connector is a stub, it needs an API
+  // key nobody has issued, and it has answered with zero items and a rising
+  // error count on every run since it was added. Re-add it with a key.
+  ...(process.env.SAM_GOV_API_KEY ? [{
     id: "sam-gov-api",
     name: "SAM.gov Opportunities",
     provider: "Market Wide",
@@ -532,7 +592,7 @@ export const PROCUREMENT_SOURCES: SourceDefinition[] = [
     tier: "tier_1_primary",
     fetchMethod: "api",
     refreshHours: 12,
-  },
+  }] as SourceDefinition[] : []),
 ];
 
 // Order matters: the pipeline crawls in this sequence and may be cut short by
@@ -541,6 +601,7 @@ export const PROCUREMENT_SOURCES: SourceDefinition[] = [
 // run still returns real data. The fragile direct vendor/IR feeds go last.
 export const ALL_SOURCES: SourceDefinition[] = [
   ...GOOGLE_NEWS_SOURCES,
+  ...BUYER_SIDE_SOURCES,
   ...WIRE_SOURCES,
   ...PROCUREMENT_SOURCES,
   ...VENDOR_RSS_SOURCES,

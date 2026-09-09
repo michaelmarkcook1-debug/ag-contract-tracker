@@ -173,7 +173,9 @@ async function fetchGdelt(source: SourceDefinition): Promise<{ articles: RawArti
   let res: Response | null = null;
   for (let attempt = 0; attempt < 4; attempt++) {
     if (attempt > 0) await new Promise(r => setTimeout(r, 6000 * attempt));
-    res = await fetch(source.url, { headers: { "User-Agent": "ITMarketIntel/1.0" }, signal: AbortSignal.timeout(30000) });
+    // 45s: GlobeNewswire's industry feeds regularly take 30-40s and were being
+    // aborted mid-response, which showed as an error on a feed that works.
+    res = await fetch(source.url, { headers: { "User-Agent": "ITMarketIntel/1.0" }, signal: AbortSignal.timeout(45000) });
     if (res.status !== 429) break;
   }
   if (!res) return { articles: [], error: "no response" };
