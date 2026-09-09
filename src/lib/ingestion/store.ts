@@ -14,6 +14,28 @@ import { canonicalContractEventId, PROMPT_POLICY_VERSION } from "./reader";
 import { defaultEventType, isValidEventType, EMPTY_USAGE, type ExtractionResult } from "./classifier";
 import { decidePublication } from "./gate";
 import { orgsMatch, titleCounterparty, withinDays, amountsConflict, SAME_EVENT_WINDOW_DAYS } from "./dedup";
+import { estimateContractValue, type ValueEstimate } from "@/lib/tcv/engine";
+
+/**
+ * The labelled estimate for an undisclosed value (policy 2026-09-08: every
+ * contract carries a value — stated when stated, otherwise calculated and
+ * labelled). The stated field is never written here.
+ */
+async function estimateFor(ev: GroundedEvent, article: RawArticle, text: string, eventType: string, when: Date): Promise<ValueEstimate | null> {
+  try {
+    return await estimateContractValue({
+      serviceLine: ev.serviceLine, sourceType: article.sourceType, sourceName: article.provider, contractLengthMonths: ev.durationMonths,
+      provider: ev.provider, industry: ev.industry, geography: ev.geography, eventType, anonymised: !ev.buyer && !!ev.buyerDescriptor,
+      usersServed: ev.usersServed, announcementYear: when.getFullYear(), agentCount: ev.agentCount, agentTarget: ev.agentTarget,
+      deliveryLocations: ev.deliveryLocations, workType: ev.workType, buyerCountry: ev.buyerCountry ?? ev.geography[0] ?? null, text,
+    });
+  } catch { return null; }
+}
+const estimateFields = (est: ValueEstimate | null) => est ? {
+  tcvEstimateLowUsd: est.lowUsd, tcvEstimateMidUsd: est.midUsd, tcvEstimateHighUsd: est.highUsd,
+  tcvBasis: est.basis, tcvIsEstimate: true, tcvConfidence: "estimated",
+  tcvEstimateMethod: est.method, tcvEstimateInputs: JSON.stringify(est.inputs), tcvEstimateExplanation: est.explanation, tcvEstimateVersion: est.version,
+} : {};
 
 /** Mandate commercial event types → the store's contract event types (UI vocabulary). */
 const CONTRACT_TYPE_MAP: Record<string, string> = {
@@ -30,6 +52,21 @@ export function toUsd(amount: number | null, currency: string | null): number | 
   if (amount == null) return null;
   const fx = FX_TO_USD[(currency ?? "USD").toUpperCase()];
   return fx ? Math.round(amount * fx) : null;
+}
+
+/**
+ * Contract dates (policy 2026-09-08): the start is the stated effective date,
+ * else the announcement date; the end is start + contract length whenever a
+ * length is known, marked "derived_from_length" when the length was stated and
+ * the start is a stated date, otherwise "estimated". Never invented without a
+ * length.
+ */
+export function contractDates(effectiveDate: Date | null, announcementDate: Date, months: number | null, lengthIsEstimate = false) {
+  const start = effectiveDate ?? announcementDate;
+  const startPrecision = effectiveDate ? "day" : "announcement";
+  if (!months || months <= 0) return { start, startPrecision, end: null as Date | null, endPrecision: "unknown" };
+  const end = new Date(start); end.setUTCMonth(end.getUTCMonth() + Math.round(months));
+  return { start, startPrecision, end, endPrecision: effectiveDate && !lengthIsEstimate ? "derived_from_length" : "estimated" };
 }
 
 function hashUrl(url: string): string { return crypto.createHash("sha256").update(url).digest("hex").slice(0, 16); }
@@ -138,7 +175,7 @@ async function findExisting(ev: GroundedEvent, family: string, vendorId: string,
 
 /** A re-report may fill fields the stored event lacks; it never overwrites a stated value with another. */
 export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?: string): Promise<void> {
-  const cur = await prisma.canonicalMarketEvent.findUnique({ where: { id: eventId }, select: { family: true, buyerSector: true, aiRelevance: true, eventStatus: true, supportingText: true, canonicalContractEventId: true, commercialEventType: true, readerVersion: true, contractDetails: { select: { id: true, tcvCommittedUsd: true, contractLengthMonths: true, clientRaw: true, pricingModel: true, previousVendorRaw: true } } } });
+  const cur = await prisma.canonicalMarketEvent.findUnique({ where: { id: eventId }, select: { family: true, buyerSector: true, aiRelevance: true, eventStatus: true, supportingText: true, canonicalContractEventId: true, commercialEventType: true, readerVersion: true, contractDetails: { select: { id: true, tcvCommittedUsd: true, contractLengthMonths: true, clientRaw: true, pricingModel: true, previousVendorRaw: true, agentCount: true, agentTarget: true, deliveryLocations: true, workType: true, usersServed: true, contractStartDate: true, contractStartDatePrecision: true, contractEndDate: true } } } });
   if (!cur) return;
   const support = { ...(cur.supportingText ? JSON.parse(cur.supportingText) as Record<string, string> : {}), ...ev.supporting };
   if (cur.commercialEventType && ev.commercialEventType !== "UNKNOWN" && ev.commercialEventType !== cur.commercialEventType && ev.supporting.event) support[`typeVariant:${ev.commercialEventType}`] = ev.supporting.event;
@@ -160,13 +197,22 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
   } });
   if (cur.contractDetails) {
     const cd = cur.contractDetails;
+    const nowStated = cd.tcvCommittedUsd == null && ev.contractValue != null && ev.valueIsTcv !== false && toUsd(ev.contractValue, ev.currency) != null;
     await prisma.contractDetails.update({ where: { id: cd.id }, data: {
+      agentCount: cd.agentCount == null && ev.agentCount != null ? ev.agentCount : undefined,
+      agentTarget: cd.agentTarget == null && ev.agentTarget != null ? ev.agentTarget : undefined,
+      deliveryLocations: !cd.deliveryLocations && ev.deliveryLocations.length ? JSON.stringify(ev.deliveryLocations) : undefined,
+      workType: !cd.workType && ev.workType ? ev.workType : undefined,
+      usersServed: cd.usersServed == null && ev.usersServed != null ? ev.usersServed : undefined,
+      // a stated value supersedes any estimate
+      ...(nowStated ? { tcvEstimateLowUsd: null, tcvEstimateMidUsd: null, tcvEstimateHighUsd: null, tcvIsEstimate: false, tcvEstimateMethod: null, tcvEstimateInputs: null, tcvEstimateExplanation: null, tcvEstimateVersion: null } : {}),
       tcvCommittedUsd: cd.tcvCommittedUsd == null && ev.contractValue != null && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : undefined,
       tcvOriginalCurrency: cd.tcvCommittedUsd == null && ev.contractValue != null ? ev.currency : undefined,
       tcvOriginalValue: cd.tcvCommittedUsd == null && ev.contractValue != null ? ev.contractValue : undefined,
       tcvBasis: cd.tcvCommittedUsd == null && ev.contractValue != null && ev.valueIsTcv !== false ? "official_disclosed" : undefined,
       tcvConfidence: cd.tcvCommittedUsd == null && ev.contractValue != null && ev.valueIsTcv !== false ? "known" : undefined,
       contractLengthMonths: cd.contractLengthMonths == null && ev.durationMonths != null ? ev.durationMonths : undefined,
+      ...(cd.contractLengthMonths == null && ev.durationMonths != null && cd.contractEndDate == null && cd.contractStartDate ? (() => { const d = contractDates(cd.contractStartDatePrecision === "day" ? cd.contractStartDate : null, cd.contractStartDate!, ev.durationMonths); return { contractEndDate: d.end, contractEndDatePrecision: d.endPrecision, contractLengthDescriptor: "stated" }; })() : {}),
       clientRaw: !cd.clientRaw && ev.buyer ? ev.buyer : undefined,
       pricingModel: !cd.pricingModel && ev.pricingModel ? ev.pricingModel : undefined,
       previousVendorRaw: !cd.previousVendorRaw && (ev.incumbent ?? ev.displacedProvider) ? (ev.incumbent ?? ev.displacedProvider) : undefined,
@@ -224,6 +270,8 @@ export async function storeReading(article: RawArticle, text: string, reading: R
       continue;
     }
     const valueUsd = ev.contractValue != null && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : null;
+    const estimate = family === "CONTRACT" && valueUsd == null ? await estimateFor(ev, article, text, eventType, when) : null;
+    const dates = contractDates(parseDate(ev.effectiveDate), when, ev.durationMonths);
     await prisma.$transaction(async tx => {
       const created = await tx.canonicalMarketEvent.create({ data: {
         family, eventType, canonicalTitle: (ev.title ?? article.title).slice(0, 500),
@@ -248,7 +296,12 @@ export async function storeReading(article: RawArticle, text: string, reading: R
           tcvCommittedUsd: valueUsd, tcvOriginalCurrency: ev.contractValue != null ? ev.currency : null, tcvOriginalValue: ev.contractValue,
           acvUsd: ev.acv != null ? toUsd(ev.acv, ev.currency) : (ev.valueIsTcv === false && ev.contractValue != null ? toUsd(ev.contractValue, ev.currency) : null),
           tcvBasis: valueUsd ? "official_disclosed" : "undisclosed", tcvIsEstimate: false, tcvConfidence: valueUsd ? "known" : "not_reliably_estimable",
+          agentCount: ev.agentCount, agentTarget: ev.agentTarget, deliveryLocations: ev.deliveryLocations.length ? JSON.stringify(ev.deliveryLocations) : null,
+          workType: ev.workType, usersServed: ev.usersServed,
+          ...estimateFields(estimate),
           contractLengthMonths: ev.durationMonths, renewalPeriodMonths: ev.renewalPeriodMonths, expansionValueUsd: ev.expansionValue != null ? toUsd(ev.expansionValue, ev.currency) : null,
+          contractStartDate: dates.start, contractStartDatePrecision: dates.startPrecision, contractEndDate: dates.end, contractEndDatePrecision: dates.endPrecision,
+          contractLengthDescriptor: ev.durationMonths ? "stated" : null,
           pricingModel: ev.pricingModel, outcomePricing: ev.outcomePricing, feeAtRisk: ev.feeAtRisk, consumptionModel: ev.consumptionModel,
           primaryMacroServiceLine: ev.serviceLine, scopeSummary: ev.serviceScope ?? ev.summary,
           platformsUsed: "[]", clientServiceCoverageLocation: JSON.stringify(ev.geography), secondaryMacroServiceLines: "[]", secondaryMicroServiceLines: "[]",

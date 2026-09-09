@@ -1,0 +1,42 @@
+{
+  "version": "bpo_rate_card/1.0.0-2026-09-08",
+  "unit": "USD billed to the client per full-time agent per year, fully loaded",
+  "status": "ANALYST-EDITABLE ASSUMPTION — benchmark magnitudes, sanity-checked against the disclosed contracts under `calibration`. Revise the bands here; the engine reads this file.",
+  "bands": {
+    "offshore": {
+      "low": 9000, "high": 22000,
+      "domesticLow": 6000, "domesticHigh": 12000,
+      "countries": ["india", "philippines", "egypt", "kenya", "bangladesh", "pakistan", "nepal", "sri lanka", "ghana", "uganda", "rwanda", "nigeria", "indonesia", "cambodia"]
+    },
+    "nearshore": {
+      "low": 18000, "high": 36000,
+      "domesticLow": 8000, "domesticHigh": 16000,
+      "countries": ["mexico", "colombia", "brazil", "argentina", "peru", "costa rica", "guatemala", "el salvador", "honduras", "nicaragua", "dominican republic", "jamaica", "trinidad", "poland", "romania", "bulgaria", "serbia", "albania", "bosnia", "north macedonia", "moldova", "ukraine", "georgia", "morocco", "tunisia", "south africa", "malaysia", "vietnam", "thailand", "turkey", "greece", "portugal", "spain", "hungary", "czech republic", "slovakia", "lithuania", "latvia", "estonia"]
+    },
+    "onshore": {
+      "low": 45000, "high": 80000,
+      "domesticLow": 45000, "domesticHigh": 80000,
+      "countries": ["united states", "usa", "us", "united kingdom", "uk", "canada", "australia", "new zealand", "ireland", "germany", "france", "netherlands", "belgium", "sweden", "norway", "denmark", "finland", "switzerland", "austria", "japan", "singapore", "united arab emirates", "uae", "saudi arabia", "israel", "italy", "luxembourg", "hong kong", "south korea", "korea"]
+    },
+    "unknown": { "low": 12000, "high": 45000 }
+  },
+  "workTypeMultipliers": {
+    "VOICE": 1.0,
+    "NON_VOICE": 0.9,
+    "SPECIALISED": 1.4,
+    "UNKNOWN": 1.0
+  },
+  "rampFactorWhenOnlyTargetStated": 0.75,
+  "assumedTermMonthsWhenUnstated": 36,
+  "calibration": [
+    { "case": "Atento — 260 agents, Brazil, domestic public-sector citizen service, 36 months", "disclosedUsd": 6300000, "engineLowUsd": 6240000, "engineHighUsd": 12480000, "note": "GlobalData-estimated value; sits at the low end of the band" },
+    { "case": "One Point One Solutions — 20 seats scaling to 100+, India, domestic, 36 months", "disclosedUsd": 1800000, "engineLowUsd": 1350000, "engineHighUsd": 2700000, "note": "average of start and target seats (~60) × domestic offshore band" }
+  ],
+  "assumptions": [
+    "Rates are what a client is billed, not what an agent is paid; they include facilities, technology, management and margin.",
+    "Domestic bands apply when the buyer sits in the same low-cost market as the delivery centre (an Indian bank served from India), because domestic BPO prices well below offshore export work.",
+    "Specialised work (clinical, licensed insurance or financial advice, level-2+ technical support, multilingual European language desks) carries a premium; non-voice back-office a small discount.",
+    "When only a target headcount is stated the engine assumes a ramp and uses 75% of the target as the average staffed level.",
+    "When the term is not stated the engine assumes 36 months and says so in the explanation."
+  ]
+}

@@ -17,6 +17,9 @@ Nothing in this tranche has been deployed. Nothing has been sent to any vendor.
 | Article-derived projection for the programme | **IMPLEMENTED**, empty until the backlog is re-read |
 | Delivery Proof reassessment, central hypothesis observability | **DONE**, read-only |
 | Backlog re-read (19,693 articles) | **NOT RUN** — needs approval; see DEPLOYMENT |
+| Value engine: BPO rate card, fitted value model, labelled estimates on every undisclosed published contract | **IMPLEMENTED**, tested, applied to the data (not code-deployed) |
+| Historical ingestion: no age cutoff, no extraction cap, pending drain, month-window backfill | **IMPLEMENTED**, probed ($1.35), full run awaits go-ahead |
+| Procurement corpus retrofill (54,683 records → tracked-vendor events, dedup-checked) | **RUN**, no model spend |
 | Vendor invitations, RFI, portal URLs | **NOT SENT**, deferred |
 
 **The headline finding is not the classifier.** It is that **74% of stored
@@ -37,7 +40,7 @@ literal, not aspirational.
 | Crawl, URL dedup, age cutoff | code | 141 sources; exact-duplicate URLs collapsed |
 | Selection | code | **structural only**: an empty title, or a market-wide wire item naming no tracked vendor. No headline keywords. No trigger words. Every rejection is persisted with its reason |
 | Text retrieval | code | resolves the aggregator redirect, fetches the publisher page, up to 60,000 characters |
-| Readability gate | code | text that survives tag-stripping with under 400 characters of prose is **UNREADABLE**, never "no event" |
+| Readability gate | code | feed link markup, or text with under 120 characters or 20 words of prose after tag-stripping, is **UNREADABLE**, never "no event". A two-sentence wire blurb passes |
 | Reading | model | whole article, segmented at 11,000 characters with 600 overlap when long, then reconciled across segments |
 | Grounding | code | every claim must carry a passage that occurs in the article; unsupported claims are dropped, an unsupported event is discarded |
 | Identity | code | `sha256(provider · buyer key · event type · first month)`, 24 hex characters. Not URL-derived |
@@ -254,7 +257,8 @@ size it, and no aggregate over these events is a market measure.
 | `scripts/tests/tcv-inference.ts` | 16 passed, 0 failed |
 | `scripts/tests/p0-truth-integrity.ts` | 12 passed, 0 failed |
 | `scripts/tests/reader-regression.ts --unit-only` | 13 passed, 0 failed |
-| `scripts/tests/mandate-pipeline.ts` (new, end to end) | **25 passed, 0 failed** |
+| `scripts/tests/mandate-pipeline.ts` (new, end to end) | **29 passed, 0 failed** — now including the estimate policy |
+| `scripts/tests/value-engine.ts` (new) | **31 passed, 0 failed** |
 | `tsc --noEmit` | clean |
 
 The new suite covers the cases the mandate names: multiple events in one
@@ -322,13 +326,104 @@ Two exceptions to record honestly:
   event's own seven articles, and **removed** — the value is null again and the
   ungrounded passages are gone. The test now dates its fixtures outside any real
   event window so it cannot recur.
-- **The estimate policy conflicts with the mandate.** The mandate says "Missing
-  means missing. Do not estimate values to fill fields." A previous instruction
-  in this project asked for inferred TCV on every contract. The reader follows
-  the mandate: it never estimates, and every value it stores is stated in the
-  article with `tcvIsEstimate=false`. The separate comparables-based estimator
-  still exists and still writes clearly-labelled estimate fields, and those
-  fields are excluded from the article projection. **This needs your decision.**
+- **The estimate policy is decided: every contract carries a value.** Stated
+  when the article states one; otherwise a calculated, labelled estimate from
+  the value engine (BPO rate card from stated agents, location, work type and
+  term; a model fitted on contracts that stated a value for everything else).
+  The stated field is never written by the engine, which is how "missing means
+  missing" and "estimate everything" coexist. See
+  [VALUE-ESTIMATION.md](docs/mandate/VALUE-ESTIMATION.md).
+- **The earlier value backfill discarded 91 contracts.** When its estimating
+  model said "not a contract" the script believed it and moved the event to
+  noise. All 91 are back in the review queue, reason retained, logged and
+  reversible. The engine has no route to publication status.
+- **2,952 "disclosed" values were GlobalData's own estimates** ("GlobalData has
+  estimated the value of the contract"). They are now labelled as third-party
+  estimates, figure preserved, change logged per event; provider disclosed-TCV
+  totals fall because those figures were never disclosed.
+
+---
+
+## VALUE ESTIMATION
+
+Policy decided 2026-09-08: every contract carries a value — stated when
+stated, otherwise a calculated, labelled estimate. Detail in
+[VALUE-ESTIMATION.md](docs/mandate/VALUE-ESTIMATION.md).
+
+| | |
+|---|---|
+| BPO route | agents × billed rate per agent-year (delivery geography, work type) × years; rate card is an analyst-editable file, checked against the two disclosed contracts that state a headcount |
+| ITO and other routes | ridge model on log10(value) fitted on **1,519 contracts that stated a value**; third-party (GlobalData) estimates excluded from the fit and used as validation |
+| held-out accuracy | typical error 2.9x; 50% within 3x; 80% band covers 80% (calibrated) |
+| against GlobalData's 2,949 analyst estimates | this model runs 3.0x higher on the same records — the disclosure bias made visible. Undisclosed deals are shifted ×0.33 accordingly (measured for procurement records; assumed equal for announced deals) |
+| displayed range | interquartile band; the 80% band is stored beside it |
+| rows in the review queue | not priced until confirmed as contracts |
+
+Applied to the data (no code deployed, no model spend):
+
+| | n |
+|---|---|
+| engine estimates written on published contracts with no stated value | 1,102 (all by the fitted model; no stored event yet states a headcount, so the BPO route has fired only in tests) |
+| third-party (GlobalData) estimates relabelled from "disclosed" | 2,949 |
+| published contracts with neither a stated value nor an estimate | 19 — procurement records older than 24 months with an undisclosed value, by design |
+| estimator demotions reversed to the review queue | 91 |
+
+---
+
+## HISTORICAL INGESTION
+
+Directed 2026-09-08: historical contracts are critical; ingestion is not limited
+by budget; runs projected over $7 wait for explicit go-ahead.
+
+- **The sweep no longer discards old articles.** The 60-day cutoff is gone;
+  an article the store has never seen is read whatever its date.
+- **No extraction cap.** The scheduled sweep reads everything it finds; an
+  article the function timeout prevents it reaching is persisted as PENDING
+  and drained by the next run (400 per run), so nothing found is dropped.
+- **Historical backfill is built and measured, not run.**
+  `scripts/backfill-history.ts` walks Google News back month by month per
+  vendor with `after:`/`before:` windows (verified: Google honours them in
+  RSS). Four probe windows cost $1.35, read 78 articles and published 50
+  contract events — historical windows are rich. Measured $0.34 per
+  vendor-month. Projection for the full run:
+
+  | scope | windows | projected spend |
+  |---|---|---|
+  | **AG cohort × 5 months (the agreed plan)** | **335** | **≈ $115** |
+  | AG cohort × 12 months | 804 | ≈ $270 |
+  | all 118 tracked vendors × 5 months | 590 | ≈ $200 |
+
+  **Cohort (directed 2026-09-09):** the historical backfill runs over the AG
+  programme's providers plus the hyperscalers, 67 vendors, not all 118. 63 of
+  AG's 67 providers map onto this pipeline's tracked-vendor names; Caylent,
+  FactSet, Perficient and phData are in the AG roster but not tracked by the
+  article pipeline, and are recorded in `AG_COHORT_UNTRACKED` rather than
+  silently dropped. Hyperscalers: AWS, Microsoft, Google Cloud, Oracle. The
+  daily sweep is unaffected and still covers all 118.
+
+  The script stops at `--max-spend` (default $7) and prints the projection for
+  the remainder; **it needs your figure and go-ahead to run at scale.**
+- **Procurement retrofill.** The original corpus (`~/Dev/ag-contract-sources`,
+  54,683 award records) was imported where a tracked vendor is the supplier
+  and no stored event matches on provider + buyer within 45 days or provider
+  + stated value within 90 days: IMPORT_COUNTS_PLACEHOLDER. Records that
+  started within 24 months carry estimates where a fact was missing (value from
+  the engine's procurement population; length as the service line's median,
+  end date as start + length, precision marked "estimated"); older records
+  carry stated data only. No model spend.
+- **Runs and handover (directed 2026-09-08).** A run is one calendar month
+  across all 118 vendors, walking backwards from the latest complete month. A
+  run is *good* when at most 5% of its windows errored and at most 10% hit the
+  feed's 100-item cap. While the runner works the ingestion mode is
+  `historical` and the scheduled cron stands down; after 5 good runs the
+  runner flips the mode to `current` and the cron resumes gathering new
+  articles. The mode lives in the database (`SystemSetting`) so the local
+  runner and the deployed cron agree, and the admin panel shows it.
+- **Cost after the handover.** A cron sweep only reads articles the store has
+  never seen, so daily and weekly cadences cost the same model spend. Daily is
+  safer: the high-volume vendors already hit the feed cap at a 14-day window,
+  so a weekly sweep would lose items for them. Reduce cost by ending the
+  historical phase, not by thinning the cadence.
 
 ---
 
@@ -348,10 +443,13 @@ portal URL, RFI or project-guideline email was sent.
 
 ## NEXT ACTION
 
-1. **Decide the estimate policy** — mandate rule (never estimate) or the earlier
-   instruction (labelled estimates everywhere). They are currently reconciled by
-   keeping estimates out of the reader and out of the projection.
-2. **Approve the orphan re-link** — 7,147 pairs, deterministic, one command.
-3. **Approve backlog text re-collection and re-read** — the 74% text gap is the
-   largest single quality problem in the corpus and everything else is capped by it.
-4. Deploy after step 4 of the deployment sequence, not before.
+1. **Approve the orphan re-link** — 7,147 pairs, deterministic, one command.
+2. **Approve backlog text re-collection and re-read** — the 74% text gap is the
+   largest single quality problem in the corpus and everything else is capped by
+   it. The re-read also captures stated values the old extraction missed (24 of
+   the first 400 undisclosed events state an amount in their own title).
+3. **Review the 91 restored events and the 51 unexplained noise rows** — a
+   reader pass, not a bulk restore.
+4. **Revise the BPO rate card bands** if your benchmarks differ — it is one
+   JSON file, and the engine reads it.
+5. Deploy after step 4 of the deployment sequence, not before.

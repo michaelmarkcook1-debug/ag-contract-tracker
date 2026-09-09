@@ -8,7 +8,7 @@ import { trackedEventScope } from "@/lib/data";
 // extraction model's labelled range — tcv/infer.ts). Older single-number guesses
 // carry other bases and stay out. Every KPI that sums or averages uses this, and
 // reports how many values are disclosed vs estimated.
-const TCV = Prisma.raw(`COALESCE(cd."tcvCommittedUsd", CASE WHEN cd."tcvIsEstimate" AND (cd."tcvBasis" LIKE 'comparable_inferred_v%' OR cd."tcvBasis" LIKE 'model_estimated_v2%') THEN cd."tcvEstimateMidUsd" END)`);
+const TCV = Prisma.raw(`COALESCE(cd."tcvCommittedUsd", CASE WHEN cd."tcvIsEstimate" AND (cd."tcvBasis" LIKE 'value_engine_v%' OR cd."tcvBasis" LIKE 'third_party_estimated:%' OR cd."tcvBasis" LIKE 'comparable_inferred_v%' OR cd."tcvBasis" LIKE 'model_estimated_v2%') THEN cd."tcvEstimateMidUsd" END)`);
 
 export interface AnalyticsData {
   // Summary KPIs

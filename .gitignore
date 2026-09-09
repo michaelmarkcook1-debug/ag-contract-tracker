@@ -61,3 +61,6 @@ dev.db.sqlite-backup*
 .claude/
 .idea/
 .vscode/
+
+# scratch pulls of database rows for offline fitting (regenerate with scripts/tcv/fit-value-model.ts)
+/data/tcv/

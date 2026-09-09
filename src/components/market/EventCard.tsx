@@ -1,6 +1,6 @@
 "use client";
 
-import { EventSummary, formatTcv, formatTcvDisplay, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
+import { EventSummary, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Building2, Calendar, ExternalLink } from "lucide-react";
@@ -25,7 +25,7 @@ function EventMeta({ event }: { event: EventSummary }) {
           <span>→ {event.clientDescriptor}</span>
         )}
         {tcvLabel !== "Not reliably estimable" && (
-          <span className="font-mono font-semibold text-emerald-400">{tcvLabel}</span>
+          <span className="font-mono font-semibold text-emerald-400" title={tcvEstimateTitle(event)}>{tcvLabel}</span>
         )}
         {event.contractEventType && (
           <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-zinc-400">

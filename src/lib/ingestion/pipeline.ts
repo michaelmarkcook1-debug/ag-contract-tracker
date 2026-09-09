@@ -34,9 +34,12 @@ export interface PipelineOptions {
   concurrency?: number;
   /**
    * Skip articles published more than this many days ago BEFORE any model
-   * spend. Google News search feeds surface evergreen items from years back;
-   * for a market-intelligence feed those are noise, and they were filling the
-   * review queue. Defaults to 60. Pass 0 for a deliberate historical backfill.
+   * spend. Defaults to 0 — NO cutoff. Historical contracts are the point of
+   * the tracker (2026-09-08): an old article the store has never seen is
+   * exactly what a backfill wants, and the reader now decides what it is.
+   * The 60-day cutoff that used to sit here existed to keep evergreen items
+   * out of a headline-judged review queue; that queue no longer exists. Pass
+   * a positive number only for a deliberately narrow run.
    */
   maxArticleAgeDays?: number;
   /**
@@ -49,6 +52,12 @@ export interface PipelineOptions {
   sources?: SourceDefinition[];
   /** Skip crawling and process exactly these articles — for reprocessing stored rows and tests. */
   articles?: RawArticle[];
+  /**
+   * Before crawling, load up to this many PENDING rows from the store (model
+   * failures and articles a previous run could not reach) and read them first.
+   * Defaults to 0 for explicit article lists; the scheduled sweep drains 400.
+   */
+  drainPending?: number;
 }
 
 /** Total number of crawlable sources (for callers computing a rotating window). */
@@ -60,13 +69,19 @@ export const TOTAL_SOURCES = ALL_SOURCES.length;
  */
 export const ROUTE_TIME_BUDGET_MS = 200_000;
 
-/** The daily scheduled sweep: every source, one fire, request-bound budget. */
+/**
+ * The scheduled sweep: every source, one fire. Ingestion is NOT limited by
+ * budget (2026-09-08): the only cap is the platform's function timeout, and an
+ * article the run cannot reach in time is persisted as PENDING and drained by
+ * the next run, so nothing found is ever dropped for want of time.
+ */
 export const SCHEDULED_SWEEP: PipelineOptions = {
   sourceFilter: "all",
   maxSourcesPerRun: TOTAL_SOURCES,
-  maxExtractions: 600,
-  concurrency: 4,
+  maxExtractions: Number.MAX_SAFE_INTEGER,
+  concurrency: 6,
   timeBudgetMs: ROUTE_TIME_BUDGET_MS,
+  drainPending: 400,
 };
 
 export interface PipelineProgress {
@@ -216,8 +231,8 @@ export async function runPipeline(
 ): Promise<PipelineProgress> {
   const {
     sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false,
-    maxExtractions = 400, runType, timeBudgetMs = 38_000, concurrency = 4,
-    maxArticleAgeDays = 60, reprocessExcluded = false,
+    maxExtractions = Number.MAX_SAFE_INTEGER, runType, timeBudgetMs = 38_000, concurrency = 4,
+    maxArticleAgeDays = 0, reprocessExcluded = false, drainPending = 0,
   } = options;
   // The budget applies to STARTING model calls and is measured from the end of
   // the crawl (llmStart, below). Callers size it to their ceiling: an API route
@@ -259,6 +274,14 @@ export async function runPipeline(
   };
 
   const allArticles: RawArticle[] = [...(options.articles ?? [])];
+  // Drain what earlier runs left pending — oldest first, so nothing starves.
+  if (drainPending > 0) {
+    const pending = await prisma.sourceEvent.findMany({
+      where: { processingStatus: "pending" }, orderBy: { createdAt: "asc" }, take: drainPending,
+      select: { sourceUrl: true, publisherUrl: true, sourceTitle: true, sourceName: true, sourceType: true, publicationDate: true, rawText: true },
+    });
+    for (const p of pending) allArticles.push({ title: p.sourceTitle ?? "", url: p.sourceUrl, publishedAt: p.publicationDate?.toISOString() ?? null, snippet: null, sourceId: "pending", provider: p.sourceName ?? "", sourceType: p.sourceType, publisherUrl: p.publisherUrl, bodyText: p.rawText });
+  }
   progress.articlesFound = allArticles.length;
 
   // Phase 1: Crawl — parallel with concurrency cap (skipped when articles were supplied)
@@ -344,9 +367,9 @@ export async function runPipeline(
   const newArticles = uniqueArticles.filter(a => !seenUrls.has(a.url));
   progress.articlesDuped = allArticles.length - newArticles.length;
 
-  // Age cutoff BEFORE any model spend. Measured 2026-09: 75% of candidates
-  // were older than 90 days, 40% older than a year. Undated items are kept —
-  // there is nothing to judge them on.
+  // Optional age cutoff BEFORE any model spend — off by default; an old article
+  // the store has never seen is historical data, not noise. Undated items are
+  // always kept — there is nothing to judge them on.
   const ageCutoff = maxArticleAgeDays > 0 ? Date.now() - maxArticleAgeDays * 86_400_000 : null;
   const freshArticles = newArticles.filter(a => {
     if (ageCutoff === null) return true;
@@ -464,6 +487,12 @@ export async function runPipeline(
 
   progress.articlesProcessed = Math.min(cursor, dedupedArticles.length);
   progress.eventsDeferred = Math.max(0, dedupedArticles.length - cursor);
+  // Articles the budget did not reach are persisted as PENDING so the next run
+  // reads them even if the feed has moved on. Nothing found is dropped.
+  for (const a of dedupedArticles.slice(Math.min(cursor, dedupedArticles.length))) {
+    try { await storePending(a, a.bodyText ?? a.snippet ?? "", "deferred: not reached within the run's time budget", run.id); }
+    catch (err) { progress.errors.push(`Deferred store error (${a.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
+  }
 
   progress.phase = "done";
   await prisma.ingestionRun.update({

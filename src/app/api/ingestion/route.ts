@@ -63,10 +63,12 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
   const { prisma } = await import("@/lib/db");
-  const [sourcesTotal, lastRun, needsReview] = await Promise.all([
+  const { getIngestionMode } = await import("@/lib/ingestion/mode");
+  const [sourcesTotal, lastRun, needsReview, mode] = await Promise.all([
     prisma.sourceRegistryItem.count({ where: { isActive: true } }),
     prisma.ingestionRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...(await (await import("@/lib/data")).trackedEventScope()) } }),
+    getIngestionMode(),
   ]);
-  return NextResponse.json({ hasApiKey, sourcesTotal, needsReview, lastRun });
+  return NextResponse.json({ hasApiKey, sourcesTotal, needsReview, lastRun, mode });
 }

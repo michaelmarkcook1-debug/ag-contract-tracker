@@ -61,6 +61,9 @@ export interface EventSummary {
   tcvEstimateLowUsd: number | null;
   tcvEstimateHighUsd: number | null;
   tcvEstimateMidUsd: number | null;
+  /** How a labelled estimate was produced, and one line a reader can check. */
+  tcvEstimateMethod: string | null;
+  tcvEstimateExplanation: string | null;
   tcvIsEstimate: boolean;
   tcvBasis: string | null;
   /** known | estimated | not_reliably_estimable */
@@ -159,12 +162,23 @@ export function formatTcvDisplay(e: {
   tcvCommittedUsd: number | null;
   tcvEstimateLowUsd: number | null;
   tcvEstimateHighUsd: number | null;
+  tcvEstimateMethod?: string | null;
 }): string {
   if (e.tcvCommittedUsd != null) return formatTcv(e.tcvCommittedUsd, false);
   if (e.tcvEstimateLowUsd != null && e.tcvEstimateHighUsd != null) {
+    // A third party's point estimate has no range of its own; say whose it is.
+    if (e.tcvEstimateMethod === "third_party" && e.tcvEstimateLowUsd === e.tcvEstimateHighUsd) return `Est. ${formatTcv(e.tcvEstimateLowUsd, false)} (GlobalData)`;
     return `Est. ${formatTcv(e.tcvEstimateLowUsd, false)}–${formatTcv(e.tcvEstimateHighUsd, false)}`;
   }
   return "Not reliably estimable";
+}
+
+/** Hover text for an estimate: the method and the one-line explanation, when known. */
+export function tcvEstimateTitle(e: { tcvCommittedUsd: number | null; tcvEstimateMethod?: string | null; tcvEstimateExplanation?: string | null }): string | undefined {
+  if (e.tcvCommittedUsd != null) return "Stated in the source";
+  if (!e.tcvEstimateExplanation) return undefined;
+  const method = e.tcvEstimateMethod === "bpo_rate_card" ? "BPO rate card" : e.tcvEstimateMethod === "value_model" ? "Fitted value model" : e.tcvEstimateMethod === "comparables" ? "Comparable contracts" : e.tcvEstimateMethod === "third_party" ? "Third-party estimate" : "Estimate";
+  return `${method}: ${e.tcvEstimateExplanation}`;
 }
 
 export function formatDate(iso: string | null): string {

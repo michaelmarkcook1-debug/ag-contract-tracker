@@ -1,0 +1,40 @@
+{
+ "done": {
+  "gnews-backfill-infosys-2025-03": {
+   "found": 37,
+   "read": 34,
+   "published": 11,
+   "merged": 4,
+   "capped": false,
+   "costUsd": 0.41839879999999996,
+   "at": "2026-09-08T18:23:41.232Z"
+  },
+  "gnews-backfill-infosys-2025-04": {
+   "found": 34,
+   "read": 26,
+   "published": 25,
+   "merged": 13,
+   "capped": false,
+   "costUsd": 0.6481896000000001,
+   "at": "2026-09-08T18:26:56.616Z"
+  },
+  "gnews-backfill-capgemini-2025-03": {
+   "found": 13,
+   "read": 9,
+   "published": 11,
+   "merged": 0,
+   "capped": false,
+   "costUsd": 0.214084,
+   "at": "2026-09-08T18:28:36.523Z"
+  },
+  "gnews-backfill-capgemini-2025-04": {
+   "found": 18,
+   "read": 9,
+   "published": 3,
+   "merged": 0,
+   "capped": false,
+   "costUsd": 0.0676134,
+   "at": "2026-09-08T18:30:29.982Z"
+  }
+ }
+}

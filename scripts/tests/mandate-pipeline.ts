@@ -56,7 +56,7 @@ const mk = (i: number, f: { title: string; text: string; provider: string; sourc
       articleType: true, articleTextHash: true, articleTextChars: true, modelId: true, promptPolicyVersion: true, analysedAt: true,
       canonicalEvents: { select: { id: true, family: true, eventType: true, commercialEventType: true, eventStatus: true, publicationStatus: true, reviewReason: true,
         buyerSector: true, aiRelevance: true, supportingText: true, canonicalContractEventId: true, readerVersion: true, counterpartyRaw: true,
-        contractDetails: { select: { tcvCommittedUsd: true, tcvIsEstimate: true, contractLengthMonths: true, clientDescriptor: true, previousVendorRaw: true } },
+        contractDetails: { select: { tcvCommittedUsd: true, tcvIsEstimate: true, tcvEstimateLowUsd: true, tcvEstimateMidUsd: true, tcvEstimateHighUsd: true, tcvBasis: true, tcvEstimateMethod: true, tcvEstimateExplanation: true, contractLengthMonths: true, clientDescriptor: true, previousVendorRaw: true, agentCount: true, usersServed: true, contractStartDate: true, contractEndDate: true, contractEndDatePrecision: true } },
         sourceEvents: { select: { id: true } } } } },
   });
   const byTitle = (frag: string) => rows.find(r => (r.sourceTitle ?? "").toLowerCase().includes(frag.toLowerCase()));
@@ -65,7 +65,9 @@ const mk = (i: number, f: { title: string; text: string; provider: string; sourc
   console.log("=== §30 cases ===");
 
   // 1. every read row records model identity, prompt policy, article hash and length
-  const read = rows.filter(r => r.processingStatus !== "pending");
+  // rows the structural gate excluded were never read, by design
+  const read = rows.filter(r => r.processingStatus !== "pending" && !r.exclusionReason?.startsWith("rules:"));
+  ok("every fixture with article text was read", rows.filter(r => r.exclusionReason?.startsWith("rules:")).length === 0, rows.filter(r => r.exclusionReason?.startsWith("rules:")).map(r => `${r.sourceTitle?.slice(0, 40)}: ${r.exclusionReason}`).join("; "));
   ok("model identity recorded on every read row", read.every(r => r.modelId === READER_MODEL), `${read.filter(r => r.modelId === READER_MODEL).length}/${read.length}`);
   ok("prompt policy version recorded", read.every(r => r.promptPolicyVersion === PROMPT_POLICY_VERSION));
   ok("article hash and length recorded", read.every(r => !!r.articleTextHash && (r.articleTextChars ?? 0) > 0));
@@ -125,10 +127,19 @@ const mk = (i: number, f: { title: string; text: string; provider: string; sourc
   }
   ok("every supporting passage occurs in one of the event's articles", ungrounded.length === 0, `${grounded} grounded${ungrounded.length ? `, not found: ${ungrounded.slice(0, 3).join(" | ")}` : ""}`);
 
-  // 9. values: stated only, never estimated by the reader
-  ok("no reader-stored value is flagged as an estimate", events.every(e => e.contractDetails?.tcvIsEstimate !== true));
-  const hcl = byTitle("Volvo Group");
-  ok("an undisclosed value stays null", hcl?.canonicalEvents[0]?.contractDetails?.tcvCommittedUsd == null, `${hcl?.canonicalEvents[0]?.contractDetails?.tcvCommittedUsd}`);
+  // 9. values: the stated field holds only what the article said; an undisclosed
+  //    value gets a calculated, labelled estimate beside it (policy 2026-09-08)
+  const stated = events.filter(e => e.family === "CONTRACT" && e.contractDetails?.tcvCommittedUsd != null);
+  ok("a stated value is never marked as an estimate", stated.every(e => e.contractDetails?.tcvIsEstimate === false && !e.contractDetails?.tcvEstimateMethod), `${stated.length} stated`);
+  const hcl = byTitle("Volvo Group")?.canonicalEvents[0]?.contractDetails;
+  ok("an undisclosed value stays null in the stated field", hcl?.tcvCommittedUsd == null, `${hcl?.tcvCommittedUsd}`);
+  ok("an undisclosed value carries a calculated estimate range", !!hcl && hcl.tcvIsEstimate === true && (hcl.tcvEstimateLowUsd ?? 0) > 0 && (hcl.tcvEstimateHighUsd ?? 0) > (hcl.tcvEstimateLowUsd ?? 0), `${hcl?.tcvEstimateMethod}: $${((hcl?.tcvEstimateLowUsd ?? 0) / 1e6).toFixed(1)}m–$${((hcl?.tcvEstimateHighUsd ?? 0) / 1e6).toFixed(1)}m`);
+  ok("the estimate names its method and explains itself", !!hcl?.tcvBasis?.startsWith("value_engine_v") && !!hcl?.tcvEstimateExplanation, hcl?.tcvEstimateExplanation ?? "");
+  const undisclosed = events.filter(e => e.family === "CONTRACT" && e.contractDetails && e.contractDetails.tcvCommittedUsd == null);
+  const withLength = events.filter(e => e.family === "CONTRACT" && (e.contractDetails?.contractLengthMonths ?? 0) > 0);
+  ok("a stated contract length yields an end date", withLength.length > 0 && withLength.every(e => !!e.contractDetails?.contractEndDate && ["derived_from_length", "estimated", "day"].includes(e.contractDetails.contractEndDatePrecision)), `${withLength.filter(e => e.contractDetails?.contractEndDate).length}/${withLength.length} (${[...new Set(withLength.map(e => e.contractDetails?.contractEndDatePrecision))].join(",")})`);
+  ok("no end date without a length", events.filter(e => e.family === "CONTRACT" && !e.contractDetails?.contractLengthMonths).every(e => !e.contractDetails?.contractEndDate));
+  ok("every undisclosed contract event carries an estimate", undisclosed.every(e => e.contractDetails?.tcvEstimateMidUsd != null), `${undisclosed.filter(e => e.contractDetails?.tcvEstimateMidUsd != null).length}/${undisclosed.length}`);
 
   // 10. an award reported only in a stock note is still found
   const ltts = byTitle("shares jump");

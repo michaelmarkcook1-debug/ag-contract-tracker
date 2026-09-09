@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runPipeline, SCHEDULED_SWEEP } from "@/lib/ingestion/pipeline";
+import { getIngestionMode } from "@/lib/ingestion/mode";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -24,6 +25,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // While the historical backfill is reinforcing the store, the cron stands
+    // down so spend stays with the backfill; it resumes when the runner flips
+    // the mode to "current" after the agreed number of good runs.
+    const mode = await getIngestionMode();
+    if (mode.mode === "historical") {
+      return NextResponse.json({ success: true, skipped: "historical phase", note: mode.note, since: mode.since });
+    }
     const result = await runPipeline({ ...SCHEDULED_SWEEP, runType: "cron" });
     return NextResponse.json({
       success: true,

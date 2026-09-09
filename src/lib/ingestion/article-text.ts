@@ -200,9 +200,11 @@ export async function fetchArticleText(url: string, maxChars = DEFAULT_MAX_CHARS
  * description. Stored as a snippet it looks like text but contains no article.
  * Reading it produces a confident "no commercial event" — a false negative
  * dressed as a verdict, which §7 forbids. Anything that survives tag-stripping
- * with less than `minChars` of prose is not an article.
+ * with less than `minChars` of prose or fewer than `minWords` words is not an
+ * article. A two-sentence wire blurb (which can state an award, its value and
+ * its term) passes; a headline with a source name does not.
  */
-export function readableArticleText(raw: string | null | undefined, minChars = 400): string | null {
+export function readableArticleText(raw: string | null | undefined, minChars = 120, minWords = 20): string | null {
   if (!raw) return null;
   const stripped = raw
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -212,7 +214,7 @@ export function readableArticleText(raw: string | null | undefined, minChars = 4
     .replace(/&[a-z]+;|&#\d+;/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (stripped.length < minChars) return null;
+  if (stripped.length < minChars || stripped.split(/\s+/).length < minWords) return null;
   return raw.includes("<") ? stripped : raw.trim();
 }
 

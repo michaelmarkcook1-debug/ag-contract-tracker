@@ -208,6 +208,17 @@ model ContractDetails {
   tcvBasis            String  @default("undisclosed")
   tcvIsEstimate       Boolean @default(false)
   tcvConfidence       String  @default("do_not_estimate")
+  // Value engine (2026-09-08): how a labelled estimate was produced and from what
+  tcvEstimateMethod      String?   // bpo_rate_card | value_model | comparables
+  tcvEstimateInputs      String?   // JSON: the stated inputs the estimate used
+  tcvEstimateExplanation String?   // one line a reader can check
+  tcvEstimateVersion     String?   // model / rate-card version
+  // Stated sizing facts the reader grounds in the article
+  agentCount        Int?      // agents / FTEs / seats the provider deploys
+  agentTarget       Int?      // planned scale-up, when only a target is stated
+  deliveryLocations String?   // JSON array of countries/cities the provider delivers from
+  workType          String?   // VOICE | NON_VOICE | SPECIALISED | UNKNOWN
+  usersServed       Int?      // client population the work supports
 
   primaryMacroServiceLine    String?
   primaryMicroServiceLine    String?
@@ -371,4 +382,14 @@ model IngestionRun {
   costUsd         Float    @default(0)
 
   sourceEvents SourceEvent[]
+}
+
+// ─── Operating mode ───────────────────────────────────────────────────────────
+// Tiny key/value table so a local runner and the deployed cron agree on the
+// ingestion phase: "historical" (backfill in progress; the cron pauses) or
+// "current" (the cron gathers new articles). Written by scripts/backfill-history.ts.
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

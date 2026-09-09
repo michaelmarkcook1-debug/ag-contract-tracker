@@ -179,5 +179,5 @@ export const INFERRED_BASIS = "comparable_inferred_v2";
 export const MODEL_ESTIMATE_BASIS = "model_estimated_v2";
 /** Bases the UI and analytics may present as an estimate (older methods stay quarantined). */
 export function isApprovedEstimateBasis(basis: string | null | undefined): boolean {
-  return !!basis && (basis.startsWith(INFERRED_BASIS) || basis.startsWith(MODEL_ESTIMATE_BASIS) || basis === "comparable_inferred_v1");
+  return !!basis && (basis.startsWith("value_engine_v") || basis.startsWith("third_party_estimated:") || basis.startsWith(INFERRED_BASIS) || basis.startsWith(MODEL_ESTIMATE_BASIS) || basis === "comparable_inferred_v1");
 }

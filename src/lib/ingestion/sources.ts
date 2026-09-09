@@ -372,12 +372,12 @@ function searchNames(vendor: string): readonly string[] {
   return AMBIGUOUS_BARE_NAMES.has(vendor) ? aliases : [vendor, ...aliases];
 }
 
-export const GOOGLE_NEWS_SOURCES: SourceDefinition[] = TRACKED_VENDORS.map(vendor => {
-  const terms = PLATFORM_VENDORS.includes(vendor) ? PLATFORM_SIGNAL_TERMS
-    : BIG4.has(vendor) ? CONSULTING_SIGNAL_TERMS
-    : IT_SIGNAL_TERMS;
-  return gnews(vendor, searchNames(vendor), terms, windowFor(vendor));
-});
+function signalTermsFor(vendor: string): string {
+  return PLATFORM_VENDORS.includes(vendor) ? PLATFORM_SIGNAL_TERMS : BIG4.has(vendor) ? CONSULTING_SIGNAL_TERMS : IT_SIGNAL_TERMS;
+}
+
+export const GOOGLE_NEWS_SOURCES: SourceDefinition[] = TRACKED_VENDORS.map(vendor =>
+  gnews(vendor, searchNames(vendor), signalTermsFor(vendor), windowFor(vendor)));
 
 // ── Historical backfill: GDELT ─────────────────────────────────────────────
 // Google News feeds cannot be windowed by date (see above), so a rerun over
@@ -388,6 +388,94 @@ export const GOOGLE_NEWS_SOURCES: SourceDefinition[] = TRACKED_VENDORS.map(vendo
 const GDELT_SIGNAL_TERMS = "contract OR deal OR agreement OR selected OR wins OR outsourcing OR partnership OR acquisition OR acquires";
 
 function ymd(d: Date): string { return d.toISOString().slice(0, 10).replace(/-/g, ""); }
+
+/**
+ * Google News search feeds for a HISTORICAL window, one feed per vendor per
+ * calendar month. `when:Nd` only looks back from today; `after:`/`before:`
+ * select a past window, and like `when:` they must come FIRST in the query or
+ * Google drops them after an OR-group of quoted names. Each feed is capped at
+ * ~100 items, which is why the window is a month: a vendor with more than 100
+ * matching stories in a month loses the rest, and the crawl flags that.
+ */
+/**
+ * The AG programme cohort (directed 2026-09-09): the 67 providers the AI
+ * Delivery Mandate tracks in its surface sweep, plus the hyperscalers. 63 of
+ * the 67 map onto this pipeline's tracked-vendor names; Caylent, FactSet,
+ * Perficient and phData are in the AG roster but not in TRACKED_VENDORS, so
+ * they are listed in AG_COHORT_UNTRACKED rather than silently dropped.
+ *
+ * Globant is added by hand: it is one of the 25 vendors the AG portal assesses
+ * (ag-vendor-portal/_src/vendors.json) but is absent from the 67-name surface
+ * sweep. Excluding it would have left an assessed vendor out of the backfill.
+ *
+ * Historical backfill runs over this cohort; the daily sweep still covers all
+ * 118 tracked vendors.
+ *
+ * Sources: ~/Dev/ai-delivery-mandate/00-programme/data-feed/surface-sweep/raw/providers
+ *          ~/Dev/ai-delivery-mandate/ag-vendor-portal/_src/vendors.json
+ */
+export const AG_COHORT_VENDORS = [
+  "Accenture", "ADP", "Alorica", "Amdocs", "Atento", "Atos", "Birlasoft", "Broadridge", "Capgemini", "Capita",
+  "CGI", "Coforge", "Cognizant", "Concentrix", "Conduent", "CSS Corp", "Datamatics", "Dell Technologies", "Deloitte",
+  "DXC Technology", "EPAM", "EXL", "EY", "Firstsource", "Foundever", "Fujitsu", "Genpact", "HCLTech", "Hexaware",
+  "Hitachi Digital Services", "IBM", "Infosys", "KPMG", "Kyndryl", "LTIMindtree", "L&T Technology Services",
+  "Globant", "Majorel", "Mastek", "Mphasis", "Nagarro", "NEC", "NICE", "NTT DATA", "Orange Business", "Persistent", "PwC",
+  "Searce", "Singtel", "Sopra Steria", "Stefanini", "Sutherland", "Synechron", "TCS", "Tech Mahindra",
+  "Teleperformance", "TELUS International", "Tietoevry", "TTEC", "Unisys", "UST", "Virtusa", "WNS", "Wipro",
+] as const;
+
+/** Hyperscalers, run alongside the AG cohort in historical backfills. */
+export const HYPERSCALER_VENDORS = ["AWS", "Microsoft", "Google Cloud", "Oracle"] as const;
+
+/** AG providers with no counterpart in TRACKED_VENDORS — recorded, not silently dropped. */
+export const AG_COHORT_UNTRACKED = ["Caylent", "FactSet", "Perficient", "phData"] as const;
+
+/** The historical-backfill cohort: AG's providers plus the hyperscalers. */
+export const BACKFILL_COHORT = [...AG_COHORT_VENDORS, ...HYPERSCALER_VENDORS] as readonly string[];
+
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/** One date-bounded Google News feed for a vendor over [from, to). */
+export function googleNewsWindow(vendor: string, from: Date, to: Date): SourceDefinition {
+  const alternatives = searchNames(vendor).map(n => `"${n}"`).join(" OR ");
+  const q = encodeURIComponent(`after:${isoDay(from)} before:${isoDay(to)} (${alternatives}) (${signalTermsFor(vendor)})`);
+  const slug = `${vendor.toLowerCase().replace(/[^a-z0-9]/g, "-")}-${isoDay(from)}-${isoDay(to)}`;
+  return {
+    id: `gnews-backfill-${slug}`,
+    name: `${vendor} — Google News ${isoDay(from)}…${isoDay(to)}`,
+    provider: vendor,
+    url: `https://news.google.com/rss/search?q=${q}&hl=en&gl=US&ceid=US:en`,
+    sourceType: "wire_service", tier: "tier_2_secondary", fetchMethod: "rss", refreshHours: 24 * 3650,
+  };
+}
+
+/**
+ * A window that hit the feed's item cap has lost articles. Split it in half and
+ * try again; the caller recurses until each half comes back under the cap or
+ * the window is a single day.
+ */
+export function splitGoogleNewsWindow(src: SourceDefinition): SourceDefinition[] | null {
+  const m = /gnews-backfill-.*-(\d{4}-\d{2}-\d{2})-(\d{4}-\d{2}-\d{2})$/.exec(src.id);
+  if (!m) return null;
+  const from = new Date(`${m[1]}T00:00:00Z`), to = new Date(`${m[2]}T00:00:00Z`);
+  const days = Math.round((to.getTime() - from.getTime()) / 86_400_000);
+  if (days <= 1) return null;
+  const mid = new Date(from.getTime() + Math.floor(days / 2) * 86_400_000);
+  return [googleNewsWindow(src.provider, from, mid), googleNewsWindow(src.provider, mid, to)];
+}
+
+export function googleNewsBackfillSources(from: Date, to: Date, vendors: readonly string[] = TRACKED_VENDORS): SourceDefinition[] {
+  const out: SourceDefinition[] = [];
+  for (const vendor of vendors) {
+    let start = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+    while (start < to) {
+      const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+      out.push(googleNewsWindow(vendor, start, end < to ? end : to));
+      start = end;
+    }
+  }
+  return out;
+}
 
 export function gdeltBackfillSources(from: Date, to: Date, vendors: readonly string[] = TRACKED_VENDORS): SourceDefinition[] {
   const out: SourceDefinition[] = [];

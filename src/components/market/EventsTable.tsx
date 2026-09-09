@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatTcvDisplay, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
+import { EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -223,7 +223,7 @@ function EventValueCell({ event }: { event: EventSummary }) {
     if (tcvLabel === "Not reliably estimable") {
       return <span className="font-mono text-xs text-zinc-600">—</span>;
     }
-    return <span className="font-mono text-xs font-semibold text-emerald-400">{tcvLabel}</span>;
+    return <span className="font-mono text-xs font-semibold text-emerald-400" title={tcvEstimateTitle(event)}>{tcvLabel}</span>;
   }
   if (event.family === "M_AND_A" && event.dealValueUsd) {
     return <span className="font-mono text-xs font-semibold text-violet-400">{formatTcv(event.dealValueUsd, false)}</span>;

@@ -16,7 +16,7 @@ import { TRACKED_VENDORS, matchTrackedVendorPreferring } from "./sources";
 
 export const READER_MODEL = "claude-sonnet-5";
 /** Bump when the reading rules or schema change — recorded on every result (§23). */
-export const PROMPT_POLICY_VERSION = "reader/2.1.0-2026-09-08";
+export const PROMPT_POLICY_VERSION = "reader/2.2.0-2026-09-08";
 
 /** Segment size chosen so title + segment + schema stays well inside the model's comfortable window. */
 const SEGMENT_CHARS = 11_000;
@@ -53,6 +53,18 @@ export interface RawEventCandidate {
   valueIsTcv: boolean | null;
   acv: number | null;
   durationMonths: number | null;
+  /** Agents / FTEs / seats the PROVIDER deploys (a BPO sizing fact), and a planned scale-up target */
+  agentCount: number | null;
+  agentTarget: number | null;
+  agentQuote: string | null;
+  /** Countries or cities the provider delivers FROM */
+  deliveryLocations: string[];
+  workType: "VOICE" | "NON_VOICE" | "SPECIALISED" | "UNKNOWN" | null;
+  /** The client population the work supports ("35,000 employees", "2 million policyholders") */
+  usersServed: number | null;
+  usersQuote: string | null;
+  /** The buyer's home country when stated */
+  buyerCountry: string | null;
   durationQuote: string | null;
   renewalPeriodMonths: number | null;
   expansionValue: number | null;
@@ -118,11 +130,12 @@ TRACKED PROVIDERS (spell "provider" exactly as listed): ${VENDOR_UNIVERSE}
    Never infer contract value, pricing structure, AI content or a previous provider without a passage that states it.
 
 4. VALUES — contractValue is the total stated for this event in the stated currency (ISO code); valueIsTcv true if described as total/contract value, false if annual (then also fill acv), null if unclear. durationMonths as an integer when a term is stated ("four years" → 48). Missing means null — never estimate.
+   SIZING FACTS (stated only, each with its quote): agentCount = agents/FTEs/seats the PROVIDER will deploy or transfer for this work (NOT the client's headcount); agentTarget = a stated scale-up target ("growing to 1,000 seats"); deliveryLocations = countries/cities the provider delivers FROM; workType = VOICE (calls), NON_VOICE (back office, chat, email, processing), SPECIALISED (clinical, licensed, level-2+ technical, multilingual European desks), UNKNOWN; usersServed = the client population the work supports ("supporting 35,000 employees", "serving 2 million customers"); buyerCountry = the buyer's home country when stated.
 
 5. COMMERCIAL MODEL — pricingModel (fixed price | time and materials | capped | outcome-based | consumption | day rate | mixed | null), outcomePricing, feeAtRisk, consumptionModel: only when the text says so.
 
 Return JSON only, no prose:
-{"articleType": "...", "substantive": true|false, "why": "≤20 words", "events": [ { "family": "...", "commercialEventType": "...", "eventStatus": "...", "provider": "...", "buyer": "...|null", "buyerDescriptor": "...|null", "buyerSector": "...", "buyerSectorQuote": "...|null", "aiRelevance": "...", "aiRelevanceQuote": "...|null", "eventQuote": "...|null", "announcementDate": "YYYY-MM-DD|null", "effectiveDate": "YYYY-MM-DD|null", "contractValue": number|null, "currency": "ISO|null", "valueQuote": "...|null", "valueIsTcv": true|false|null, "acv": number|null, "durationMonths": int|null, "durationQuote": "...|null", "renewalPeriodMonths": int|null, "expansionValue": number|null, "serviceScope": "≤200 chars|null", "serviceLine": "ITO|Application Services|Digital & Cloud|BPO|Cybersecurity|AI & Analytics|Consulting & Advisory|ERP & Enterprise Apps|Network & Telco|Engineering IT|null", "industry": "...|null", "geography": ["..."], "pricingModel": "...|null", "outcomePricing": true|false|null, "feeAtRisk": true|false|null, "consumptionModel": true|false|null, "commercialModelQuote": "...|null", "incumbent": "...|null", "displacedProvider": "...|null", "incumbentQuote": "...|null", "summary": "2 sentences", "title": "Provider | EventType | Buyer | Scope" } ] }`;
+{"articleType": "...", "substantive": true|false, "why": "≤20 words", "events": [ { "family": "...", "commercialEventType": "...", "eventStatus": "...", "provider": "...", "buyer": "...|null", "buyerDescriptor": "...|null", "buyerSector": "...", "buyerSectorQuote": "...|null", "aiRelevance": "...", "aiRelevanceQuote": "...|null", "eventQuote": "...|null", "announcementDate": "YYYY-MM-DD|null", "effectiveDate": "YYYY-MM-DD|null", "contractValue": number|null, "currency": "ISO|null", "valueQuote": "...|null", "valueIsTcv": true|false|null, "acv": number|null, "durationMonths": int|null, "durationQuote": "...|null", "agentCount": int|null, "agentTarget": int|null, "agentQuote": "...|null", "deliveryLocations": ["..."], "workType": "VOICE|NON_VOICE|SPECIALISED|UNKNOWN|null", "usersServed": int|null, "usersQuote": "...|null", "buyerCountry": "...|null", "renewalPeriodMonths": int|null, "expansionValue": number|null, "serviceScope": "≤200 chars|null", "serviceLine": "ITO|Application Services|Digital & Cloud|BPO|Cybersecurity|AI & Analytics|Consulting & Advisory|ERP & Enterprise Apps|Network & Telco|Engineering IT|null", "industry": "...|null", "geography": ["..."], "pricingModel": "...|null", "outcomePricing": true|false|null, "feeAtRisk": true|false|null, "consumptionModel": true|false|null, "commercialModelQuote": "...|null", "incumbent": "...|null", "displacedProvider": "...|null", "incumbentQuote": "...|null", "summary": "2 sentences", "title": "Provider | EventType | Buyer | Scope" } ] }`;
 
 /** Split a long text on paragraph boundaries into overlapping segments, preserving order. */
 export function segmentText(text: string): string[] {
@@ -207,7 +220,11 @@ function candidateFrom(e: Record<string, unknown>): RawEventCandidate {
     aiRelevance: inSet(AI_RELEVANCE, e.aiRelevance, "UNKNOWN"), aiRelevanceQuote: str(e.aiRelevanceQuote),
     eventQuote: str(e.eventQuote), announcementDate: str(e.announcementDate), effectiveDate: str(e.effectiveDate),
     contractValue: num(e.contractValue), currency: str(e.currency)?.toUpperCase() ?? null, valueQuote: str(e.valueQuote), valueIsTcv: bool(e.valueIsTcv), acv: num(e.acv),
-    durationMonths: num(e.durationMonths), durationQuote: str(e.durationQuote), renewalPeriodMonths: num(e.renewalPeriodMonths), expansionValue: num(e.expansionValue),
+    durationMonths: num(e.durationMonths), durationQuote: str(e.durationQuote),
+    agentCount: num(e.agentCount), agentTarget: num(e.agentTarget), agentQuote: str(e.agentQuote),
+    deliveryLocations: Array.isArray(e.deliveryLocations) ? (e.deliveryLocations as unknown[]).map(str).filter((x): x is string => !!x) : [],
+    workType: (["VOICE", "NON_VOICE", "SPECIALISED", "UNKNOWN"] as const).find(w => w === str(e.workType)?.toUpperCase()) ?? null,
+    usersServed: num(e.usersServed), usersQuote: str(e.usersQuote), buyerCountry: str(e.buyerCountry), renewalPeriodMonths: num(e.renewalPeriodMonths), expansionValue: num(e.expansionValue),
     serviceScope: str(e.serviceScope), serviceLine: str(e.serviceLine), industry: str(e.industry),
     geography: Array.isArray(e.geography) ? (e.geography as unknown[]).filter((g): g is string => typeof g === "string") : [],
     pricingModel: str(e.pricingModel), outcomePricing: bool(e.outcomePricing), feeAtRisk: bool(e.feeAtRisk), consumptionModel: bool(e.consumptionModel), commercialModelQuote: str(e.commercialModelQuote),
@@ -230,6 +247,8 @@ export function ground(c: RawEventCandidate, text: string): GroundedEvent | null
   const g: GroundedEvent = { ...c, supporting, dropped };
   if (c.contractValue != null && !keep("value", c.valueQuote)) { g.contractValue = null; g.currency = null; g.valueIsTcv = null; g.acv = null; dropped.push("value"); }
   if (c.durationMonths != null && !keep("duration", c.durationQuote)) { g.durationMonths = null; g.renewalPeriodMonths = null; dropped.push("duration"); }
+  if ((c.agentCount != null || c.agentTarget != null) && !keep("agents", c.agentQuote)) { g.agentCount = null; g.agentTarget = null; dropped.push("agents"); }
+  if (c.usersServed != null && !keep("usersServed", c.usersQuote)) { g.usersServed = null; dropped.push("usersServed"); }
   if (c.aiRelevance !== "NOT_AI_SPECIFIC" && c.aiRelevance !== "UNKNOWN" && !keep("aiRelevance", c.aiRelevanceQuote)) { g.aiRelevance = "UNKNOWN"; dropped.push("aiRelevance"); }
   if ((c.incumbent || c.displacedProvider) && !keep("incumbent", c.incumbentQuote)) { g.incumbent = null; g.displacedProvider = null; if (g.commercialEventType === "COMPETITIVE_TAKEAWAY" || g.commercialEventType === "REPLACEMENT") g.commercialEventType = "UNKNOWN"; dropped.push("incumbent"); }
   if ((c.pricingModel || c.outcomePricing || c.feeAtRisk || c.consumptionModel) && !keep("commercialModel", c.commercialModelQuote)) { g.pricingModel = null; g.outcomePricing = null; g.feeAtRisk = null; g.consumptionModel = null; dropped.push("commercialModel"); }

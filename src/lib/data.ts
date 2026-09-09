@@ -16,6 +16,7 @@ function shapeEvent(e: {
     clientAnonymised: boolean; clientDescriptor: string | null;
     tcvCommittedUsd: number | null; tcvEstimateLowUsd: number | null;
     tcvEstimateMidUsd: number | null; tcvEstimateHighUsd: number | null;
+    tcvEstimateMethod?: string | null; tcvEstimateExplanation?: string | null;
     tcvIsEstimate: boolean; tcvBasis: string; tcvConfidence: string;
     contractEventType: string | null; primaryMacroServiceLine: string | null; primaryMicroServiceLine: string | null;
     contractLengthMonths: number | null; scopeSummary: string | null;
@@ -71,8 +72,10 @@ function shapeEvent(e: {
           tcvEstimateLowUsd: cd?.tcvEstimateLowUsd ?? null,
           tcvEstimateHighUsd: cd?.tcvEstimateHighUsd ?? null,
           tcvEstimateMidUsd: cd?.tcvEstimateMidUsd ?? null,
+          tcvEstimateMethod: cd?.tcvEstimateMethod ?? null,
+          tcvEstimateExplanation: cd?.tcvEstimateExplanation ?? null,
         }
-      : { tcvEstimateLowUsd: null, tcvEstimateHighUsd: null, tcvEstimateMidUsd: null }),
+      : { tcvEstimateLowUsd: null, tcvEstimateHighUsd: null, tcvEstimateMidUsd: null, tcvEstimateMethod: null, tcvEstimateExplanation: null }),
     tcvConfidence: cd?.tcvConfidence ?? null,
     tcvIsEstimate: cd?.tcvIsEstimate ?? false,
     tcvBasis: cd?.tcvBasis ?? null,
@@ -107,6 +110,7 @@ const eventInclude = {
       clientRaw: true, client: { select: { canonicalName: true } },
       clientAnonymised: true, clientDescriptor: true,
       tcvCommittedUsd: true, tcvEstimateLowUsd: true, tcvEstimateMidUsd: true, tcvEstimateHighUsd: true,
+      tcvEstimateMethod: true, tcvEstimateExplanation: true,
       tcvIsEstimate: true, tcvBasis: true, tcvConfidence: true,
       contractEventType: true, primaryMacroServiceLine: true, primaryMicroServiceLine: true, contractLengthMonths: true,
       scopeSummary: true,

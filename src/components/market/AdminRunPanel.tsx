@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 import { Play, RefreshCw, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
 interface IngestionStatus {
+  /** Operating phase: "historical" while the backfill runner reinforces the store (the cron stands down), else "current". */
+  mode?: { mode: "historical" | "current"; note: string | null; since: string | null };
   hasApiKey: boolean;
   sourcesTotal: number;
   needsReview: number;
@@ -292,6 +294,12 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
             )}
             {status.lastRun.articlesRelevant != null && (
               <div className="flex justify-between" title="Survived the rules, vendor gate and age cutoff"><span>Candidates</span><span className="font-mono">{status.lastRun.articlesRelevant}</span></div>
+            )}
+            {status.mode && (
+              <div className="flex justify-between" title={status.mode.note ?? undefined}>
+                <span>Ingestion mode</span>
+                <span className={`font-mono ${status.mode.mode === "historical" ? "text-amber-400" : "text-emerald-400"}`}>{status.mode.mode === "historical" ? "historical fill — cron paused" : "current — cron active"}</span>
+              </div>
             )}
             {status.lastRun.articlesTriaged != null && (
               <div className="flex justify-between"><span>Triaged by the model</span><span className="font-mono">{status.lastRun.articlesTriaged}</span></div>
