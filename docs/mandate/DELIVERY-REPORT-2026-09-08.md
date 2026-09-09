@@ -391,15 +391,23 @@ by budget; runs projected over $7 wait for explicit go-ahead.
   |---|---|---|
   | **AG cohort × 5 months (the agreed plan)** | **335** | **≈ $115** |
   | AG cohort × 12 months | 804 | ≈ $270 |
-  | all 118 tracked vendors × 5 months | 590 | ≈ $200 |
+  | all 90 tracked vendors × 5 months | 450 | ≈ $155 |
 
-  **Cohort (directed 2026-09-09):** the historical backfill runs over the AG
-  programme's providers plus the hyperscalers, 67 vendors, not all 118. 63 of
-  AG's 67 providers map onto this pipeline's tracked-vendor names; Caylent,
-  FactSet, Perficient and phData are in the AG roster but not tracked by the
-  article pipeline, and are recorded in `AG_COHORT_UNTRACKED` rather than
-  silently dropped. Hyperscalers: AWS, Microsoft, Google Cloud, Oracle. The
-  daily sweep is unaffected and still covers all 118.
+  **Cohort and pruning (directed 2026-09-09):** the historical backfill runs
+  over the AG programme's providers plus Serco, Maximus and the hyperscalers —
+  **70 vendors**, not all 118. 63 of AG's 67 surface-sweep providers map onto
+  this pipeline's names, plus Globant, which the AG portal assesses but the
+  surface sweep omits. Caylent, FactSet, Perficient and phData are in the AG
+  roster but not tracked here, recorded in `AG_COHORT_UNTRACKED` rather than
+  silently dropped.
+
+  **28 vendors retired**, on measured yield: seven resellers and licensing
+  partners whose "contracts" are Microsoft licensing paper (Insight Enterprises
+  averaged $1.1m across 315 of them), seventeen that never produced a contract
+  event, and four that produced none since 2025. Tracked vendors: 118 → 90.
+  Nothing is deleted: their 877 published events (731 contracts, $1.82bn
+  disclosed) stay in the database and only leave the product's tracked scope.
+  `RETIRED_VENDORS` records each with its reason.
 
   The script stops at `--max-spend` (default $7) and prints the projection for
   the remainder; **it needs your figure and go-ahead to run at scale.**
@@ -412,7 +420,7 @@ by budget; runs projected over $7 wait for explicit go-ahead.
   end date as start + length, precision marked "estimated"); older records
   carry stated data only. No model spend.
 - **Runs and handover (directed 2026-09-08).** A run is one calendar month
-  across all 118 vendors, walking backwards from the latest complete month. A
+  across the cohort, walking backwards from the latest complete month. A
   run is *good* when at most 5% of its windows errored and at most 10% hit the
   feed's 100-item cap. While the runner works the ingestion mode is
   `historical` and the scheduled cron stands down; after 5 good runs the
