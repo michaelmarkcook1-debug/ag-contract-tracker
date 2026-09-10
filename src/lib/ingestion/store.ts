@@ -175,7 +175,7 @@ async function findExisting(ev: GroundedEvent, family: string, vendorId: string,
 
 /** A re-report may fill fields the stored event lacks; it never overwrites a stated value with another. */
 export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?: string): Promise<void> {
-  const cur = await prisma.canonicalMarketEvent.findUnique({ where: { id: eventId }, select: { family: true, buyerSector: true, aiRelevance: true, eventStatus: true, supportingText: true, canonicalContractEventId: true, commercialEventType: true, readerVersion: true, contractDetails: { select: { id: true, tcvCommittedUsd: true, contractLengthMonths: true, clientRaw: true, pricingModel: true, previousVendorRaw: true, agentCount: true, agentTarget: true, deliveryLocations: true, workType: true, usersServed: true, contractStartDate: true, contractStartDatePrecision: true, contractEndDate: true } } } });
+  const cur = await prisma.canonicalMarketEvent.findUnique({ where: { id: eventId }, select: { family: true, buyerSector: true, aiRelevance: true, eventStatus: true, supportingText: true, canonicalContractEventId: true, commercialEventType: true, readerVersion: true, contractDetails: { select: { id: true, tcvCommittedUsd: true, contractLengthMonths: true, clientRaw: true, pricingModel: true, previousVendorRaw: true, agentCount: true, agentTarget: true, deliveryLocations: true, workType: true, usersServed: true, contractStartDate: true, contractStartDatePrecision: true, contractEndDate: true, outcomePricing: true, feeAtRisk: true, consumptionModel: true, renewalPeriodMonths: true, expansionValueUsd: true, acvUsd: true, scopeSummary: true } } } });
   if (!cur) return;
   const support = { ...(cur.supportingText ? JSON.parse(cur.supportingText) as Record<string, string> : {}), ...ev.supporting };
   if (cur.commercialEventType && ev.commercialEventType !== "UNKNOWN" && ev.commercialEventType !== cur.commercialEventType && ev.supporting.event) support[`typeVariant:${ev.commercialEventType}`] = ev.supporting.event;
@@ -216,7 +216,24 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
       clientRaw: !cd.clientRaw && ev.buyer ? ev.buyer : undefined,
       pricingModel: !cd.pricingModel && ev.pricingModel ? ev.pricingModel : undefined,
       previousVendorRaw: !cd.previousVendorRaw && (ev.incumbent ?? ev.displacedProvider) ? (ev.incumbent ?? ev.displacedProvider) : undefined,
-      incumbentDisplaced: !cd.previousVendorRaw && (ev.incumbent ?? ev.displacedProvider) ? true : undefined,
+      // An incumbent is not a displacement. On a renewal or extension the
+      // incumbent IS the winning vendor, so "there is an incumbent" must never
+      // be stored as "the incumbent was displaced" — that reported 17%
+      // competitive displacement where the true rate was 3%.
+      incumbentDisplaced: !cd.previousVendorRaw && (ev.incumbent ?? ev.displacedProvider)
+        ? !orgsMatch(ev.displacedProvider ?? ev.incumbent, ev.provider)
+        : undefined,
+      // Commercial mechanics the reader extracts from prose and no structured
+      // source carries (§10). Before this they were read and then dropped on
+      // the floor for every event that already existed — which made "outcome
+      // pricing is rare" unmeasurable rather than false.
+      outcomePricing: cd.outcomePricing == null && ev.outcomePricing != null ? ev.outcomePricing : undefined,
+      feeAtRisk: cd.feeAtRisk == null && ev.feeAtRisk != null ? ev.feeAtRisk : undefined,
+      consumptionModel: cd.consumptionModel == null && ev.consumptionModel != null ? ev.consumptionModel : undefined,
+      renewalPeriodMonths: cd.renewalPeriodMonths == null && ev.renewalPeriodMonths != null ? ev.renewalPeriodMonths : undefined,
+      expansionValueUsd: cd.expansionValueUsd == null && ev.expansionValue != null ? toUsd(ev.expansionValue, ev.currency) : undefined,
+      acvUsd: cd.acvUsd == null && ev.acv != null ? toUsd(ev.acv, ev.currency) : undefined,
+      scopeSummary: !cd.scopeSummary && ev.serviceScope ? ev.serviceScope : undefined,
     } });
   }
 }

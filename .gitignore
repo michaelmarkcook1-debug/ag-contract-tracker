@@ -64,3 +64,6 @@ dev.db.sqlite-backup*
 
 # scratch pulls of database rows for offline fitting (regenerate with scripts/tcv/fit-value-model.ts)
 /data/tcv/
+
+# Claude scratch: ad-hoc DB probes and run artefacts, never part of the build
+/_scratch/
