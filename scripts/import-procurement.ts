@@ -129,9 +129,18 @@ const monthsBetween = (a: Date, b: Date) => Math.max(1, Math.round((b.getTime() 
         }, select: { id: true } });
         if (collision) { await tx.canonicalMarketEvent.update({ where: { id: collision.id }, data: { sourceEvents: { connect: { id: src.id } } } }); return; }
         const ev = await tx.canonicalMarketEvent.create({ data: {
-          family: "CONTRACT", eventType: TYPE_TO_LEGACY[type] ?? "new_win", canonicalTitle: title.slice(0, 500), announcementDate: start, announcementDateBasis: "explicit",
+          family: "CONTRACT", eventType: TYPE_TO_LEGACY[type] ?? "new_win", canonicalTitle: title.slice(0, 500), announcementDate: start,
+          // The source corpus carries Start Date and End Date and NO award or
+          // publication date, so this value is the contract start, not an
+          // announcement. Labelling it "explicit" told the gap-causation
+          // classifier the source stated it, which it never did.
+          announcementDateBasis: "contract_start",
           effectiveDate: start, geography: JSON.stringify([r.country]), industry: r.buyer_sector ?? null, industryBasis: r.buyer_sector ? "classified" : "unavailable",
-          confidenceScore: 1, commercialRelevanceScore: value ? 0.9 : 0.7, humanReviewRequired: false, publicationStatus: "published",
+          // Asserted, not measured: the importer maps structured fields and does
+          // not assess anything. Stamping the basis is what stops this value
+          // being read downstream as if a person or a model had judged it.
+          confidenceScore: 1, confidenceBasis: "asserted",
+          commercialRelevanceScore: value ? 0.9 : 0.7, humanReviewRequired: false, publicationStatus: "published",
           counterpartyRaw: r["Awarding Agency"] ?? null, originalArticleUrl: null, primaryEntityId: vid ?? null,
           canonicalContractEventId: idKey, commercialEventType: type, eventStatus: "ANNOUNCED", buyerSector: "PUBLIC_SECTOR", aiRelevance: ai,
           supportingText: JSON.stringify({ event: (r.Description ?? "").slice(0, 300), buyerSector: r["Awarding Agency"] ?? "" }), readerVersion: IMPORT_VERSION,

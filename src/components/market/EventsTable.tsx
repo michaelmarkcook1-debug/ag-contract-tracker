@@ -63,9 +63,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
             <Tag className="h-3 w-3" /> {event.primaryMacroServiceLine}
           </Badge>
         )}
-        <Badge variant="outline" className="text-xs border-border/60">
-          <ConfidenceBadge score={event.confidenceScore} /> conf
-        </Badge>
+
       </div>
 
       {/* Key Facts — 2-column paired table matching predecessor layout */}
@@ -80,7 +78,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
                 <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcvLabel} v2Class="text-emerald-400 font-mono font-semibold" />
                 <PairedRow l1="Contract Type" v1={event.contractEventType ? (CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType) : null} l2="Length" v2={event.contractLengthMonths ? `${event.contractLengthMonths} months` : null} />
                 <PairedRow l1="Start Date" v1={formatDate(event.announcementDate)} l2="TCV Basis" v2={event.tcvBasis} />
-                <PairedRow l1="Confidence" v1={`${Math.round(event.confidenceScore * 100)}%`} l2="Source" v2={event.originalArticleUrl ? "See link below" : null} />
+                <PairedRow l1="Source" v1={event.originalArticleUrl ? "See link below" : null} l2="" v2={null} />
               </>
             )}
             {event.family === "M_AND_A" && (
@@ -117,7 +115,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
                 <PairedRow l1="Company" v1={event.primaryEntityName ?? event.vendorName} l2="Industry" v2={event.industry} />
                 <PairedRow l1="Announcement" v1={event.eventType ? (FINANCIAL_EVENT_TYPE_LABELS[event.eventType] ?? event.eventType.replace(/_/g, " ")) : null} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
                 <PairedRow l1="Reported Value" v1={event.tcvCommittedUsd ? formatTcv(event.tcvCommittedUsd, false) : null} l2="Date" v2={formatDate(event.announcementDate)} />
-                <PairedRow l1="Confidence" v1={`${(event.confidenceScore * 100).toFixed(0)}%`} l2="Source" v2={event.originalArticleUrl ? new URL(event.originalArticleUrl).hostname.replace(/^www\./, "") : null} />
+                <PairedRow l1="Source" v1={event.originalArticleUrl ? new URL(event.originalArticleUrl).hostname.replace(/^www\./, "") : null} l2="" v2={null} />
               </>
             )}
           </tbody>
@@ -180,7 +178,7 @@ function PairedRow({ l1, v1, v1Class, l2, v2, v2Class }: {
       <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l1}</td>
       <td className={`px-3 py-2.5 w-[28%] border-r border-border/10 ${v1Class ?? "text-foreground"}`}>{v1 ?? "—"}</td>
       <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l2}</td>
-      <td className={`px-3 py-2.5 w-[28%] ${v2Class ?? "text-foreground"}`}>{v2 ?? "—"}</td>
+      <td className={`px-3 py-2.5 w-[28%] ${v2Class ?? "text-foreground"}`}>{v2 ?? (l2 ? "—" : "")}</td>
     </tr>
   );
 }
@@ -530,7 +528,6 @@ export function EventsTable() {
                   </div>
 
                   <div className="shrink-0 flex items-center gap-2 pt-1">
-                    <ConfidenceBadge score={event.confidenceScore} />
                     {event.originalArticleUrl && (
                       <a
                         href={event.originalArticleUrl}

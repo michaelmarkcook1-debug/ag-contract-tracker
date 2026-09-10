@@ -129,6 +129,12 @@ export interface ExtractionResult {
   geography: string[];
   industry: string | null;
   confidenceScore: number;
+  /** How confidenceScore came to exist. "measured" = computed from observable
+   *  signals; "asserted" = hard-coded by a writer that does not measure it.
+   *  An asserted value must never satisfy a measured-confidence gate. */
+  confidenceBasis?: "measured" | "asserted";
+  /** True when at least one claim is backed by a passage that occurs in the text. */
+  groundedClaims?: boolean;
   extractionMethod: "llm" | "rules" | "rule_fallback";
   summary: string | null;
   analystInsight: string | null;
@@ -312,7 +318,7 @@ export function ruleBasedExtract(article: RawArticle): ExtractionResult {
     family, eventType, canonicalTitle: article.title,
     vendorRaw, clientRaw: null, tcvUsd, tcvIsEstimate,
     contractLengthMonths, primaryMacroServiceLine, geography: geos,
-    industry, confidenceScore: Math.min(confidenceScore, 0.89),
+    industry, confidenceScore: Math.min(confidenceScore, 0.89), confidenceBasis: "measured" as const,
     extractionMethod: "rules", summary: null, analystInsight: null, missingCritical,
     eventTypeValid: isValidEventType(family, eventType), exclusionReason: null, usage: EMPTY_USAGE,
   };

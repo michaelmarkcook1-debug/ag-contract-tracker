@@ -18,6 +18,10 @@ export const READER_MODEL = "claude-sonnet-5";
 /** Bump when the reading rules or schema change — recorded on every result (§23). */
 export const PROMPT_POLICY_VERSION = "reader/2.2.0-2026-09-08";
 
+/** Output allowance for one reader call. Scales with the number of events an
+ *  article reports, not its length — see callModel. */
+export const READER_MAX_OUTPUT_TOKENS = 24_000;
+
 /** Segment size chosen so title + segment + schema stays well inside the model's comfortable window. */
 const SEGMENT_CHARS = 11_000;
 const SEGMENT_OVERLAP = 600;
@@ -181,7 +185,13 @@ async function callModel(userText: string): Promise<{ parsed: unknown; usage: Re
       method: "POST",
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: READER_MODEL, max_tokens: 8000,
+        // Reader-specific output allowance — deliberately NOT a global change.
+        // An 8000 cap truncated event-dense articles (quarterly reports listing
+        // a dozen deals); the reader emits one grounded object with quotes per
+        // event, so output scales with EVENT COUNT, not article length.
+        // Measured need on the truncated cases exceeded 8000; 24000 clears them
+        // with headroom. A cap is not a charge: only produced tokens are billed.
+        model: READER_MODEL, max_tokens: READER_MAX_OUTPUT_TOKENS,
         system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
         messages: [{ role: "user", content: userText }],
       }),

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { finaliseStaleRuns, beat } from "./run-state";
 import { prisma } from "@/lib/db";
 import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMENT_SOURCES, WIRE_SOURCES, GOOGLE_NEWS_SOURCES,
          GNEWS_ITEM_CAP, SourceDefinition, selectArticle } from "./sources";
@@ -239,6 +240,11 @@ export async function runPipeline(
   // with maxDuration 300 passes ~200s so crawl + budget + one in-flight 20s
   // call still reaches the final DB write.
 
+  // §14: before starting, sweep any run whose execution died into a terminal
+  // state. Without this a killed fire stays "running" for ever and the run log
+  // cannot tell a healthy schedule from a dead one.
+  await finaliseStaleRuns().catch(() => {});
+
   // Use existing run record if provided (from after() pattern), otherwise create one
   const run = existingRunId
     ? { id: existingRunId }
@@ -327,6 +333,8 @@ export async function runPipeline(
         progress.errors.push(`${source.name}: ${err instanceof Error ? err.message : String(err)}`);
       }
       progress.sourcesProcessed++;
+      // §14: incremental counters, so a run killed mid-pass leaves evidence.
+      if (progress.sourcesProcessed % 10 === 0) await beat(run.id, { articlesFound: progress.articlesFound });
     }
   }
   await Promise.all(Array.from({ length: CRAWL_CONCURRENCY }, crawlWorker));

@@ -43,7 +43,18 @@ export function decidePublication(result: ExtractionResult, vendorId: string | n
     reasons.push("no_event_status");
   }
 
-  if (result.confidenceScore < MIN_CONFIDENCE) reasons.push(`low_confidence:${result.confidenceScore.toFixed(2)}`);
+  // Confidence is only evidence when something measured it. A hard-coded 1.0
+  // told this gate "certain" while meaning "nobody looked" — 6,464 events took
+  // the free pass that way. An unstamped basis is treated as ASSERTED on
+  // purpose: an integrity gate must fail safe, not fail open.
+  const basis = result.confidenceBasis ?? "asserted";
+  if (basis === "measured") {
+    if (result.confidenceScore < MIN_CONFIDENCE) reasons.push(`low_confidence:${result.confidenceScore.toFixed(2)}`);
+  } else {
+    // Asserted rows are vouched by grounding, not by a number. One with no
+    // supported passage has nothing vouching for it at all.
+    if (!result.groundedClaims) reasons.push("confidence_asserted_ungrounded");
+  }
 
   return reasons.length ? { status: "needs_review", reason: reasons.join(",") } : { status: "published", reason: null };
 }

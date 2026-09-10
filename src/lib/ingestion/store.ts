@@ -273,7 +273,11 @@ export async function storeReading(article: RawArticle, text: string, reading: R
     const gateInput: ExtractionResult = {
       family, eventType, canonicalTitle: ev.title ?? article.title, vendorRaw: ev.provider, clientRaw: ev.buyer, clientDescriptor: ev.buyerDescriptor,
       tcvUsd: null, tcvIsEstimate: false, contractLengthMonths: ev.durationMonths, primaryMacroServiceLine: ev.serviceLine, geography: ev.geography, industry: ev.industry,
-      confidenceScore: 1, extractionMethod: "llm", summary: ev.summary, analystInsight: null, missingCritical: ev.dropped,
+      // The reader does not measure confidence — its evidence is grounding, so
+      // the basis is asserted and the gate must judge it on the passages instead.
+      confidenceScore: 1, confidenceBasis: "asserted" as const,
+      groundedClaims: Object.keys(ev.supporting ?? {}).length > 0,
+      extractionMethod: "llm", summary: ev.summary, analystInsight: null, missingCritical: ev.dropped,
       eventTypeValid: isValidEventType(family, eventType), exclusionReason: null, eventStatus: ev.eventStatus.toLowerCase(), articleType: reading.articleType, usage: EMPTY_USAGE,
     };
     const gate = decidePublication(gateInput, vendorId);
@@ -292,10 +296,10 @@ export async function storeReading(article: RawArticle, text: string, reading: R
     await prisma.$transaction(async tx => {
       const created = await tx.canonicalMarketEvent.create({ data: {
         family, eventType, canonicalTitle: (ev.title ?? article.title).slice(0, 500),
-        announcementDate: when, announcementDateBasis: ev.announcementDate ? "explicit" : (article.publishedAt ? "explicit" : "unavailable"),
+        announcementDate: when, announcementDateBasis: ev.announcementDate ? "explicit" : (article.publishedAt ? "publication" : "unavailable"),
         effectiveDate: parseDate(ev.effectiveDate),
         geography: JSON.stringify(ev.geography), industry: ev.industry, industryBasis: ev.industry ? "classified" : "unavailable",
-        confidenceScore: 1, commercialRelevanceScore: valueUsd ? 0.9 : 0.7,
+        confidenceScore: 1, confidenceBasis: "asserted", commercialRelevanceScore: valueUsd ? 0.9 : 0.7,
         humanReviewRequired: gate.status === "needs_review", publicationStatus: gate.status, reviewReason: gate.reason,
         counterpartyRaw: ev.buyer, originalArticleUrl: article.publisherUrl ?? article.url, primaryEntityId: vendorId,
         canonicalContractEventId: idKey, commercialEventType: family === "CONTRACT" ? ev.commercialEventType : "OTHER_COMMERCIAL_EVENT",

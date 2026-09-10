@@ -79,6 +79,15 @@ model SourceEvent {
   analysedAt           DateTime?
   // A row re-admitted after an exclusion keeps the old verdict (§20): regression evidence.
   previousExclusionReason String?
+  // ── Tier 2 article recovery state (§4, §5) ──
+  // Redirect resolution and body fetch are rate-limited; persisted state stops
+  // a permanently-dead URL being re-attempted on every future run.
+  redirectState        String?   // RESOLVED | ALREADY_RESOLVED | FAILED | BLOCKED | INVALID | NOT_APPLICABLE
+  redirectAttemptedAt  DateTime?
+  bodyState            String?   // FULL_TEXT | PARTIAL_ARTICLE | SNIPPET_ONLY | UNREADABLE | FETCH_FAILED
+  bodyAttemptedAt      DateTime?
+  bodyAttempts         Int       @default(0)
+  bodyChars            Int?
   ingestionRunId       String?
   ingestionRun         IngestionRun? @relation(fields: [ingestionRunId], references: [id])
 
@@ -88,6 +97,8 @@ model SourceEvent {
   @@index([processingStatus])
   @@index([publicationDate])
   @@index([publisherUrl])
+  @@index([redirectState])
+  @@index([bodyState])
 }
 
 // ─── Canonical Market Events ──────────────────────────────────────────────────
@@ -104,6 +115,11 @@ model CanonicalMarketEvent {
   industry                 String?
   industryBasis            String   @default("unavailable")
   confidenceScore          Float    @default(0)
+  // How confidenceScore came to exist: "measured" (computed from observable
+  // signals, capped at 0.89 by the classifier) or "asserted" (hard-coded by a
+  // writer that measures nothing). An asserted value must never satisfy a
+  // measured-confidence gate — see gate.ts.
+  confidenceBasis          String?
   commercialRelevanceScore Float    @default(0)
   humanReviewRequired      Boolean  @default(true)
   publicationStatus        String   @default("published")
@@ -156,6 +172,7 @@ model CanonicalMarketEvent {
   @@index([primaryEntityId])
   @@index([buyerSector])
   @@index([commercialEventType])
+  @@index([confidenceBasis])
 }
 
 // ─── Family Detail Tables ─────────────────────────────────────────────────────
@@ -382,6 +399,11 @@ model IngestionRun {
   costUsd         Float    @default(0)
 
   sourceEvents SourceEvent[]
+  // §14: a run whose execution dies must not stay RUNNING for ever.
+  heartbeatAt     DateTime?
+  endedReason     String?
+
+  @@index([status, heartbeatAt])
 }
 
 // ─── Operating mode ───────────────────────────────────────────────────────────
