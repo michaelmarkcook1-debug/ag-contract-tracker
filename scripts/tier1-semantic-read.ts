@@ -27,6 +27,7 @@
  *   npx tsx scripts/tier1-semantic-read.ts [--apply] [--limit N] [--concurrency N]
  */
 import fs from "fs";
+import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { readArticle, READER_MODEL, PROMPT_POLICY_VERSION, canonicalContractEventId, type GroundedEvent } from "@/lib/ingestion/reader";
 import { enrichExisting } from "@/lib/ingestion/store";
@@ -96,8 +97,15 @@ function pick(evs: GroundedEvent[], row: Row): GroundedEvent | null {
   // One article can be the best text for several canonical events (157 of them
   // are, in this estate). Read the ARTICLE once and apply the reading to every
   // event that cites it — reading per-event paid twice for 219 articles.
+  // Group by the CONTENT hash, not the source row: the same article is often
+  // stored twice (a Google News URL and its resolved publisher URL), and keying
+  // on the row id paid twice for identical text. §7 is one content hash + one
+  // policy = one paid read.
   const groups = new Map<string, Row[]>();
-  for (const c of cands) { const g = groups.get(c.sourceId); g ? g.push(c) : groups.set(c.sourceId, [c]); }
+  for (const c of cands) {
+    const key = crypto.createHash("sha256").update(c.text.replace(/\r/g, "").trim()).digest("hex");
+    const g = groups.get(key); g ? g.push(c) : groups.set(key, [c]);
+  }
   const allGroups = [...groups.values()];
   const work = LIMIT > 0 ? allGroups.slice(0, LIMIT) : allGroups;
   const stat = { candidates: cands.length, distinctArticles: 0, duplicateReadsAvoided: 0, attempted: 0, read: 0, skippedIdempotent: 0, enriched: 0, noEventFound: 0,
@@ -115,7 +123,6 @@ function pick(evs: GroundedEvent[], row: Row): GroundedEvent | null {
       if (i >= work.length) return;
       const members = work[i];
       const row = members[0] as Row & { prevhash?: string; prevmodel?: string; prevpolicy?: string };
-      const crypto = await import("crypto");
       const hash = crypto.createHash("sha256").update(row.text.replace(/\r/g, "").trim()).digest("hex");
       if (row.prevhash === hash && row.prevmodel === READER_MODEL && row.prevpolicy === PROMPT_POLICY_VERSION) {
         stat.skippedIdempotent++; continue;

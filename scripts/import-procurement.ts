@@ -49,6 +49,10 @@ const EVENT_RE: [RegExp, string][] = [
   [/\b(terminat(ed|ion)|cancel(led|lation))\b/i, "TERMINATION"], [/\b(variation|modification|amendment|change order)\b/i, "CONTRACT_CHANGE"],
 ];
 const TYPE_TO_LEGACY: Record<string, string> = { NEW_WIN: "new_win", RENEWAL: "renewal", EXTENSION: "extension", EXPANSION: "expansion", RECOMPETE: "rebid_win", TERMINATION: "termination", CONTRACT_CHANGE: "contract_change" };
+// A notice that does not mention AI does not establish that the work is not
+// AI-related — it establishes nothing. Falling back to NOT_AI_SPECIFIC turned
+// silence into a negative finding on 5,965 records and polluted every AI rate
+// computed from the estate. Absence of the keyword now yields UNKNOWN.
 const AI_RE = /\b(artificial intelligence|machine learning|generative ai|\bAI\b|large language|LLM|GenAI|agentic)\b/;
 const parseDate = (s: string | null) => { if (!s) return null; const d = new Date(s); return Number.isNaN(d.getTime()) ? null : d; };
 const monthsBetween = (a: Date, b: Date) => Math.max(1, Math.round((b.getTime() - a.getTime()) / (30.44 * 86_400_000)));
@@ -105,7 +109,7 @@ const monthsBetween = (a: Date, b: Date) => Math.max(1, Math.round((b.getTime() 
     const type = EVENT_RE.find(([re]) => re.test(r.Description ?? ""))?.[1] ?? "NEW_WIN";
     const months = start && end && end > start ? monthsBetween(start, end) : null;
     const recent = start >= cutoff24;
-    const ai = AI_RE.test(r.Description ?? "") ? "AI_MATERIAL" : "NOT_AI_SPECIFIC";
+    const ai = AI_RE.test(r.Description ?? "") ? "AI_MATERIAL" : "UNKNOWN";
     const line = r.macro_service ?? null;
     let estimate = null, estLength: number | null = null;
     if (recent) {
