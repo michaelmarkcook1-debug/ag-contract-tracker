@@ -10,7 +10,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { runPipeline, prioritise, SCHEDULED_SWEEP } from "@/lib/ingestion/pipeline";
-import { storePending, storeDeferred, findReadByContent, storeDuplicateContent, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
+import { storePending, storeDeferred, findReadByContent, storeDuplicateContent, isContractValue, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
 import { PROMPT_POLICY_VERSION } from "@/lib/ingestion/reader";
 import type { RawArticle } from "@/lib/ingestion/crawler";
 
@@ -28,6 +28,11 @@ const art = (i: number, body: string | null = null): RawArticle => ({ title: `Qu
     ok("never-seen articles before the backlog", order[0] === "3" && order[1] === "4", order.join(","));
     ok("backlog by fewest failed attempts", order[2] === "2" && order[3] === "1", order.join(","));
     ok("order is stable within a band", prioritise([art(7), art(8)], new Map()).map(x => x.url.slice(-1)).join("") === "78");
+
+    console.log("\n=== contract values ===");
+    ok("a negative amount is not a contract value", !isContractValue(-50_000_000) && !isContractValue(0) && !isContractValue(null) && !isContractValue(NaN));
+    ok("a positive amount is", isContractValue(1_000_000));
+    ok("no stored contract carries a negative committed value", (await prisma.contractDetails.count({ where: { tcvCommittedUsd: { lt: 0 } } })) === 0);
 
     console.log("\n=== failed reads stop being retried ===");
     const poison = art(10, "x".repeat(400));

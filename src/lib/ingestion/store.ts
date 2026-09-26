@@ -48,6 +48,17 @@ const CONTRACT_TYPE_MAP: Record<string, string> = {
 const ENDING_TYPES = new Set(["TERMINATION", "SCOPE_REDUCTION"]);
 
 const FX_TO_USD: Record<string, number> = { USD: 1, EUR: 1.09, GBP: 1.27, AUD: 0.66, CAD: 0.73, INR: 0.012, DKK: 0.146, SEK: 0.095, NOK: 0.093, CHF: 1.12, JPY: 0.0068, SGD: 0.75, AED: 0.27, SAR: 0.27, BRL: 0.18, ZAR: 0.055, NZD: 0.61, PLN: 0.26, CZK: 0.044 };
+/**
+ * A contract's value is never negative. A reported NEGATIVE amount is the size
+ * of a reduction (scope cut, termination), not the contract's worth; stored as
+ * TCV it subtracted from every market total (two HCLTech/Google reduction
+ * reports took $107m off). The amount is kept as stated in tcvOriginalValue;
+ * the committed value stays empty.
+ */
+export function isContractValue(amount: number | null | undefined): amount is number {
+  return amount != null && Number.isFinite(amount) && amount > 0;
+}
+
 export function toUsd(amount: number | null, currency: string | null): number | null {
   if (amount == null) return null;
   const fx = FX_TO_USD[(currency ?? "USD").toUpperCase()];
@@ -262,7 +273,7 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
   } });
   if (cur.contractDetails) {
     const cd = cur.contractDetails;
-    const nowStated = cd.tcvCommittedUsd == null && ev.contractValue != null && ev.valueIsTcv !== false && toUsd(ev.contractValue, ev.currency) != null;
+    const nowStated = cd.tcvCommittedUsd == null && isContractValue(ev.contractValue) && ev.valueIsTcv !== false && toUsd(ev.contractValue, ev.currency) != null;
     await prisma.contractDetails.update({ where: { id: cd.id }, data: {
       agentCount: cd.agentCount == null && ev.agentCount != null ? ev.agentCount : undefined,
       agentTarget: cd.agentTarget == null && ev.agentTarget != null ? ev.agentTarget : undefined,
@@ -271,7 +282,7 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
       usersServed: cd.usersServed == null && ev.usersServed != null ? ev.usersServed : undefined,
       // a stated value supersedes any estimate
       ...(nowStated ? { tcvEstimateLowUsd: null, tcvEstimateMidUsd: null, tcvEstimateHighUsd: null, tcvIsEstimate: false, tcvEstimateMethod: null, tcvEstimateInputs: null, tcvEstimateExplanation: null, tcvEstimateVersion: null } : {}),
-      tcvCommittedUsd: cd.tcvCommittedUsd == null && ev.contractValue != null && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : undefined,
+      tcvCommittedUsd: cd.tcvCommittedUsd == null && isContractValue(ev.contractValue) && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : undefined,
       tcvOriginalCurrency: cd.tcvCommittedUsd == null && ev.contractValue != null ? ev.currency : undefined,
       tcvOriginalValue: cd.tcvCommittedUsd == null && ev.contractValue != null ? ev.contractValue : undefined,
       tcvBasis: cd.tcvCommittedUsd == null && ev.contractValue != null && ev.valueIsTcv !== false ? "official_disclosed" : undefined,
@@ -355,7 +366,7 @@ export async function storeReading(article: RawArticle, text: string, reading: R
       counts.merged++;
       continue;
     }
-    const valueUsd = ev.contractValue != null && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : null;
+    const valueUsd = isContractValue(ev.contractValue) && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : null;
     const estimate = family === "CONTRACT" && valueUsd == null ? await estimateFor(ev, article, text, eventType, when) : null;
     const dates = contractDates(parseDate(ev.effectiveDate), when, ev.durationMonths);
     await prisma.$transaction(async tx => {
