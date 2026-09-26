@@ -7,7 +7,7 @@ import { crawlSource, RawArticle } from "./crawler";
 import { EMPTY_USAGE, TokenUsage } from "./classifier";
 import { retrieveArticle, readableArticleText } from "./article-text";
 import { readArticle, type Reading } from "./reader";
-import { storeReading, storeNonEvent, storePending, storeUnreadable } from "./store";
+import { storeReading, storeNonEvent, storePending, storeUnreadable, storeDeferred, findReadByContent, storeDuplicateContent, MAX_READ_ATTEMPTS } from "./store";
 
 /** The reader gets the whole page; this only bounds pathological documents. */
 const READER_MAX_CHARS = 60_000;
@@ -59,6 +59,13 @@ export interface PipelineOptions {
    * Defaults to 0 for explicit article lists; the scheduled sweep drains 400.
    */
   drainPending?: number;
+  /**
+   * Absolute wall-clock deadline (ms since run start) after which no new read
+   * starts. timeBudgetMs is measured from the end of the crawl, so a slow crawl
+   * plus in-flight reads could carry a route past its 300s ceiling and kill it
+   * before it recorded anything (six cron runs died that way, 2026-09-13…23).
+   */
+  deadlineMs?: number;
 }
 
 /** Total number of crawlable sources (for callers computing a rotating window). */
@@ -80,8 +87,10 @@ export const SCHEDULED_SWEEP: PipelineOptions = {
   sourceFilter: "all",
   maxSourcesPerRun: TOTAL_SOURCES,
   maxExtractions: Number.MAX_SAFE_INTEGER,
-  concurrency: 6,
+  concurrency: 12,
   timeBudgetMs: ROUTE_TIME_BUDGET_MS,
+  // 300s ceiling − 90s longest single model call − 25s to store and finalise.
+  deadlineMs: 185_000,
   drainPending: 400,
 };
 
@@ -224,6 +233,16 @@ export async function syncSourceRegistry(): Promise<void> {
   }
 }
 
+/**
+ * Read order for a run: articles the store has never seen first (keeps the
+ * database current), then the pending backlog by fewest failed attempts. Stable
+ * within each band. Exported for tests.
+ */
+export function prioritise(articles: RawArticle[], pendingAttempts: Map<string, number>): RawArticle[] {
+  const rank = (a: RawArticle) => (pendingAttempts.has(a.url) ? 1 + (pendingAttempts.get(a.url) ?? 0) : 0);
+  return articles.map((a, i) => ({ a, i })).sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i).map(x => x.a);
+}
+
 // ── Main pipeline run ─────────────────────────────────────────────────────────
 export async function runPipeline(
   options: PipelineOptions = {},
@@ -233,8 +252,9 @@ export async function runPipeline(
   const {
     sourceFilter = "all", maxSourcesPerRun = 10, sourceOffset = 0, dryRun = false,
     maxExtractions = Number.MAX_SAFE_INTEGER, runType, timeBudgetMs = 38_000, concurrency = 4,
-    maxArticleAgeDays = 0, reprocessExcluded = false, drainPending = 0,
+    maxArticleAgeDays = 0, reprocessExcluded = false, drainPending = 0, deadlineMs,
   } = options;
+  const runStartedAt = Date.now();
   // The budget applies to STARTING model calls and is measured from the end of
   // the crawl (llmStart, below). Callers size it to their ceiling: an API route
   // with maxDuration 300 passes ~200s so crawl + budget + one in-flight 20s
@@ -280,13 +300,17 @@ export async function runPipeline(
   };
 
   const allArticles: RawArticle[] = [...(options.articles ?? [])];
-  // Drain what earlier runs left pending — oldest first, so nothing starves.
+  // Backlog drained AFTER the crawl (appended below), never ahead of new
+  // articles: draining oldest-first put the same poison articles at the head
+  // of every run. Rows that already failed a read go to the back.
+  const drained: RawArticle[] = [];
   if (drainPending > 0) {
     const pending = await prisma.sourceEvent.findMany({
-      where: { processingStatus: "pending" }, orderBy: { createdAt: "asc" }, take: drainPending,
+      where: { processingStatus: "pending", readAttempts: { lt: MAX_READ_ATTEMPTS } },
+      orderBy: [{ readAttempts: "asc" }, { publicationDate: { sort: "desc", nulls: "last" } }], take: drainPending,
       select: { sourceUrl: true, publisherUrl: true, sourceTitle: true, sourceName: true, sourceType: true, publicationDate: true, rawText: true },
     });
-    for (const p of pending) allArticles.push({ title: p.sourceTitle ?? "", url: p.sourceUrl, publishedAt: p.publicationDate?.toISOString() ?? null, snippet: null, sourceId: "pending", provider: p.sourceName ?? "", sourceType: p.sourceType, publisherUrl: p.publisherUrl, bodyText: p.rawText });
+    for (const p of pending) drained.push({ title: p.sourceTitle ?? "", url: p.sourceUrl, publishedAt: p.publicationDate?.toISOString() ?? null, snippet: null, sourceId: "pending", provider: p.sourceName ?? "", sourceType: p.sourceType, publisherUrl: p.publisherUrl, bodyText: p.rawText });
   }
   progress.articlesFound = allArticles.length;
 
@@ -349,6 +373,9 @@ export async function runPipeline(
   progress.phase = "classifying";
   onProgress?.(progress);
 
+  allArticles.push(...drained);
+  progress.articlesFound = allArticles.length;
+
   // One article can arrive from several feeds (the same story under two
   // vendors' Google News queries shares a URL). Collapse those first — the
   // second copy used to pay for triage and then be refused at store time.
@@ -406,7 +433,15 @@ export async function runPipeline(
 
   // No headline-similarity pre-dedup: the mandate permits only exact duplicates
   // before reading (§4). Re-reports are reconciled after the read, on identity.
-  const dedupedArticles = relevantArticles;
+  // Priority: articles the store has never seen, then the pending backlog
+  // (fewest failed attempts first). New news keeps the database current; the
+  // backlog is drained with whatever budget is left.
+  const attemptsByUrl = new Map<string, number>();
+  for (let i = 0; i < relevantArticles.length; i += 2000) {
+    const rows = await prisma.sourceEvent.findMany({ where: { sourceUrl: { in: relevantArticles.slice(i, i + 2000).map(a => a.url) }, processingStatus: "pending" }, select: { sourceUrl: true, readAttempts: true } });
+    rows.forEach(r => attemptsByUrl.set(r.sourceUrl, r.readAttempts));
+  }
+  const dedupedArticles = prioritise(relevantArticles, attemptsByUrl);
   progress.articlesPreDeduped = 0;
   progress.articlesRelevant = dedupedArticles.length;
 
@@ -418,7 +453,8 @@ export async function runPipeline(
   let llmCalls = 0;
   let cursor = 0;
   const llmStart = Date.now();
-  const shouldStop = () => llmCalls >= maxExtractions || Date.now() - llmStart > timeBudgetMs;
+  const shouldStop = () => llmCalls >= maxExtractions || Date.now() - llmStart > timeBudgetMs
+    || (deadlineMs != null && Date.now() - runStartedAt > deadlineMs);
   const addUsageTo = (u: Reading["usage"]) => {
     progress.usage = {
       inputTokens: progress.usage.inputTokens + u.inputTokens,
@@ -433,6 +469,7 @@ export async function runPipeline(
   const readings: Read[] = [];
   const pendings: { article: RawArticle; text: string; error: string }[] = [];
   const unreadable: { article: RawArticle }[] = [];
+  const contentDuplicates: { article: RawArticle; text: string; textHash: string; prior: NonNullable<Awaited<ReturnType<typeof findReadByContent>>> }[] = [];
 
   async function readWorker() {
     while (true) {
@@ -454,6 +491,11 @@ export async function runPipeline(
         // confident "no event", which is a false negative, not a verdict (§7).
         const text = readableArticleText(article.bodyText) ?? readableArticleText(article.snippet) ?? "";
         if (!text) { unreadable.push({ article }); continue; }
+        // One paid read per article content per policy: a second URL for text
+        // already read is recorded against the first read, not read again.
+        const textHash = crypto.createHash("sha256").update(text).digest("hex");
+        const prior = await findReadByContent(textHash);
+        if (prior) { contentDuplicates.push({ article, text, textHash, prior }); llmCalls--; continue; }
         const out = await readArticle({ title: article.title, text, provider: article.provider, sourceType: article.sourceType, publishedAt: article.publishedAt });
         addUsageTo(out.ok ? out.reading.usage : out.usage);
         if (!out.ok) { pendings.push({ article, text, error: out.error }); continue; }
@@ -465,15 +507,21 @@ export async function runPipeline(
   }
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, readWorker));
   progress.articlesTriaged = readings.length + pendings.length;
+  for (const d of contentDuplicates) {
+    try { await storeDuplicateContent(d.article, d.text, d.textHash, d.prior, run.id); if (d.prior.eventIds.length) progress.articlesMerged++; }
+    catch (err) { progress.errors.push(`Duplicate-content store error (${d.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
+  }
   for (const u of unreadable) {
     try { await storeUnreadable(u.article, run.id); }
     catch (err) { progress.errors.push(`Unreadable store error (${u.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
   }
+  let readFailures = 0;
   for (const p of pendings) {
-    try { await storePending(p.article, p.text, p.error, run.id); }
+    try { if ((await storePending(p.article, p.text, p.error, run.id)) === "failed") readFailures++; }
     catch (err) { progress.errors.push(`Pending store error (${p.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
   }
   progress.articlesPending = pendings.length;
+  if (readFailures) progress.errors.push(`${readFailures} article(s) failed ${MAX_READ_ATTEMPTS} reads and are marked failed`);
 
   // ── PHASE 2: STORE ──────────────────────────────────────────────────────────
   // Sequential by design: a re-report must be able to see the event stored a
@@ -497,10 +545,8 @@ export async function runPipeline(
   progress.eventsDeferred = Math.max(0, dedupedArticles.length - cursor);
   // Articles the budget did not reach are persisted as PENDING so the next run
   // reads them even if the feed has moved on. Nothing found is dropped.
-  for (const a of dedupedArticles.slice(Math.min(cursor, dedupedArticles.length))) {
-    try { await storePending(a, a.bodyText ?? a.snippet ?? "", "deferred: not reached within the run's time budget", run.id); }
-    catch (err) { progress.errors.push(`Deferred store error (${a.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
-  }
+  try { await storeDeferred(dedupedArticles.slice(Math.min(cursor, dedupedArticles.length)), run.id); }
+  catch (err) { progress.errors.push(`Deferred store error: ${err instanceof Error ? err.message : String(err)}`); }
 
   progress.phase = "done";
   await prisma.ingestionRun.update({

@@ -108,7 +108,16 @@ ok("canonical contract identity remains unique", n(dup.d) === 0);
 const reread = await one<{ d: bigint }>(`select count(*) d from (select "articleTextHash", "promptPolicyVersion"
   from "SourceEvent" where "articleTextHash" is not null and "promptPolicyVersion" is not null
   group by 1,2 having count(*) > 1) z`);
-ok("one article hash under one policy was read once", n(reread.d) === 0, `${n(reread.d)} repeats`);
+// The pipeline itself only guards by content hash from 2026-09-26 (before that
+// it deduped by URL, and Google News re-issued one article under a new URL on
+// 09-24, which was read twice). History is reported, not rewritten; the
+// assertion is that no second paid read has happened since the guard.
+const GUARD_AT = "2026-09-26T00:00:00Z";
+const rereadSince = await one<{ d: bigint }>(`select count(*) d from (select "articleTextHash", "promptPolicyVersion"
+  from "SourceEvent" where "articleTextHash" is not null and "promptPolicyVersion" is not null
+    and "modelId" is not null and "analysedAt" >= '${GUARD_AT}'
+  group by 1,2 having count(*) > 1) z`);
+ok("no article hash read twice under one policy since the content guard", n(rereadSince.d) === 0, `${n(rereadSince.d)} since guard; ${n(reread.d)} historical (pre-guard, retained)`);
 
 console.log("\n=== Boilerplate qualification (§4, §6) ===");
 const bp = await one<Record<string, bigint>>(`select

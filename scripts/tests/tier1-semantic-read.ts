@@ -14,6 +14,10 @@ import { orgsMatch } from "@/lib/ingestion/dedup";
 
 const ARTICLE_GRADE_MIN = 800, FULL_TEXT_MIN = 1500;
 const RUN_AT = "2026-09-10T16:40:00Z";
+// The batch finished before the next daily cron (09-11 07:00). Without an upper
+// bound these assertions counted the production cron's later reads and events —
+// legitimate work under different rules — as violations of the batch's rules.
+const RUN_END = "2026-09-11T00:00:00Z";
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean, detail = "") => { cond ? pass++ : fail++; console.log(`  ${cond ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`); };
 const one = async <T>(sql: string): Promise<T> => ((await prisma.$queryRawUnsafe<T[]>(sql))[0]);
@@ -52,7 +56,7 @@ const READ = `c."readerVersion" = '${PROMPT_POLICY_VERSION}' and c."updatedAt" >
 
 // 1 — nothing below article grade was read
 const sn = await one<{ bad: bigint }>(`select count(*) bad from "SourceEvent" s
-  where s."analysedAt" > '${RUN_AT}' and s."promptPolicyVersion" = '${PROMPT_POLICY_VERSION}'
+  where s."analysedAt" > '${RUN_AT}' and s."analysedAt" < '${RUN_END}' and s."promptPolicyVersion" = '${PROMPT_POLICY_VERSION}'
     and (s."articleTextChars" is null or s."articleTextChars" < ${ARTICLE_GRADE_MIN})`);
 ok("no source below the article-grade floor was read", n(sn.bad) === 0, `${n(sn.bad)} offenders`);
 
@@ -64,12 +68,12 @@ ok("structured sources were not read as articles", n(st.bad) === 0, `${n(st.bad)
 // 4 — stored provenance matches what was analysed
 const pv = await one<{ tot: bigint; bad: bigint }>(`select count(*) tot,
   count(*) filter (where s."articleTextHash" is null or s."modelId" is null or s."promptPolicyVersion" is null) bad
-  from "SourceEvent" s where s."analysedAt" > '${RUN_AT}'`);
+  from "SourceEvent" s where s."analysedAt" > '${RUN_AT}' and s."analysedAt" < '${RUN_END}'`);
 ok("every read source carries hash, model and policy", n(pv.bad) === 0, `${n(pv.tot)} read`);
 
 // 5 — multi-event articles created no new canonical events
 const res = JSON.parse(fs.readFileSync("_scratch/tier1-result.json", "utf8")).result as Record<string, number>;
-const created = await one<{ c: bigint }>(`select count(*) c from "CanonicalMarketEvent" where "createdAt" > '${RUN_AT}'`);
+const created = await one<{ c: bigint }>(`select count(*) c from "CanonicalMarketEvent" where "createdAt" > '${RUN_AT}' and "createdAt" < '${RUN_END}'`);
 ok("multi-event articles did not create canonical events", n(created.c) === 0,
   `${res.multiEventArticles} multi-event articles, ${res.extraEventsSeen} extra events counted, ${n(created.c)} created`);
 

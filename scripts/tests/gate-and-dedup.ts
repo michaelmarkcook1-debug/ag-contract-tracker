@@ -13,7 +13,11 @@ const ok = (name: string, cond: boolean, detail = "") => { cond ? pass++ : fail+
 const res = (o: Partial<ExtractionResult>): ExtractionResult => ({
   family: "CONTRACT", eventType: "new_win", canonicalTitle: "t", vendorRaw: "TCS", clientRaw: "Porsche", tcvUsd: null, tcvIsEstimate: false,
   contractLengthMonths: null, primaryMacroServiceLine: null, geography: [], industry: null, confidenceScore: 0.55,
-  extractionMethod: "llm", summary: null, analystInsight: null, missingCritical: [], eventTypeValid: true, exclusionReason: null, usage: EMPTY_USAGE, ...o,
+  // These fixtures model the classifier's output, whose confidence is MEASURED
+  // (classifier.ts stamps confidenceBasis "measured"). The reader path stamps
+  // "asserted" and is judged on grounding instead — covered separately below.
+  extractionMethod: "llm", summary: null, analystInsight: null, missingCritical: [], eventTypeValid: true, exclusionReason: null, usage: EMPTY_USAGE,
+  confidenceBasis: "measured", ...o,
 });
 
 console.log("\n=== Publication gate (on the model's reading) ===");
@@ -36,6 +40,12 @@ ok("results publish without counterparty", decidePublication(res({ family: "FINA
 ok("M&A publishes on entity + target", decidePublication(res({ family: "M_AND_A", eventType: "acquisition", eventStatus: "announced", clientRaw: "Healthcare IT Leaders", confidenceScore: 0.6 }), "e").status === "published");
 ok("described-but-unnamed client publishes as anonymised", decidePublication(res({ eventStatus: "announced", clientRaw: null, clientDescriptor: "a leading European automotive OEM" }), "e").status === "published");
 ok("completed counts as publishable", decidePublication(res({ eventStatus: "completed" }), "e").status === "published");
+
+console.log("\n=== Confidence basis (reader path asserts; grounding vouches) ===");
+ok("asserted + grounded publishes", decidePublication(res({ eventStatus: "announced", confidenceBasis: "asserted", confidenceScore: 1, groundedClaims: true }), "e").status === "published");
+ok("asserted + ungrounded → review", decidePublication(res({ eventStatus: "announced", confidenceBasis: "asserted", confidenceScore: 1, groundedClaims: false }), "e").reason === "confidence_asserted_ungrounded");
+ok("unstamped basis fails safe as asserted", decidePublication(res({ eventStatus: "announced", confidenceBasis: undefined, confidenceScore: 1 }), "e").reason === "confidence_asserted_ungrounded");
+ok("asserted score is not read as a measurement", decidePublication(res({ eventStatus: "announced", confidenceBasis: "asserted", confidenceScore: 0.1, groundedClaims: true }), "e").status === "published");
 
 console.log("\n=== Organisation matching ===");
 ok("normalise strips suffixes", normaliseOrg("Porsche AG") === "porsche" && normaliseOrg("Tata Consultancy Services Ltd.") === "tata consultancy services");

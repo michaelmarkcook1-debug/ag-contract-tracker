@@ -62,6 +62,11 @@ model SourceEvent {
   extractionConfidence Float    @default(0)
   processingStatus     String   @default("pending")
   processingError      String?
+  // Model read attempts that FAILED (truncation, timeout, unparseable output).
+  // Deferral for lack of time is not an attempt. After MAX_READ_ATTEMPTS the
+  // row becomes "failed" — visible, never silently retried for ever (a list of
+  // 36 acquisitions that truncated every day blocked the queue for 15 days).
+  readAttempts         Int      @default(0)
   // Why an article was excluded ("rules:hard_exclude", "rules:vendor_gate",
   // "model:no_tracked_vendor", "model:excluded_noise", …). Written with
   // processingStatus "excluded" so the URL is never re-triaged — before this,

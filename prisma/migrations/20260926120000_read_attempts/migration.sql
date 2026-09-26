@@ -1,0 +1,1 @@
+ALTER TABLE "SourceEvent" ADD COLUMN "readAttempts" INTEGER NOT NULL DEFAULT 0;

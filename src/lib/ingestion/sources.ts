@@ -264,12 +264,13 @@ function irSource(id: string, name: string, provider: string, url: string): Sour
 //   DXC, EPAM, HCLTech ..... their IR feed is the same URL already crawled in
 //                            VENDOR_RSS_SOURCES; not duplicated here
 // Do NOT use ibm.gcs-web.com — returns 200 with 10 items dated 2001.
+// Retired 2026-09-26: Genpact (gcs-web), Kyndryl, EXL and Unisys IR feeds timed
+// out on every one of 15 production runs (09-11…09-26) — the Q4/gcs-web hosts
+// do not answer Vercel's egress. Each cost a 45s crawl slot and delivered
+// nothing; the vendors stay covered by their Google News and buyer-side feeds.
+// Genpact also keeps its newsroom feed. Re-add a URL here once it answers.
 export const INVESTOR_RELATIONS_SOURCES: SourceDefinition[] = [
-  irSource("genpact-ir-rss",      "Genpact Investor Relations",    "Genpact",     "https://genpact.gcs-web.com/rss/news-releases.xml"),
   irSource("ibm-ir-rss",          "IBM Investor Relations",        "IBM",         "https://newsroom.ibm.com/press-releases-corporate?pagetemplate=rss"),
-  irSource("kyndryl-ir-rss",      "Kyndryl Investor Relations",    "Kyndryl",     "https://investors.kyndryl.com/rss/news-releases.xml"),
-  irSource("exl-ir-rss",          "EXL Investor Relations",        "EXL",         "https://ir.exlservice.com/rss/news-releases.xml"),
-  irSource("unisys-ir-rss",       "Unisys Investor Relations",     "Unisys",      "https://ir.unisys.com/rss/news-releases.xml"),
 ];
 
 // ── Tier-1: Wire services ───────────────────────────────────────────────────
@@ -299,10 +300,12 @@ export const WIRE_SOURCES: SourceDefinition[] = [
   // PR Newswire — scheme changed to /rss/<category>/<category>-list.rss (20 each)
   wire("prnewswire-biztech-rss",     "PR Newswire Business Technology",   "https://www.prnewswire.com/rss/business-technology-latest-news/business-technology-latest-news-list.rss"),
   wire("prnewswire-telecom-rss",     "PR Newswire Telecommunications",    "https://www.prnewswire.com/rss/telecommunications-latest-news/telecommunications-latest-news-list.rss"),
-  // GlobeNewswire — industry-scoped feeds (20 each)
-  wire("globenewswire-contracts-rss","GlobeNewsWire Business Contracts",  "https://www.globenewswire.com/RssFeed/subjectcode/7-Business%20Contracts/feedTitle/GlobeNewswire%20-%20Business%20Contracts"),
-  wire("globenewswire-compsvc-rss",  "GlobeNewsWire Computer Services",   "https://www.globenewswire.com/RssFeed/industry/9533-Computer%20Services/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Computer%20Services"),
-  wire("globenewswire-software-rss", "GlobeNewsWire Software",            "https://www.globenewswire.com/RssFeed/industry/9537-Software/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Software"),
+  // GlobeNewswire — retired 2026-09-26: timed out on all 15 production runs
+  // since 09-11 (reachable from a laptop, not from Vercel). Buyer-side Google
+  // News feeds index GlobeNewswire releases, so the coverage is not lost.
+//wire("globenewswire-contracts-rss","GlobeNewsWire Business Contracts",  "https://www.globenewswire.com/RssFeed/subjectcode/7-Business%20Contracts/feedTitle/GlobeNewswire%20-%20Business%20Contracts"),
+//wire("globenewswire-compsvc-rss",  "GlobeNewsWire Computer Services",   "https://www.globenewswire.com/RssFeed/industry/9533-Computer%20Services/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Computer%20Services"),
+//wire("globenewswire-software-rss", "GlobeNewsWire Software",            "https://www.globenewswire.com/RssFeed/industry/9537-Software/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Software"),
 ];
 
 /**

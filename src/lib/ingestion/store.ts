@@ -120,9 +120,74 @@ async function upsertSource(article: RawArticle, text: string, reading: Reading 
   return prisma.sourceEvent.create({ data: { sourceUrl: article.url, ...data }, select: { id: true } });
 }
 
-/** Model failure → the article is kept as pending and retried on a later run (§22). Never a regex fallback. */
-export async function storePending(article: RawArticle, text: string, error: string, runId: string): Promise<void> {
-  await upsertSource(article, text, null, runId, "pending", null, error.slice(0, 300));
+/** Failed model reads allowed before an article stops being retried. */
+export const MAX_READ_ATTEMPTS = 2;
+
+/**
+ * Model failure → the article is kept as pending and retried on a later run
+ * (§22), never regex-classified. Each failure counts; at MAX_READ_ATTEMPTS the
+ * row becomes FAILED with the reason, so a poison article (one that truncates
+ * or times out every time) cannot occupy the head of the queue for ever.
+ */
+export async function storePending(article: RawArticle, text: string, error: string, runId: string): Promise<"pending" | "failed"> {
+  const prior = await prisma.sourceEvent.findUnique({ where: { sourceUrl: article.url }, select: { readAttempts: true } });
+  const attempts = (prior?.readAttempts ?? 0) + 1;
+  const src = await upsertSource(article, text, null, runId, "pending", null, error.slice(0, 300));
+  if (!src) return "pending";
+  const failed = attempts >= MAX_READ_ATTEMPTS;
+  await prisma.sourceEvent.update({ where: { id: src.id }, data: {
+    readAttempts: attempts,
+    ...(failed ? { processingStatus: "failed", processingError: `read failed ${attempts}x: ${error.slice(0, 250)}` } : {}),
+  } });
+  return failed ? "failed" : "pending";
+}
+
+/**
+ * Articles a run found but did not reach in time. Written in one statement:
+ * the per-row upsert this replaces took two queries per article, and with
+ * 2,400 deferred articles the run died at the platform ceiling before it could
+ * record its own result. Rows already stored are left exactly as they are.
+ */
+export async function storeDeferred(articles: RawArticle[], runId: string): Promise<number> {
+  let written = 0;
+  for (let i = 0; i < articles.length; i += 500) {
+    const r = await prisma.sourceEvent.createMany({
+      data: articles.slice(i, i + 500).map(a => ({
+        sourceUrl: a.url, rawTextHash: hashUrl(a.url), sourceTitle: a.title.slice(0, 300), sourceName: a.provider, sourceType: a.sourceType,
+        publicationDate: parseDate(a.publishedAt), rawText: (a.bodyText ?? a.snippet ?? null)?.slice(0, 60_000) ?? null, publisherUrl: a.publisherUrl ?? null,
+        processingStatus: "pending", processingError: "deferred: not reached within the run's time budget", extractedFamily: "UNKNOWN", ingestionRunId: runId,
+      })),
+      skipDuplicates: true,
+    });
+    written += r.count;
+  }
+  return written;
+}
+
+/**
+ * The same article under another URL (Google News issues a fresh redirect URL
+ * for a story it has already served). Its content was already read under the
+ * current policy, so it is not paid for again: the new URL is recorded and
+ * attached to whatever the first read produced — events as corroboration, or
+ * the same exclusion reason.
+ */
+export async function findReadByContent(textHash: string): Promise<{ id: string; processingStatus: string; exclusionReason: string | null; eventIds: string[] } | null> {
+  const prior = await prisma.sourceEvent.findFirst({
+    where: { articleTextHash: textHash, promptPolicyVersion: PROMPT_POLICY_VERSION, processingStatus: { in: ["extracted", "excluded"] } },
+    select: { id: true, processingStatus: true, exclusionReason: true, canonicalEvents: { select: { id: true } } },
+  });
+  return prior ? { id: prior.id, processingStatus: prior.processingStatus, exclusionReason: prior.exclusionReason, eventIds: prior.canonicalEvents.map(e => e.id) } : null;
+}
+
+export async function storeDuplicateContent(article: RawArticle, text: string, textHash: string, prior: NonNullable<Awaited<ReturnType<typeof findReadByContent>>>, runId: string): Promise<void> {
+  const extracted = prior.processingStatus === "extracted" && prior.eventIds.length > 0;
+  const src = await upsertSource(article, text, null, runId, extracted ? "extracted" : "excluded",
+    extracted ? null : (prior.exclusionReason ?? "model:duplicate_content"), null);
+  if (!src) return;
+  await prisma.sourceEvent.update({ where: { id: src.id }, data: { articleTextHash: textHash, promptPolicyVersion: PROMPT_POLICY_VERSION, articleTextChars: text.length } });
+  for (const id of prior.eventIds) {
+    await prisma.canonicalMarketEvent.update({ where: { id }, data: { sourceEvents: { connect: { id: src.id } } } }).catch(() => {});
+  }
 }
 
 /** No readable text (page gone, paywall, empty feed item): a structural exclusion that keeps any earlier verdict (§20). */
