@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { EventSummary, formatDate, formatTcvDisplay, tcvEstimateTitle } from "@/lib/types";
+import { displayTitle, EventSummary, formatDate, formatTcvDisplay, tcvEstimateTitle } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -235,7 +235,7 @@ function ReviewCard({ event, isProcessing, isSelected, onToggleSelect, onApprove
           </div>
 
           {/* Title */}
-          <p className="text-xs font-medium leading-snug line-clamp-2">{event.canonicalTitle}</p>
+          <p className="text-xs font-medium leading-snug line-clamp-2">{displayTitle(event.canonicalTitle)}</p>
 
           {/* Extracted fields */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">

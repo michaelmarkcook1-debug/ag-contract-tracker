@@ -44,7 +44,7 @@ export default async function AdminPage() {
   ]);
 
   return (
-    <div className="p-6 space-y-5 max-w-6xl">
+    <div className="px-4 py-5 md:p-6 space-y-5 max-w-6xl">
       <div>
         <h1 className="text-xl font-semibold">Admin</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -53,7 +53,8 @@ export default async function AdminPage() {
       </div>
 
       <Tabs defaultValue="pipeline">
-        <TabsList className="bg-zinc-900 border border-border">
+        <div className="-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <TabsList className="bg-zinc-900 border border-border w-max">
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="review" className="relative">
             Review Queue
@@ -67,14 +68,15 @@ export default async function AdminPage() {
           <TabsTrigger value="costs">Costs</TabsTrigger>
           <TabsTrigger value="runs">Run History</TabsTrigger>
         </TabsList>
+        </div>
 
         {/* Pipeline tab */}
         <TabsContent value="pipeline" className="mt-4">
-          <div className="grid grid-cols-5 gap-6">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6">
+            <div className="lg:col-span-2 min-w-0">
               <AdminRunPanel initialStatus={ingestionStatus} />
             </div>
-            <div className="col-span-3 space-y-4">
+            <div className="lg:col-span-3 min-w-0 space-y-4">
               <div className="rounded-lg border border-border bg-card p-4 text-sm space-y-3">
                 <h3 className="font-medium text-sm">Pipeline architecture</h3>
                 <Separator />
@@ -87,8 +89,8 @@ export default async function AdminPage() {
                     ["5. Dedupe + analyse", "Re-reports attach to the stored event as extra sources (vendor, counterparty, ±14 days). Sonnet reads every in-scope article: scope, parties, value (stated or a labelled estimate), insight."],
                     ["6. Gate + store", "Publishes on the model's reading: vendor resolved, counterparty named, event type valid, event announced or completed. Tenders, terminations, disputes and low confidence go to needs_review with the reasons."],
                   ].map(([step, desc]) => (
-                    <div key={step} className="flex gap-3">
-                      <span className="text-zinc-500 font-mono w-28 shrink-0">{step}</span>
+                    <div key={step} className="flex flex-col sm:flex-row gap-0.5 sm:gap-3">
+                      <span className="text-zinc-500 font-mono sm:w-28 shrink-0">{step}</span>
                       <span>{desc}</span>
                     </div>
                   ))}
@@ -129,8 +131,8 @@ export default async function AdminPage() {
 
         {/* Run history tab */}
         <TabsContent value="runs" className="mt-4">
-          <div className="rounded-md border border-border overflow-hidden">
-            <table className="w-full text-xs">
+          <div className="rounded-md border border-border overflow-x-auto">
+            <table className="w-full min-w-[820px] text-xs">
               <thead>
                 <tr className="border-b border-border bg-zinc-900/50">
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Started</th>
@@ -149,7 +151,7 @@ export default async function AdminPage() {
               <tbody>
                 {runs.map(run => (
                   <tr key={run.id} className="border-b border-border/50">
-                    <td className="px-3 py-2 font-mono text-muted-foreground">
+                    <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
                       {run.startedAt.toLocaleString("en-GB", { dateStyle: "short", timeStyle: "short" })}
                     </td>
                     <td className="px-3 py-2 capitalize text-muted-foreground">{run.runType}</td>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
-import { trackedEventScope } from "@/lib/data";
+import { getTrackedEntityIds, trackedEventScope } from "@/lib/data";
 
 // Contract value for aggregation: the disclosed figure when there is one,
 // otherwise the midpoint of an APPROVED estimate range (comparable engine or the
@@ -48,12 +48,12 @@ export interface AnalyticsData {
 }
 
 /** Median, total, mean and disclosed/estimated counts over published contracts' values. */
-async function getTcvSummary(): Promise<{ medianM: number; totalBn: number; avgM: number; withTcv: number; disclosed: number; estimated: number }> {
+async function getTcvSummary(inScope: Prisma.Sql): Promise<{ medianM: number; totalBn: number; avgM: number; withTcv: number; disclosed: number; estimated: number }> {
   const rows = await prisma.$queryRaw<{ v: number | null; disclosed: boolean }[]>`
     SELECT ${TCV} v, cd."tcvCommittedUsd" IS NOT NULL disclosed
     FROM "ContractDetails" cd
     JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-    WHERE cme."publicationStatus"='published'
+    WHERE cme."publicationStatus"='published' AND cme.family='CONTRACT' AND ${inScope}
   `;
   const vals = rows.map(r => r.v).filter((v): v is number => v != null && v > 0).sort((a, b) => a - b);
   const disclosed = rows.filter(r => r.disclosed).length;
@@ -102,6 +102,12 @@ async function getTopGeographies(): Promise<{ region: string; count: number }[]>
 export async function GET() {
   // Scope every metric to the tracked vendor universe.
   const scope = await trackedEventScope();
+  // The raw queries below need the same tracked-universe scope as the Prisma
+  // count. Without it the totals and charts read all ~12.5k stored events
+  // (GlobalData imports for untracked vendors) while the deal count read only
+  // tracked ones, giving a "149% of deals valued" KPI.
+  const ids = await getTrackedEntityIds();
+  const inScope = Prisma.sql`(cme."primaryEntityId" = ANY(${ids}) OR cd."vendorId" = ANY(${ids}))`;
   const [
     totalDeals,
     byYearRaw, topVendorsByTcvRaw, topVendorsByDealsRaw,
@@ -118,7 +124,7 @@ export async function GET() {
              COALESCE(AVG(${TCV}),0)/1000000.0 avgtcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
-      WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
+      WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published' AND ${inScope}
         AND cme."announcementDate" IS NOT NULL
       GROUP BY 1 ORDER BY 1
     `,
@@ -129,7 +135,7 @@ export async function GET() {
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL
+      WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL AND e.id = ANY(${ids})
         AND ${TCV} < 10000000000
       GROUP BY e.id ORDER BY tcv DESC LIMIT 20
     `,
@@ -140,7 +146,7 @@ export async function GET() {
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published'
+      WHERE cme."publicationStatus"='published' AND e.id = ANY(${ids})
       GROUP BY e.id ORDER BY deals DESC LIMIT 20
     `,
     // Service lines
@@ -149,7 +155,7 @@ export async function GET() {
              COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "ContractDetails" cd
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published' AND cd."primaryMacroServiceLine" IS NOT NULL
+      WHERE cme."publicationStatus"='published' AND cd."primaryMacroServiceLine" IS NOT NULL AND ${inScope}
       GROUP BY cd."primaryMacroServiceLine" ORDER BY deals DESC LIMIT 10
     `,
     // Top industries
@@ -158,7 +164,7 @@ export async function GET() {
              COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
-      WHERE cme."publicationStatus"='published' AND cme.family='CONTRACT'
+      WHERE cme."publicationStatus"='published' AND cme.family='CONTRACT' AND ${inScope}
         AND cme.industry IS NOT NULL
       GROUP BY cme.industry ORDER BY deals DESC LIMIT 12
     `,
@@ -167,7 +173,7 @@ export async function GET() {
       SELECT COALESCE(cd."contractEventType",'unknown') etype, COUNT(*) cnt
       FROM "ContractDetails" cd
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published'
+      WHERE cme."publicationStatus"='published' AND ${inScope}
       GROUP BY cd."contractEventType" ORDER BY cnt DESC
     `,
     // Monthly momentum — last 24 months
@@ -177,11 +183,11 @@ export async function GET() {
              COALESCE(SUM(${TCV}),0)/1000000000.0 tcv
       FROM "CanonicalMarketEvent" cme
       LEFT JOIN "ContractDetails" cd ON cd."canonicalEventId" = cme.id
-      WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published'
+      WHERE cme.family='CONTRACT' AND cme."publicationStatus"='published' AND ${inScope}
         AND cme."announcementDate" >= NOW() - INTERVAL '24 months'
       GROUP BY 1 ORDER BY 1
     `,
-    getTcvSummary(),
+    getTcvSummary(inScope),
     getTopGeographies(),
   ]);
 
@@ -209,7 +215,7 @@ export async function GET() {
     END bucket, COUNT(*) cnt
     FROM "ContractDetails" cd
     JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-    WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL
+    WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL AND ${inScope}
     GROUP BY 1
   `;
   const sizeMap = new Map(sizeCounts.map(r => [r.bucket, Number(r.cnt)]));

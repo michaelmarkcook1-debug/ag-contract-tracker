@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -14,7 +14,14 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "IT Market Intel — IT Services Intelligence Platform",
-  description: "Track contracts, M&A, partnerships, and organizational changes across 63 IT services providers",
+  description: "Track contracts, M&A, partnerships, and organizational changes across IT services providers",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0a0a0a",
 };
 
 import { AppShell } from "@/components/market/AppShell";

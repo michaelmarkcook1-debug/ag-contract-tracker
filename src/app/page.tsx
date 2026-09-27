@@ -1,3 +1,4 @@
+import { TRACKED_VENDORS } from "@/lib/ingestion/sources";
 import { connection } from "next/server";
 import { getDashboardStats } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,13 +25,13 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="px-6 py-8 space-y-8">
+    <div className="px-4 py-5 md:px-6 md:py-8 space-y-6 md:space-y-8">
       {/* Hero header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Market Intelligence</h1>
           <p className="text-sm text-muted-foreground">
-            Tracking {stats.totalEvents.toLocaleString()} events across 63 IT services providers
+            Tracking {stats.totalEvents.toLocaleString()} events across {TRACKED_VENDORS.length} IT services providers
             {stats.last30DaysCount > 0 && (
               <span className="inline-flex items-center gap-1 ml-2 text-emerald-400">
                 <Zap className="h-3 w-3" />
@@ -39,7 +40,7 @@ export default async function DashboardPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
           {stats.needsReviewCount > 0 && (
             <Link href="/admin" className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
               <Activity className="h-3 w-3" />
@@ -54,7 +55,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         {familyCounts.map(({ family, count, icon: Icon, label, color }) => (
           <Link key={family} href={`/events?family=${family}`}>
             <Card className={`bg-gradient-to-b ${color} border hover:border-foreground/10 transition-all cursor-pointer group`}>
@@ -63,7 +64,7 @@ export default async function DashboardPage() {
                   <FamilyBadge family={family} className="text-[10px]" />
                   <Icon className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
                 </div>
-                <div className="text-3xl font-bold tabular-nums tracking-tight">{count.toLocaleString()}</div>
+                <div className="text-2xl md:text-3xl font-bold tabular-nums tracking-tight">{count.toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
               </CardContent>
             </Card>
@@ -72,8 +73,8 @@ export default async function DashboardPage() {
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="col-span-2 bg-card/50 border-border/40">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="lg:col-span-2 bg-card/50 border-border/40">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Event Volume by Month</CardTitle>
           </CardHeader>
@@ -92,8 +93,8 @@ export default async function DashboardPage() {
       </div>
 
       {/* Bottom row */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="col-span-2 space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-3 min-w-0">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Latest Events</h2>
             <Link href="/events" className="text-xs text-muted-foreground/60 hover:text-foreground transition-colors flex items-center gap-1">

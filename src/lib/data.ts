@@ -175,7 +175,7 @@ export async function getEvents(filters: EventFilters = {}): Promise<EventsRespo
     prisma.canonicalMarketEvent.findMany({
       where,
       include: eventInclude,
-      orderBy: { announcementDate: "desc" },
+      orderBy: { announcementDate: { sort: "desc", nulls: "last" } },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
@@ -224,7 +224,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.canonicalMarketEvent.findMany({
       where: { publicationStatus: "published", ...scope },
       include: eventInclude,
-      orderBy: { announcementDate: "desc" },
+      orderBy: { announcementDate: { sort: "desc", nulls: "last" } },
       take: 8,
     }),
     // Monthly trend - last 18 months
@@ -238,7 +238,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     // Latest event date for freshness indicator
     prisma.canonicalMarketEvent.findFirst({
       where: { publicationStatus: "published", announcementDate: { not: null } },
-      orderBy: { announcementDate: "desc" },
+      orderBy: { announcementDate: { sort: "desc", nulls: "last" } },
       select: { announcementDate: true },
     }),
   ]);
@@ -284,17 +284,27 @@ export async function getVendorProfile(slug: string): Promise<VendorProfile | nu
       primaryEvents: {
         where: { publicationStatus: "published" },
         include: eventInclude,
-        orderBy: { announcementDate: "desc" },
+        orderBy: { announcementDate: { sort: "desc", nulls: "last" } },
         take: 20,
       },
     },
   });
   if (!entity) return null;
 
+  // Counts and disclosed value cover every published event, not just the 20
+  // shown in the timeline — they previously read only the recent slice, so a
+  // vendor with 900 events showed "20 tracked events".
+  const published = { primaryEntityId: entity.id, publicationStatus: "published" };
+  const [familyCounts, disclosed] = await Promise.all([
+    prisma.canonicalMarketEvent.groupBy({ by: ["family"], where: published, _count: { id: true } }),
+    prisma.contractDetails.aggregate({
+      where: { canonicalEvent: { ...published, family: "CONTRACT" }, tcvCommittedUsd: { gt: 0 } },
+      _sum: { tcvCommittedUsd: true },
+      _count: { id: true },
+    }),
+  ]);
   const eventCounts: Record<string, number> = {};
-  for (const e of entity.primaryEvents) {
-    eventCounts[e.family] = (eventCounts[e.family] ?? 0) + 1;
-  }
+  for (const fc of familyCounts) eventCounts[fc.family] = fc._count.id;
 
   return {
     id: entity.id,
@@ -304,7 +314,9 @@ export async function getVendorProfile(slug: string): Promise<VendorProfile | nu
     regions: JSON.parse(entity.regions) as string[],
     websiteUrl: entity.websiteUrl,
     eventCounts,
-    totalEvents: entity.primaryEvents.length,
+    totalEvents: Object.values(eventCounts).reduce((sum, n) => sum + n, 0),
+    disclosedTcvUsd: disclosed._sum.tcvCommittedUsd ?? 0,
+    disclosedContracts: disclosed._count.id,
     recentEvents: entity.primaryEvents.map(shapeEvent),
   };
 }

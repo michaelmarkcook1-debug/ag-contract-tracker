@@ -44,13 +44,13 @@ export default async function VendorsPage() {
   const sorted = [...vendors].sort((a, b) => (countMap.get(idMap.get(b.slug) ?? "") ?? 0) - (countMap.get(idMap.get(a.slug) ?? "") ?? 0));
 
   return (
-    <div className="p-6 space-y-5 max-w-7xl">
+    <div className="px-4 py-5 md:p-6 space-y-5 max-w-7xl">
       <div>
         <h1 className="text-xl font-semibold">Vendors</h1>
         <p className="text-sm text-muted-foreground mt-0.5">{vendors.length} tracked IT services vendors</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3">
         {sorted.map((vendor) => {
           const entityId = idMap.get(vendor.slug);
           const total = entityId ? (countMap.get(entityId) ?? 0) : 0;
@@ -61,21 +61,21 @@ export default async function VendorsPage() {
             <Link key={vendor.slug} href={`/vendors/${vendor.slug}`}>
               <Card className="bg-card border-border hover:border-zinc-600 transition-colors group h-full">
                 <CardContent className="pt-4 pb-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="text-sm font-semibold group-hover:text-foreground transition-colors">{vendor.displayName}</p>
-                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <Globe className="h-3 w-3" />
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate group-hover:text-foreground transition-colors">{vendor.displayName}</p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
+                        <Globe className="h-3 w-3 shrink-0" />
                         {regions.slice(0, 2).join(", ")}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 text-muted-foreground group-hover:text-foreground transition-colors">
+                    <div className="flex shrink-0 items-center gap-1 text-muted-foreground group-hover:text-foreground transition-colors">
                       <span className="text-lg font-bold tabular-nums">{total}</span>
                       <ArrowRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {Object.entries(families).map(([family, count]) => (
+                    {Object.entries(families).sort((a, b) => b[1] - a[1]).map(([family, count]) => (
                       <div key={family} className="flex items-center gap-1">
                         <FamilyBadge family={family} className="text-[10px] py-0" />
                         <span className="text-[10px] text-muted-foreground">{count}</span>

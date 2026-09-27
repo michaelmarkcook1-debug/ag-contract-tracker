@@ -121,6 +121,8 @@ export interface VendorProfile {
   websiteUrl: string | null;
   eventCounts: Record<string, number>;
   totalEvents: number;
+  disclosedTcvUsd: number;       // sum of stated TCV across all published contracts
+  disclosedContracts: number;
   recentEvents: EventSummary[];
 }
 
@@ -227,3 +229,15 @@ export const ORG_EVENT_TYPE_LABELS: Record<string, string> = {
   delivery_centre_opening: "Delivery Centre",
   spin_off: "Spin-Off",
 };
+
+/**
+ * A title as a reader should see it. The reader writes titles as
+ * "Provider | EventType | Buyer | Scope", and sometimes emits the event type as
+ * its enum ("NEW_WIN", "OTHER_COMMERCIAL_EVENT") rather than words. Display
+ * only — stored titles are left alone because deduplication compares them.
+ */
+export function displayTitle(title: string | null | undefined): string {
+  if (!title) return "";
+  return title.replace(/\b[A-Z]{2,}(?:_[A-Z]{2,})+\b/g, m =>
+    m.toLowerCase().split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ").replace(/^Other Commercial Event$/, "Commercial Event"));
+}

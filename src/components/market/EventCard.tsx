@@ -1,6 +1,6 @@
 "use client";
 
-import { EventSummary, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
+import { displayTitle, EventSummary, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Building2, Calendar, ExternalLink } from "lucide-react";
@@ -107,8 +107,8 @@ function EventMeta({ event }: { event: EventSummary }) {
 
 export function EventCard({ event, className }: EventCardProps) {
   return (
-    <div className={cn("group p-4 rounded-xl border border-border/40 bg-card/50 hover:border-border/80 hover:bg-card/80 transition-all", className)}>
-      <div className="flex items-start justify-between gap-3">
+    <div className={cn("group p-3 md:p-4 rounded-xl border border-border/40 bg-card/50 hover:border-border/80 hover:bg-card/80 transition-all", className)}>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <FamilyBadge family={event.family} />
@@ -128,7 +128,7 @@ export function EventCard({ event, className }: EventCardProps) {
           </div>
 
           <p className="text-sm font-medium leading-snug line-clamp-2 group-hover:text-foreground transition-colors">
-            {event.canonicalTitle}
+            {displayTitle(event.canonicalTitle)}
           </p>
 
           <EventMeta event={event} />
@@ -140,7 +140,7 @@ export function EventCard({ event, className }: EventCardProps) {
           )}
         </div>
 
-        <div className="text-right shrink-0 flex flex-col items-end gap-1">
+        <div className="shrink-0 flex flex-row sm:flex-col items-center sm:items-end gap-3 sm:gap-1 sm:text-right">
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <Calendar className="h-3 w-3" />
             {formatDate(event.announcementDate)}

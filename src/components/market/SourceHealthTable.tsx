@@ -32,8 +32,8 @@ export function SourceHealthTable({ sources }: { sources: SourceItem[] }) {
   };
 
   return (
-    <div className="rounded-md border border-border overflow-hidden">
-      <table className="w-full text-xs">
+    <div className="rounded-md border border-border overflow-x-auto">
+      <table className="w-full min-w-[560px] text-xs">
         <thead>
           <tr className="border-b border-border bg-zinc-900/50">
             <th className="text-left px-3 py-2 text-muted-foreground font-medium w-2"></th>

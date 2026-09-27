@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
+import { displayTitle, EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
 import { FamilyBadge } from "./FamilyBadge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -44,7 +44,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
   const tcvLabel = formatTcvDisplay(event);   // §16: disclosed | Est. range | Not reliably estimable
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="space-y-6 px-4 pb-8">
       {/* Meta badges */}
       <div className="flex flex-wrap gap-2">
         <FamilyBadge family={event.family} />
@@ -77,7 +77,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
                 <PairedRow l1="Micro Service" v1={event.primaryMicroServiceLine} l2="Country" v2={null} />
                 <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcvLabel} v2Class="text-emerald-400 font-mono font-semibold" />
                 <PairedRow l1="Contract Type" v1={event.contractEventType ? (CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType) : null} l2="Length" v2={event.contractLengthMonths ? `${event.contractLengthMonths} months` : null} />
-                <PairedRow l1="Start Date" v1={formatDate(event.announcementDate)} l2="TCV Basis" v2={event.tcvBasis} />
+                <PairedRow l1="Announced" v1={formatDate(event.announcementDate)} l2="Value basis" v2={valueBasisLabel(event.tcvBasis, event.tcvCommittedUsd != null)} />
                 <PairedRow l1="Source" v1={event.originalArticleUrl ? "See link below" : null} l2="" v2={null} />
               </>
             )}
@@ -173,14 +173,41 @@ function PairedRow({ l1, v1, v1Class, l2, v2, v2Class }: {
   l1: string; v1: string | null | undefined; v1Class?: string;
   l2: string; v2: string | null | undefined; v2Class?: string;
 }) {
+  // Desktop: four cells side by side. Phones: each pair gets its own row, so
+  // nothing is clipped in a narrow panel.
   return (
-    <tr>
-      <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l1}</td>
-      <td className={`px-3 py-2.5 w-[28%] border-r border-border/10 ${v1Class ?? "text-foreground"}`}>{v1 ?? "—"}</td>
-      <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l2}</td>
-      <td className={`px-3 py-2.5 w-[28%] ${v2Class ?? "text-foreground"}`}>{v2 ?? (l2 ? "—" : "")}</td>
-    </tr>
+    <>
+      <tr className="hidden sm:table-row">
+        <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l1}</td>
+        <td className={`px-3 py-2.5 w-[28%] border-r border-border/10 ${v1Class ?? "text-foreground"}`}>{v1 ?? "—"}</td>
+        <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[22%] border-r border-border/10">{l2}</td>
+        <td className={`px-3 py-2.5 w-[28%] ${v2Class ?? "text-foreground"}`}>{v2 ?? (l2 ? "—" : "")}</td>
+      </tr>
+      <tr className="sm:hidden">
+        <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[40%] border-r border-border/10">{l1}</td>
+        <td className={`px-3 py-2.5 ${v1Class ?? "text-foreground"}`}>{v1 ?? "—"}</td>
+      </tr>
+      {l2 && (
+        <tr className="sm:hidden">
+          <td className="px-3 py-2.5 text-muted-foreground/50 font-semibold w-[40%] border-r border-border/10">{l2}</td>
+          <td className={`px-3 py-2.5 ${v2Class ?? "text-foreground"}`}>{v2 ?? "—"}</td>
+        </tr>
+      )}
+    </>
   );
+}
+
+/** How a value was obtained, in words a reader can use (never an internal code). */
+function valueBasisLabel(basis: string | null | undefined, stated: boolean): string | null {
+  if (stated) return "Stated in source";
+  if (!basis) return null;
+  if (basis.startsWith("third_party_estimated")) return "Third-party estimate";
+  if (basis.includes("bpo_rate_card")) return "Estimate — headcount and rates";
+  if (basis.includes("value_model") || basis.startsWith("model_estimated")) return "Estimate — comparable contracts";
+  if (basis.includes("comparables") || basis.startsWith("comparable_inferred")) return "Estimate — comparable contracts";
+  if (basis === "reduction_amount") return "Reduction amount";
+  if (basis === "undisclosed") return "Not disclosed";
+  return null;
 }
 
 // ── Entity display in list ───────────────────────────────────────────────────
@@ -235,6 +262,8 @@ export function EventsTable() {
   const [data, setData] = useState<EventsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<EventSummary | null>(null);
+  // Phones: the dropdown filters fold behind a toggle so results get the screen.
+  const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
@@ -314,8 +343,8 @@ export function EventsTable() {
   return (
     <div className="space-y-0">
       {/* Search + filter bar — always visible */}
-      <div className="sticky top-14 z-30 bg-background/80 backdrop-blur-xl border-b border-border/40">
-        <div className="px-6 pt-4 pb-3">
+      <div className="md:sticky md:top-14 z-30 bg-background/80 backdrop-blur-xl border-b border-border/40">
+        <div className="px-4 md:px-6 pt-3 md:pt-4 pb-3">
           <form onSubmit={handleSearchSubmit} className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/50" />
             <Input
@@ -323,21 +352,21 @@ export function EventsTable() {
               placeholder="Search events, vendors, clients, industries…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-12 h-12 bg-foreground/[0.05] border-border/50 text-base font-medium placeholder:text-muted-foreground/40 focus-visible:ring-emerald-500/30 rounded-xl"
+              className="pl-12 h-11 md:h-12 bg-foreground/[0.05] border-border/50 text-base font-medium placeholder:text-muted-foreground/40 focus-visible:ring-emerald-500/30 rounded-xl"
             />
             <kbd className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:inline text-[10px] text-muted-foreground/30 bg-foreground/[0.06] px-1.5 py-0.5 rounded font-mono">⌘K</kbd>
           </form>
         </div>
 
         {/* Filters — always shown */}
-        <div className="px-6 pb-4 space-y-3">
-            {/* Type chips */}
-            <div className="flex items-center gap-1 flex-wrap">
+        <div className="px-4 md:px-6 pb-3 md:pb-4 space-y-3">
+            {/* Type chips — one swipeable row on phones, wrapping on desktop */}
+            <div className="flex items-center gap-1 overflow-x-auto md:flex-wrap -mx-4 px-4 md:mx-0 md:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {FAMILIES.map(({ value, label, color }) => (
                 <button
                   key={value}
                   onClick={() => setFilter("family", value === "all" ? "all" : value)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                  className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 md:py-1 rounded-full text-xs font-medium transition-all ${
                     filters.family === value
                       ? "bg-foreground/10 text-foreground"
                       : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-foreground/[0.04]"
@@ -349,13 +378,25 @@ export function EventsTable() {
               ))}
             </div>
 
+            {/* Phones: one button reveals the dropdown filters */}
+            <button
+              type="button"
+              onClick={() => setShowFilters(v => !v)}
+              aria-expanded={showFilters}
+              className="md:hidden flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {showFilters ? "Hide filters" : "Filters"}
+              {activeFilterCount > 0 && <span className="rounded-full bg-emerald-500/15 text-emerald-400 px-1.5 text-[10px] tabular-nums">{activeFilterCount}</span>}
+            </button>
+
             {/* Dropdown filters */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            <div className={`${showFilters ? "grid" : "hidden"} md:grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2`}>
               {/* Vendor */}
               <div className="space-y-1">
                 <label className="text-[10px] text-muted-foreground/50 uppercase tracking-wider font-medium">Provider</label>
-                <Select value={filters.vendor ?? "__all__"} onValueChange={(v: string | null) => v && setFilter("vendor", v === "__all__" ? "" : v)}>
-                  <SelectTrigger className="h-8 text-xs border-border/40"><SelectValue placeholder="Any" /></SelectTrigger>
+                <Select items={{ __all__: "Any provider", ...Object.fromEntries((filterOptions?.vendors ?? []).map(v => [v.slug, v.name])) }} value={filters.vendor ?? "__all__"} onValueChange={(v: string | null) => v && setFilter("vendor", v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="h-9 md:h-8 w-full min-w-0 text-xs border-border/40 [&>span]:truncate"><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent className="max-h-64">
                     <SelectItem value="__all__">Any provider</SelectItem>
                     {filterOptions?.vendors.map(v => (
@@ -368,8 +409,8 @@ export function EventsTable() {
               {/* Industry */}
               <div className="space-y-1">
                 <label className="text-[10px] text-muted-foreground/50 uppercase tracking-wider font-medium">Industry</label>
-                <Select value={filters.industry ?? "__all__"} onValueChange={(v: string | null) => v && setFilter("industry", v === "__all__" ? "" : v)}>
-                  <SelectTrigger className="h-8 text-xs border-border/40"><SelectValue placeholder="Any" /></SelectTrigger>
+                <Select items={{ __all__: "Any industry", ...Object.fromEntries((filterOptions?.industries ?? []).map(i => [i.name, i.name])) }} value={filters.industry ?? "__all__"} onValueChange={(v: string | null) => v && setFilter("industry", v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="h-9 md:h-8 w-full min-w-0 text-xs border-border/40 [&>span]:truncate"><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent className="max-h-64">
                     <SelectItem value="__all__">Any industry</SelectItem>
                     {filterOptions?.industries.map(i => (
@@ -382,8 +423,8 @@ export function EventsTable() {
               {/* Service Line */}
               <div className="space-y-1">
                 <label className="text-[10px] text-muted-foreground/50 uppercase tracking-wider font-medium">Service Line</label>
-                <Select value={filters.serviceLine ?? "__all__"} onValueChange={(v: string | null) => v && setFilter("serviceLine", v === "__all__" ? "" : v)}>
-                  <SelectTrigger className="h-8 text-xs border-border/40"><SelectValue placeholder="Any" /></SelectTrigger>
+                <Select items={{ __all__: "Any service line", ...Object.fromEntries((filterOptions?.serviceLines ?? []).map(l => [l.name, l.name])) }} value={filters.serviceLine ?? "__all__"} onValueChange={(v: string | null) => v && setFilter("serviceLine", v === "__all__" ? "" : v)}>
+                  <SelectTrigger className="h-9 md:h-8 w-full min-w-0 text-xs border-border/40 [&>span]:truncate"><SelectValue placeholder="Any" /></SelectTrigger>
                   <SelectContent className="max-h-64">
                     <SelectItem value="__all__">Any service line</SelectItem>
                     {filterOptions?.serviceLines.map(s => (
@@ -396,8 +437,8 @@ export function EventsTable() {
               {/* Status */}
               <div className="space-y-1">
                 <label className="text-[10px] text-muted-foreground/50 uppercase tracking-wider font-medium">Status</label>
-                <Select value={String(filters.status ?? "all")} onValueChange={(v: string | null) => v && setFilter("status", v)}>
-                  <SelectTrigger className="h-8 text-xs border-border/40"><SelectValue /></SelectTrigger>
+                <Select items={{ all: "All statuses", published: "Published", needs_review: "Needs review" }} value={String(filters.status ?? "all")} onValueChange={(v: string | null) => v && setFilter("status", v)}>
+                  <SelectTrigger className="h-9 md:h-8 w-full min-w-0 text-xs border-border/40 [&>span]:truncate"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All statuses</SelectItem>
                     <SelectItem value="published">Published</SelectItem>
@@ -413,7 +454,7 @@ export function EventsTable() {
                   type="date"
                   value={filters.dateFrom ?? ""}
                   onChange={(e) => setFilter("dateFrom", e.target.value)}
-                  className="h-8 text-xs border-border/40"
+                  className="h-9 md:h-8 text-xs border-border/40"
                 />
               </div>
 
@@ -424,7 +465,7 @@ export function EventsTable() {
                   type="date"
                   value={filters.dateTo ?? ""}
                   onChange={(e) => setFilter("dateTo", e.target.value)}
-                  className="h-8 text-xs border-border/40"
+                  className="h-9 md:h-8 text-xs border-border/40"
                 />
               </div>
             </div>
@@ -448,18 +489,18 @@ export function EventsTable() {
       </div>
 
       {/* Results */}
-      <div className="px-6 pt-4 pb-8">
+      <div className="px-4 md:px-6 pt-4 pb-8">
         {!hasSearched ? (
-          <div className="text-center py-28">
+          <div className="text-center py-16 md:py-28">
             <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 mb-4">
               <Search className="h-8 w-8 text-emerald-500/50" />
             </div>
             <h2 className="text-lg font-semibold mb-1">Search IT Services Market Events</h2>
             <p className="text-sm text-muted-foreground/60 max-w-md mx-auto">
-              Search across {data?.total ? data.total.toLocaleString() : "7,000+"} events — contracts, M&A, partnerships, and org changes — or use the filters above to narrow results.
+              Search every tracked event — contracts, M&A, partnerships and org changes — or use the filters above to narrow results.
             </p>
-            <div className="flex items-center justify-center gap-4 mt-6 text-xs text-muted-foreground/40">
-              <span>63 tracked vendors</span>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mt-6 text-xs text-muted-foreground/40">
+              <span>{filterOptions?.vendors.length ? `${filterOptions.vendors.length} tracked vendors` : "Tracked vendors"}</span>
               <span className="h-1 w-1 rounded-full bg-muted-foreground/20" />
               <span>Public sources only</span>
               <span className="h-1 w-1 rounded-full bg-muted-foreground/20" />
@@ -491,16 +532,20 @@ export function EventsTable() {
           ) : (
             data.events.map((event) => (
               <button key={event.id} className="w-full text-left group" onClick={() => setSelected(event)}>
-                <div className="flex items-start gap-4 px-4 py-3 rounded-xl border border-transparent hover:border-border/60 hover:bg-foreground/[0.02] transition-all">
-                  <div className="pt-0.5 shrink-0">
+                <div className="flex items-start gap-3 md:gap-4 px-3 md:px-4 py-3 rounded-xl border border-border/30 md:border-transparent hover:border-border/60 hover:bg-foreground/[0.02] transition-all">
+                  <div className="pt-0.5 shrink-0 hidden md:block">
                     <FamilyBadge family={event.family} className="text-[10px]" />
                   </div>
 
                   <div className="flex-1 min-w-0 space-y-1">
-                    <h3 className="text-sm font-medium leading-snug line-clamp-1 group-hover:text-foreground transition-colors">
-                      {event.canonicalTitle}
+                    <div className="flex items-center justify-between gap-2 md:hidden">
+                      <FamilyBadge family={event.family} className="text-[10px]" />
+                      <EventValueCell event={event} />
+                    </div>
+                    <h3 className="text-sm font-medium leading-snug line-clamp-2 md:line-clamp-1 group-hover:text-foreground transition-colors">
+                      {displayTitle(event.canonicalTitle)}
                     </h3>
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground/50 flex-wrap">
+                    <div className="flex items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/50 flex-wrap">
                       {event.primaryEntityName && (
                         <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{event.primaryEntityName}</span>
                       )}
@@ -569,9 +614,9 @@ export function EventsTable() {
 
       {/* Detail sheet */}
       <Sheet open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
-        <SheetContent className="w-[520px] sm:w-[580px] overflow-y-auto border-border/40">
+        <SheetContent className="data-[side=right]:w-full data-[side=right]:sm:w-[580px] data-[side=right]:sm:max-w-[580px] overflow-y-auto border-border/40 pb-[env(safe-area-inset-bottom)]">
           <SheetHeader className="pb-4">
-            <SheetTitle className="text-base leading-snug pr-4">{selected?.canonicalTitle}</SheetTitle>
+            <SheetTitle className="text-base leading-snug pr-8">{displayTitle(selected?.canonicalTitle)}</SheetTitle>
           </SheetHeader>
           {selected && <EventDetailPanel event={selected} />}
         </SheetContent>

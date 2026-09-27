@@ -183,7 +183,7 @@ export function IndustryChart({ data }: { data: AnalyticsData["topIndustries"] }
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }}>
         <XAxis type="number" tick={TICK} {...AXIS} />
-        <YAxis type="category" dataKey="industry" tick={{ fontSize: 10, fill: "#a1a1aa" }} {...AXIS} width={160} />
+        <YAxis type="category" dataKey="industry" tick={{ fontSize: 10, fill: "#a1a1aa" }} {...AXIS} width={130} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown, name: unknown) =>
           name === "deals" ? [v, "Deals"] : [`$${Number(v).toFixed(1)}bn`, "TCV"]
         ) as AnyFormatter} />

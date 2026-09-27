@@ -25,9 +25,9 @@ function KpiCard({ label, value, sub, icon: Icon, color }: {
       <CardContent className="pt-4 pb-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-muted-foreground">{label}</span>
-          <Icon className={`h-3.5 w-3.5 ${color}`} />
+          <Icon className={`h-3.5 w-3.5 shrink-0 ${color}`} />
         </div>
-        <div className="text-2xl font-bold tabular-nums">{value}</div>
+        <div className="text-xl md:text-2xl font-bold tabular-nums">{value}</div>
         <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>
       </CardContent>
     </Card>
@@ -42,32 +42,32 @@ export default async function AnalyticsPage() {
   const tcvCoverage = Math.round((data.dealsWithTcv / data.totalDeals) * 100);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="px-4 py-5 md:p-6 space-y-4 md:space-y-6 max-w-7xl">
       {/* Header */}
       <div>
         <h1 className="text-xl font-semibold">Market Analytics</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          IT services contract market — {data.totalDeals.toLocaleString()} deals, 2020–2026
+          IT services contract market — {data.totalDeals.toLocaleString()} published deals across tracked vendors
         </p>
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 [&>*]:min-w-0">
         <KpiCard label="Total Visible TCV" value={`$${data.totalTcvBn.toFixed(1)}bn`} sub={`${tcvCoverage}% of deals valued · ${data.dealsDisclosed} disclosed, ${data.dealsEstimated} estimated`} icon={DollarSign} color="text-emerald-400" />
         <KpiCard label="Total Deals" value={data.totalDeals.toLocaleString()} sub="published contract records" icon={FileText} color="text-blue-400" />
         <KpiCard label="Avg Deal Value" value={`$${data.avgTcvM.toFixed(0)}m`} sub={`median $${data.medianTcvM.toFixed(0)}m`} icon={TrendingUp} color="text-amber-400" />
-        <KpiCard label="Largest Single Deal" value={`$${data.topVendorsByTcv[0]?.tcvBn.toFixed(1) ?? "—"}bn`} sub={data.topVendorsByTcv[0]?.vendor ?? "—"} icon={BarChart3} color="text-violet-400" />
+        <KpiCard label="Top Vendor by TCV" value={data.topVendorsByTcv[0] ? `$${data.topVendorsByTcv[0].tcvBn.toFixed(1)}bn` : "—"} sub={data.topVendorsByTcv[0] ? `${data.topVendorsByTcv[0].vendor} · disclosed + estimated` : "—"} icon={BarChart3} color="text-violet-400" />
       </div>
 
       {/* Annual trend */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Annual Deal Volume & TCV</CardTitle>
-          <p className="text-xs text-muted-foreground">Bars = deal count (left axis) · Line = cumulative TCV in $bn (right axis)</p>
+          <p className="text-xs text-muted-foreground">Bars = deal count (left axis) · Line = total TCV per year in $bn, disclosed + estimated (right axis)</p>
         </CardHeader>
         <CardContent>
-          <AnnualTrendChart data={data.byYear} />
-          <p className="text-[10px] text-zinc-600 mt-2">Note: 2025 TCV spike driven by a small number of large cloud/AI platform contracts (AWS, CoreWeave). Deal count trend is the more representative signal.</p>
+          <AnnualTrendChart data={data.byYear.filter((y) => Number(y.year) >= 2020 && Number(y.year) <= new Date().getFullYear())} />
+          <p className="text-[10px] text-zinc-600 mt-2">Note: annual TCV is dominated by a handful of very large cloud and AI-infrastructure contracts. Deal count is the more representative trend.</p>
         </CardContent>
       </Card>
 
@@ -82,11 +82,11 @@ export default async function AnalyticsPage() {
       </Card>
 
       {/* Vendor league tables */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Top Vendors by Contract Value</CardTitle>
-            <p className="text-xs text-muted-foreground">Disclosed TCV only · $bn cumulative 2020–2026</p>
+            <p className="text-xs text-muted-foreground">Disclosed + labelled estimates · $bn, all years</p>
           </CardHeader>
           <CardContent>
             <VendorTcvChart data={data.topVendorsByTcv} />
@@ -95,7 +95,7 @@ export default async function AnalyticsPage() {
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Top Vendors by Deal Count</CardTitle>
-            <p className="text-xs text-muted-foreground">All published contracts 2020–2026</p>
+            <p className="text-xs text-muted-foreground">All published contracts, all years</p>
           </CardHeader>
           <CardContent>
             <VendorCountChart data={data.topVendorsByDeals} />
@@ -104,7 +104,7 @@ export default async function AnalyticsPage() {
       </div>
 
       {/* Service lines + Deal size */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Service Line Mix</CardTitle>
@@ -126,7 +126,7 @@ export default async function AnalyticsPage() {
       </div>
 
       {/* Geography + Event types */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Geographic Coverage</CardTitle>

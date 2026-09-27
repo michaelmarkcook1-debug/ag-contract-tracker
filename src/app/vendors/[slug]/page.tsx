@@ -14,39 +14,38 @@ export default async function VendorPage({ params }: { params: Promise<{ slug: s
   // §17 — known and inferred value must never be silently blended into one
   // headline figure. This previously summed `tcvCommittedUsd ?? tcvEstimateMidUsd`,
   // so a disclosed total quietly absorbed estimated values. Disclosed only.
-  const contracts = vendor.recentEvents.filter((e) => e.family === "CONTRACT");
-  const totalTcv = contracts.reduce((sum, e) => sum + (e.tcvCommittedUsd ?? 0), 0);
-  const disclosedCount = contracts.filter((e) => e.tcvCommittedUsd != null).length;
+  const totalTcv = vendor.disclosedTcvUsd;
+  const disclosedCount = vendor.disclosedContracts;
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="px-4 py-5 md:p-6 space-y-6 max-w-5xl">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{vendor.displayName}</h1>
-          <div className="flex items-center gap-3 mt-1">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold">{vendor.displayName}</h1>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
             <span className="text-sm text-muted-foreground flex items-center gap-1">
-              <Globe className="h-3.5 w-3.5" />
+              <Globe className="h-3.5 w-3.5 shrink-0" />
               {vendor.regions.join(", ")}
             </span>
             {vendor.websiteUrl && (
               <a href={vendor.websiteUrl} target="_blank" rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors min-w-0 break-all">
                 {vendor.websiteUrl.replace(/^https?:\/\//, "")}
                 <ExternalLink className="h-3 w-3" />
               </a>
             )}
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-3xl font-bold tabular-nums">{vendor.totalEvents}</div>
+        <div className="text-right shrink-0">
+          <div className="text-2xl md:text-3xl font-bold tabular-nums">{vendor.totalEvents}</div>
           <div className="text-xs text-muted-foreground">tracked events</div>
         </div>
       </div>
 
       {/* Summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {Object.entries(vendor.eventCounts).map(([family, count]) => (
+        {Object.entries(vendor.eventCounts).sort((a, b) => b[1] - a[1]).map(([family, count]) => (
           <Card key={family} className="bg-card border-border">
             <CardContent className="pt-3 pb-3">
               <FamilyBadge family={family} className="mb-2 text-[10px]" />
@@ -70,7 +69,7 @@ export default async function VendorPage({ params }: { params: Promise<{ slug: s
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold">Event Timeline</h2>
-          <span className="text-xs text-muted-foreground">{vendor.recentEvents.length} recent events</span>
+          <span className="text-xs text-muted-foreground">latest {vendor.recentEvents.length} of {vendor.totalEvents}</span>
         </div>
 
         {/* Group by family */}
