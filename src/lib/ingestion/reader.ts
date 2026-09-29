@@ -175,36 +175,30 @@ export function quoteOccurs(quote: string | null | undefined, text: string): boo
 
 function sha256(s: string): string { return crypto.createHash("sha256").update(s).digest("hex"); }
 
-async function callModel(userText: string): Promise<{ parsed: unknown; usage: Reading["usage"]; error?: string }> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  const empty = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 };
-  if (!apiKey) return { parsed: null, usage: empty, error: "ANTHROPIC_API_KEY not configured" };
-  let res: Response;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        // Reader-specific output allowance — deliberately NOT a global change.
-        // An 8000 cap truncated event-dense articles (quarterly reports listing
-        // a dozen deals); the reader emits one grounded object with quotes per
-        // event, so output scales with EVENT COUNT, not article length.
-        // Measured need on the truncated cases exceeded 8000; 24000 clears them
-        // with headroom. A cap is not a charge: only produced tokens are billed.
-        model: READER_MODEL, max_tokens: READER_MAX_OUTPUT_TOKENS,
-        system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: userText }],
-      }),
-      signal: AbortSignal.timeout(90_000),
-    });
-  } catch (err) {
-    return { parsed: null, usage: empty, error: `model call failed: ${err instanceof Error ? err.message : String(err)}` };
-  }
-  if (!res.ok) return { parsed: null, usage: empty, error: `model HTTP ${res.status}` };
-  const data = await res.json() as { content?: { type: string; text: string }[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }; model?: string; stop_reason?: string };
+type ModelResponse = { content?: { type: string; text: string }[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }; model?: string; stop_reason?: string };
+type ModelResult = { parsed: unknown; usage: Reading["usage"]; error?: string };
+const EMPTY_USAGE: Reading["usage"] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 };
+
+/** Messages API parameters for one reader call — shared by live and batch reads. */
+export function readerRequestParams(userText: string) {
+  return {
+    // Reader-specific output allowance — deliberately NOT a global change.
+    // An 8000 cap truncated event-dense articles (quarterly reports listing
+    // a dozen deals); the reader emits one grounded object with quotes per
+    // event, so output scales with EVENT COUNT, not article length.
+    // Measured need on the truncated cases exceeded 8000; 24000 clears them
+    // with headroom. A cap is not a charge: only produced tokens are billed.
+    model: READER_MODEL, max_tokens: READER_MAX_OUTPUT_TOKENS,
+    system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: userText }],
+  };
+}
+
+/** Parse one reader response. `priceFactor` is 0.5 for Batch API results. */
+export function parseReaderResponse(data: ModelResponse, priceFactor = 1): ModelResult {
   const u = data.usage ?? {};
   const inputTokens = u.input_tokens ?? 0, outputTokens = u.output_tokens ?? 0, cacheReadTokens = u.cache_read_input_tokens ?? 0, cacheWriteTokens = u.cache_creation_input_tokens ?? 0;
-  const costUsd = (inputTokens * 2 + cacheReadTokens * 0.2 + cacheWriteTokens * 2.5 + outputTokens * 10) / 1e6;
+  const costUsd = priceFactor * (inputTokens * 2 + cacheReadTokens * 0.2 + cacheWriteTokens * 2.5 + outputTokens * 10) / 1e6;
   const usage = { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd };
   if (data.model && !data.model.startsWith(READER_MODEL)) return { parsed: null, usage, error: `model substituted: ${data.model}` };
   const text = (data.content ?? []).find(c => c.type === "text")?.text ?? "";
@@ -212,6 +206,24 @@ async function callModel(userText: string): Promise<{ parsed: unknown; usage: Re
   const m = /\{[\s\S]*\}/.exec(text);
   if (!m) return { parsed: null, usage, error: `model returned no JSON (stop_reason=${data.stop_reason ?? "?"}, ${text.length} chars)` };
   try { return { parsed: JSON.parse(m[0]), usage }; } catch { return { parsed: null, usage, error: "model JSON did not parse" }; }
+}
+
+async function callModel(userText: string): Promise<ModelResult> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { parsed: null, usage: EMPTY_USAGE, error: "ANTHROPIC_API_KEY not configured" };
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify(readerRequestParams(userText)),
+      signal: AbortSignal.timeout(90_000),
+    });
+  } catch (err) {
+    return { parsed: null, usage: EMPTY_USAGE, error: `model call failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (!res.ok) return { parsed: null, usage: EMPTY_USAGE, error: `model HTTP ${res.status}` };
+  return parseReaderResponse(await res.json() as ModelResponse);
 }
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -289,21 +301,26 @@ export function reconcile(cands: GroundedEvent[]): GroundedEvent[] {
   return out;
 }
 
-/**
- * Read one article end to end. Long texts are read in ordered segments and the
- * results reconciled; nothing is concluded "absent" from a prefix.
- */
-export async function readArticle(input: { title: string; text: string; provider?: string | null; sourceType?: string; publishedAt?: string | null }): Promise<ReadOutcome> {
+type ReaderInput = { title: string; text: string; provider?: string | null; sourceType?: string; publishedAt?: string | null };
+
+/** The article normalised, and one user prompt per segment. */
+export function readerPrompts(input: ReaderInput): { text: string; prompts: string[] } {
   const text = input.text.replace(/\r/g, "").trim();
   const segments = segmentText(text);
-  const usageTotal: Reading["usage"] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 };
+  const prompts = segments.map((seg, i) =>
+    `Title: ${input.title}\nFeed: ${input.provider ?? "unknown"} (${input.sourceType ?? "unknown"})\nPublished: ${input.publishedAt ?? "unknown"}\n` +
+    (segments.length > 1 ? `Segment ${i + 1} of ${segments.length} — the article continues across segments; report only what THIS segment establishes.\n` : "") +
+    `\nArticle text:\n${seg}`);
+  return { text, prompts };
+}
+
+/** Combine the per-segment results (in order) into one grounded reading. */
+export function assembleReading(text: string, results: ModelResult[]): ReadOutcome {
+  const usageTotal: Reading["usage"] = { ...EMPTY_USAGE };
   let articleType: string | null = null, why: string | null = null, substantive = false;
   const candidates: GroundedEvent[] = [];
-  for (let i = 0; i < segments.length; i++) {
-    const header = `Title: ${input.title}\nFeed: ${input.provider ?? "unknown"} (${input.sourceType ?? "unknown"})\nPublished: ${input.publishedAt ?? "unknown"}\n` +
-      (segments.length > 1 ? `Segment ${i + 1} of ${segments.length} — the article continues across segments; report only what THIS segment establishes.\n` : "") +
-      `\nArticle text:\n${segments[i]}`;
-    const r = await callModel(header);
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
     for (const k of Object.keys(usageTotal) as (keyof Reading["usage"])[]) usageTotal[k] += r.usage[k];
     if (r.error || !r.parsed || typeof r.parsed !== "object") return { ok: false, error: r.error ?? "unreadable model output", usage: usageTotal };
     const p = r.parsed as Record<string, unknown>;
@@ -320,10 +337,25 @@ export async function readArticle(input: { title: string; text: string; provider
     ok: true,
     reading: {
       articleType: articleType ?? "OTHER", substantive: substantive || events.length > 0, events, why,
-      segments: segments.length, textChars: text.length, textHash: sha256(text),
+      segments: results.length, textChars: text.length, textHash: sha256(text),
       modelId: READER_MODEL, promptPolicyVersion: PROMPT_POLICY_VERSION, analysedAt: new Date().toISOString(), usage: usageTotal,
     },
   };
+}
+
+/**
+ * Read one article end to end. Long texts are read in ordered segments and the
+ * results reconciled; nothing is concluded "absent" from a prefix.
+ */
+export async function readArticle(input: ReaderInput): Promise<ReadOutcome> {
+  const { text, prompts } = readerPrompts(input);
+  const results: ModelResult[] = [];
+  for (const prompt of prompts) {
+    const r = await callModel(prompt);
+    results.push(r);
+    if (r.error || !r.parsed || typeof r.parsed !== "object") break;   // stop paying once a segment fails
+  }
+  return assembleReading(text, results);
 }
 
 // Buyer identity key: the buyer name's DISTINCTIVE tokens, sorted, so "UK Ministry of
