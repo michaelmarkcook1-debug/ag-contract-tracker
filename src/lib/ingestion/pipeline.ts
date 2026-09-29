@@ -494,7 +494,7 @@ export async function runPipeline(
         // One paid read per article content per policy: a second URL for text
         // already read is recorded against the first read, not read again.
         const textHash = crypto.createHash("sha256").update(text).digest("hex");
-        const prior = await findReadByContent(textHash);
+        const prior = await findReadByContent(textHash, article.title);
         if (prior) { contentDuplicates.push({ article, text, textHash, prior }); llmCalls--; continue; }
         const out = await readArticle({ title: article.title, text, provider: article.provider, sourceType: article.sourceType, publishedAt: article.publishedAt });
         addUsageTo(out.ok ? out.reading.usage : out.usage);

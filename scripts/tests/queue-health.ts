@@ -10,7 +10,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { runPipeline, prioritise, SCHEDULED_SWEEP } from "@/lib/ingestion/pipeline";
-import { storePending, storeDeferred, findReadByContent, storeDuplicateContent, isContractValue, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
+import { storePending, storeDeferred, findReadByContent, storeDuplicateContent, sameStoryHeadline, isContractValue, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
 import { PROMPT_POLICY_VERSION } from "@/lib/ingestion/reader";
 import type { RawArticle } from "@/lib/ingestion/crawler";
 
@@ -67,15 +67,32 @@ const art = (i: number, body: string | null = null): RawArticle => ({ title: `Qu
     console.log("\n=== one paid read per article content ===");
     const text = "Wipro wins a five-year contract from a Nordic retailer to run its cloud estate. ".repeat(4);
     const hash = crypto.createHash("sha256").update(text).digest("hex");
-    const orig = await prisma.sourceEvent.create({ data: { sourceUrl: `${P}-40`, sourceType: "wire_service", processingStatus: "extracted", extractedFamily: "READ", articleTextHash: hash, promptPolicyVersion: PROMPT_POLICY_VERSION, ingestionRunId: runId } });
+    const orig = await prisma.sourceEvent.create({ data: { sourceUrl: `${P}-40`, sourceTitle: "Wipro wins five-year cloud contract from Nordic retailer - Reuters", sourceType: "wire_service", processingStatus: "extracted", extractedFamily: "READ", articleTextHash: hash, promptPolicyVersion: PROMPT_POLICY_VERSION, ingestionRunId: runId } });
     const ev = await prisma.canonicalMarketEvent.create({ data: { family: "CONTRACT", eventType: "new_win", canonicalTitle: "queue test event", sourceEvents: { connect: { id: orig.id } } } });
-    const prior = await findReadByContent(hash);
-    ok("the earlier read is found by content hash", prior?.id === orig.id && prior.eventIds.includes(ev.id));
+    const prior = await findReadByContent(hash, "Wipro wins five-year cloud contract from Nordic retailer - Economic Times");
+    ok("the earlier read is found by content hash + same-story headline", prior?.id === orig.id && prior.eventIds.includes(ev.id));
+    ok("same text under a different story's headline is NOT treated as read (page chrome)",
+      (await findReadByContent(hash, "Capita announces collaboration with Snowflake to power its AI stack - Capita")) === null);
     await storeDuplicateContent(art(41, text), text, hash, prior!, runId);
     const linked = await prisma.canonicalMarketEvent.findUnique({ where: { id: ev.id }, select: { sourceEvents: { select: { sourceUrl: true } } } });
     ok("a second URL for the same text is attached, not re-read", (linked?.sourceEvents.length ?? 0) === 2, `${linked?.sourceEvents.length} sources`);
-    ok("a different policy is not treated as already read", (await findReadByContent(crypto.createHash("sha256").update(text + "x").digest("hex"))) === null);
+    ok("a different policy is not treated as already read", (await findReadByContent(crypto.createHash("sha256").update(text + "x").digest("hex"), "Wipro wins five-year cloud contract from Nordic retailer")) === null);
     await prisma.canonicalMarketEvent.delete({ where: { id: ev.id } });
+
+    console.log("\n=== identical text is not enough: headlines must match (real backlog cases) ===");
+    const same: [string, string][] = [
+      ["Stocks to Watch for September 10: Wipro, Coal India, ICICI Pru AMC, IRB Infra and more - CNBC TV18", "Stocks to Watch for September 10: Wipro, Coal India, IRB Infrastructure and more - CNBC TV18"],
+      ["OMP and PwC help process manufacturers to transition - Demócrata", "OMP and PwC help process manufacturers move from isolated planning to unified decisions - Demócrata"],
+      ["From exposed to empowered - Deloitte", "From exposed to empowered - deloitte.com"],
+    ];
+    const different: [string, string][] = [
+      ["IBM and Lockheed Martin Announce Swiss Quantum Innovation Hub at ETH Zurich - EEHerald", "Anderon, IBM's Quantum Wafer Foundry, Secures $1 Billion CHIPS Award - EEHerald"],
+      ["Cognizant’s AI deals gain scale, pointing to 2027-28 growth, says Citi - Moneycontrol.com", "Anthropic taps Accenture as first embedded evaluator in a push to ‘pace the frontier’ of AI - Moneycontrol.com"],
+      ["‘Urgent’ call to review KPMG’s secret AUKUS work - The Australian", "Morrison may walk away from Optus deal - The Australian"],
+      ["HCLTech launches Advanced Semiconductor Lab with Rs. 185 crore investment", "HCLTech launches dedicated unit to drive AI adoption for fast-scaling enterprises"],
+    ];
+    for (const [a, b] of same) ok(`same story: ${a.slice(0, 50)}…`, sameStoryHeadline(a, b));
+    for (const [a, b] of different) ok(`different story: ${b.slice(0, 50)}…`, !sameStoryHeadline(a, b));
   } finally {
     await prisma.sourceEvent.deleteMany({ where: { sourceUrl: { startsWith: P } } });
     await prisma.ingestionRun.deleteMany({ where: { runType: "queue_test" } });

@@ -182,12 +182,33 @@ export async function storeDeferred(articles: RawArticle[], runId: string): Prom
  * attached to whatever the first read produced — events as corroboration, or
  * the same exclusion reason.
  */
-export async function findReadByContent(textHash: string): Promise<{ id: string; processingStatus: string; exclusionReason: string | null; eventIds: string[] } | null> {
-  const prior = await prisma.sourceEvent.findFirst({
+export async function findReadByContent(textHash: string, title: string | null): Promise<{ id: string; processingStatus: string; exclusionReason: string | null; eventIds: string[] } | null> {
+  const priors = await prisma.sourceEvent.findMany({
     where: { articleTextHash: textHash, promptPolicyVersion: PROMPT_POLICY_VERSION, processingStatus: { in: ["extracted", "excluded"] } },
-    select: { id: true, processingStatus: true, exclusionReason: true, canonicalEvents: { select: { id: true } } },
+    select: { id: true, sourceTitle: true, processingStatus: true, exclusionReason: true, canonicalEvents: { select: { id: true } } },
+    take: 20,
   });
+  // Identical extracted text is often page chrome (a paywall, a chatbot panel,
+  // a newsroom shell) shared by different stories, so the text alone never
+  // decides it — the headline has to name the same story too.
+  const prior = priors.find(p => sameStoryHeadline(p.sourceTitle, title));
   return prior ? { id: prior.id, processingStatus: prior.processingStatus, exclusionReason: prior.exclusionReason, eventIds: prior.canonicalEvents.map(e => e.id) } : null;
+}
+
+const HEADLINE_STOPWORDS = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "by", "at", "as", "is", "its", "from", "new"]);
+function headlineTokens(title: string | null): Set<string> {
+  if (!title) return new Set();
+  const h = title.replace(/\s+[-–—|]\s+[^-–—|]{2,60}$/, "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ");
+  return new Set(h.split(/\s+/).filter(w => w.length > 1 && !HEADLINE_STOPWORDS.has(w)));
+}
+/** Two headlines name the same story: most of their content words are shared. */
+export function sameStoryHeadline(a: string | null, b: string | null): boolean {
+  const x = headlineTokens(a), y = headlineTokens(b);
+  // Short headlines carry too little to overlap on — they must match exactly.
+  if (x.size < 3 || y.size < 3) return x.size > 0 && x.size === y.size && [...x].every(w => y.has(w));
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return shared / Math.min(x.size, y.size) >= 0.6;
 }
 
 export async function storeDuplicateContent(article: RawArticle, text: string, textHash: string, prior: NonNullable<Awaited<ReturnType<typeof findReadByContent>>>, runId: string): Promise<void> {

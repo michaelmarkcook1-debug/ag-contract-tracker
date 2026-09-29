@@ -19,7 +19,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { retrieveArticle, readableArticleText } from "@/lib/ingestion/article-text";
-import { findReadByContent, storeDuplicateContent } from "@/lib/ingestion/store";
+import { findReadByContent, storeDuplicateContent, sameStoryHeadline } from "@/lib/ingestion/store";
 import type { RawArticle } from "@/lib/ingestion/crawler";
 
 process.on("unhandledRejection", e => console.error("unhandled (continuing):", String(e).slice(0, 160)));
@@ -162,37 +162,67 @@ async function stepFetch() {
  * matches the pipeline's own one-read-per-content guard.
  */
 async function stepContent() {
-  const rows = await prisma.$queryRawUnsafe<{ id: string; url: string; t: string | null; name: string | null; type: string; d: Date | null; pub: string | null; raw: string | null; c: Date }[]>(`
-    select id, "sourceUrl" url, "sourceTitle" t, "sourceName" name, "sourceType" type, "publicationDate" d, "publisherUrl" pub, "rawText" raw, "createdAt" c
-    from "SourceEvent" where ${PENDING} and "rawText" is not null`);
-  const byHash = new Map<string, typeof rows>();
+  // Paged: one query over every pending body is tens of MB and the Neon
+  // websocket drops it.
+  type Row = { id: string; url: string; t: string | null; name: string | null; type: string; d: Date | null; pub: string | null; raw: string | null; c: Date };
+  const rows: Row[] = [];
+  for (let after = ""; ;) {
+    const page = await prisma.$queryRawUnsafe<Row[]>(`
+      select id, "sourceUrl" url, "sourceTitle" t, "sourceName" name, "sourceType" type, "publicationDate" d, "publisherUrl" pub, "rawText" raw, "createdAt" c
+      from "SourceEvent" where ${PENDING} and "rawText" is not null and id > $1 order by id limit 250`, after);
+    if (page.length === 0) break;
+    rows.push(...page);
+    after = page[page.length - 1].id;
+  }
+  const byHash = new Map<string, Row[]>();
   for (const r of rows) {
     const text = readableArticleText(r.raw); if (!text) continue;
     const h = crypto.createHash("sha256").update(text).digest("hex");
     (byHash.get(h) ?? byHash.set(h, []).get(h)!).push(r);
   }
-  let attachedToRead = 0, collapsedWithin = 0;
+  // One batched lookup for which texts were already read; the full prior
+  // record is fetched only for those.
+  const seen = new Set<string>();
+  const hashes = [...byHash.keys()];
+  for (let i = 0; i < hashes.length; i += 500) {
+    const hit = await prisma.sourceEvent.findMany({
+      where: { articleTextHash: { in: hashes.slice(i, i + 500) }, processingStatus: { in: ["extracted", "excluded"] } },
+      select: { articleTextHash: true },
+    });
+    for (const r of hit) if (r.articleTextHash) seen.add(r.articleTextHash);
+  }
+  // Identical text is often page chrome (paywall, chatbot panel, newsroom
+  // shell) shared by different stories, so a copy only counts when its
+  // headline names the same story as the one it would be merged into.
+  let attachedToRead = 0, collapsedWithin = 0, boilerplateKept = 0;
+  // Attached rows point at a real run so the write is auditable (and the FK holds).
+  const runId = apply ? (await prisma.ingestionRun.create({ data: { runType: "backlog_prepare", status: "completed", completedAt: new Date() }, select: { id: true } })).id : "";
   for (const [h, g] of byHash) {
-    const prior = await findReadByContent(h);
-    if (prior) {
-      for (const r of g) {
-        attachedToRead++;
-        if (apply) {
-          const text = readableArticleText(r.raw)!;
-          const art: RawArticle = { title: r.t ?? "", url: r.url, publishedAt: r.d?.toISOString() ?? null, snippet: null, sourceId: "backlog", provider: r.name ?? "", sourceType: r.type, publisherUrl: r.pub, bodyText: r.raw };
-          await storeDuplicateContent(art, text, h, prior, "backlog-prepare").catch(e => console.error(`attach ${r.id}: ${String(e).slice(0, 100)}`));
-        }
+    const attached = new Set<string>();
+    for (const r of seen.has(h) ? g : []) {
+      const prior = await findReadByContent(h, r.t);
+      if (!prior) continue;
+      attached.add(r.id);
+      attachedToRead++;
+      if (apply) {
+        const text = readableArticleText(r.raw)!;
+        const art: RawArticle = { title: r.t ?? "", url: r.url, publishedAt: r.d?.toISOString() ?? null, snippet: null, sourceId: "backlog", provider: r.name ?? "", sourceType: r.type, publisherUrl: r.pub, bodyText: r.raw };
+        await storeDuplicateContent(art, text, h, prior, runId).catch(e => console.error(`attach ${r.id}: ${String(e).slice(-300)}`));
       }
-      continue;
     }
-    if (g.length < 2) continue;
-    const [keep, ...rest] = [...g].sort((a, b) => (b.pub ? 1 : 0) - (a.pub ? 1 : 0) || a.c.getTime() - b.c.getTime());
-    for (const r of rest) { collapsedWithin++; await exclude(r.id, `duplicate_content:${keep.id}`); }
+    const rest = g.filter(r => !attached.has(r.id));
+    if (rest.length < 2) continue;
+    const [keep, ...others] = [...rest].sort((a, b) => (b.pub ? 1 : 0) - (a.pub ? 1 : 0) || a.c.getTime() - b.c.getTime());
+    for (const r of others) {
+      if (!sameStoryHeadline(keep.t, r.t)) { boilerplateKept++; continue; }
+      collapsedWithin++;
+      await exclude(r.id, `duplicate_content:${keep.id}`);
+    }
   }
   const left = await prisma.sourceEvent.count({ where: { processingStatus: "pending" } });
-  console.log(`readable pending rows hashed: ${[...byHash.values()].reduce((n, g) => n + g.length, 0)} · copies of articles already read (attached): ${attachedToRead} · duplicate copies within the backlog: ${collapsedWithin}`);
+  console.log(`readable pending rows hashed: ${[...byHash.values()].reduce((n, g) => n + g.length, 0)} · copies of articles already read (attached): ${attachedToRead} · duplicate copies within the backlog: ${collapsedWithin} · same text, different story (kept): ${boilerplateKept}`);
   console.log(`pending ${apply ? "now" : "unchanged (dry run)"}: ${left}${apply ? "" : ` → would be ${left - attachedToRead - collapsedWithin}`}`);
-  report("content", { attachedToRead, collapsedWithin, pendingAfter: apply ? left : left - attachedToRead - collapsedWithin });
+  report("content", { attachedToRead, collapsedWithin, boilerplateKept, pendingAfter: apply ? left : left - attachedToRead - collapsedWithin });
 }
 
 (async () => {
