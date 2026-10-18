@@ -36,7 +36,7 @@ export default async function AdminPage() {
       } : null),
     }))(),
     // Review queue events
-    getEvents({ status: "needs_review", pageSize: 50 }),
+    getEvents({ status: "needs_review", pageSize: 1000 }),
     // Recent ingestion runs
     prisma.ingestionRun.findMany({ orderBy: { startedAt: "desc" }, take: 15 }),
     // Source health

@@ -9,6 +9,7 @@ function shapeEvent(e: {
   confidenceScore: number; commercialRelevanceScore: number; publicationStatus: string;
   analystInsight: string | null; originalArticleUrl: string | null;
   reviewReason?: string | null;
+  confidenceBasis?: string | null;
   primaryEntity: { canonicalName: string; slug: string } | null;
   contractDetails: {
     vendorRaw: string | null; vendor: { canonicalName: string } | null;
@@ -52,6 +53,7 @@ function shapeEvent(e: {
     commercialRelevanceScore: e.commercialRelevanceScore,
     publicationStatus: e.publicationStatus,
     reviewReason: e.reviewReason ?? null,
+    confidenceBasis: e.confidenceBasis ?? null,
     analystInsight: e.analystInsight,
     primaryEntityName: e.primaryEntity?.canonicalName ?? null,
     primaryEntitySlug: e.primaryEntity?.slug ?? null,
