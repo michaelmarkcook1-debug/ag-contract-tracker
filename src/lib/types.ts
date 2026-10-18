@@ -48,6 +48,8 @@ export interface EventSummary {
   publicationStatus: string;
   /** Why the event sits in needs_review (machine-readable); null once published. */
   reviewReason?: string | null;
+  /** ANNOUNCED | COMPLETED | TERMINATED | DISPUTED | … — terminated/disputed are not won business. */
+  eventStatus?: string | null;
   /** "measured" when confidenceScore was computed; otherwise it carries no information. */
   confidenceBasis?: string | null;
   primaryEntityName: string | null;

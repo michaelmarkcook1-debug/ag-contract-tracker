@@ -1,3 +1,4 @@
+import { adminDenied } from "@/lib/admin-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
@@ -10,6 +11,8 @@ type Action = "approve" | "reject" | "undo";
 // reviewer moved (published/excluded) to the queue. Every change is logged to
 // ReviewAction exactly like the single-event PATCH.
 export async function POST(req: NextRequest) {
+  const denied = adminDenied(req);
+  if (denied) return denied;
   const body = await req.json().catch(() => ({})) as { ids?: unknown; action?: unknown; note?: unknown };
   const action: Action | null = body.action === "approve" || body.action === "reject" || body.action === "undo" ? body.action : null;
   const ids = Array.isArray(body.ids) ? [...new Set(body.ids.filter((x): x is string => typeof x === "string"))] : [];

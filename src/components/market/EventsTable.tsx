@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { displayTitle, EventSummary, EventFilters, EventsResponse, MarketEventFamily, FAMILY_LABELS, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS, FINANCIAL_EVENT_TYPE_LABELS } from "@/lib/types";
-import { FamilyBadge } from "./FamilyBadge";
+import { FamilyBadge, EventStatusBadge } from "./FamilyBadge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
       {/* Meta badges */}
       <div className="flex flex-wrap gap-2">
         <FamilyBadge family={event.family} />
+        <EventStatusBadge status={event.eventStatus} className="text-xs" />
         {event.industry && (
           <Badge variant="outline" className="text-xs border-border/60 gap-1">
             <Briefcase className="h-3 w-3" /> {event.industry}
@@ -533,13 +534,14 @@ export function EventsTable() {
             data.events.map((event) => (
               <button key={event.id} className="w-full text-left group" onClick={() => setSelected(event)}>
                 <div className="flex items-start gap-3 md:gap-4 px-3 md:px-4 py-3 rounded-xl border border-border/30 md:border-transparent hover:border-border/60 hover:bg-foreground/[0.02] transition-all">
-                  <div className="pt-0.5 shrink-0 hidden md:block">
+                  <div className="pt-0.5 shrink-0 hidden md:flex flex-col items-start gap-1">
                     <FamilyBadge family={event.family} className="text-[10px]" />
+                    <EventStatusBadge status={event.eventStatus} />
                   </div>
 
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center justify-between gap-2 md:hidden">
-                      <FamilyBadge family={event.family} className="text-[10px]" />
+                      <span className="flex items-center gap-1.5"><FamilyBadge family={event.family} className="text-[10px]" /><EventStatusBadge status={event.eventStatus} /></span>
                       <EventValueCell event={event} />
                     </div>
                     <h3 className="text-sm font-medium leading-snug line-clamp-2 md:line-clamp-1 group-hover:text-foreground transition-colors">

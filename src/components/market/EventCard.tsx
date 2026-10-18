@@ -1,7 +1,7 @@
 "use client";
 
 import { displayTitle, EventSummary, formatTcv, formatTcvDisplay, tcvEstimateTitle, formatDate, CONTRACT_EVENT_TYPE_LABELS, MA_EVENT_TYPE_LABELS, ORG_EVENT_TYPE_LABELS } from "@/lib/types";
-import { FamilyBadge } from "./FamilyBadge";
+import { FamilyBadge, EventStatusBadge } from "./FamilyBadge";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Building2, Calendar, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -112,6 +112,7 @@ export function EventCard({ event, className }: EventCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <FamilyBadge family={event.family} />
+            <EventStatusBadge status={event.eventStatus} />
             {event.industry && (
               <span className="text-xs text-muted-foreground flex items-center gap-1">
                 <Building2 className="h-3 w-3" />

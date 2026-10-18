@@ -8,6 +8,9 @@ import { getTrackedEntityIds, trackedEventScope } from "@/lib/data";
 // extraction model's labelled range — tcv/infer.ts). Older single-number guesses
 // carry other bases and stay out. Every KPI that sums or averages uses this, and
 // reports how many values are disclosed vs estimated.
+/** Prisma filter: not a terminated or disputed contract (see `won` below). */
+const WON_ONLY = { OR: [{ eventStatus: null }, { eventStatus: { notIn: ["TERMINATED", "DISPUTED", "terminated", "disputed"] } }] };
+
 const TCV = Prisma.raw(`COALESCE(cd."tcvCommittedUsd", CASE WHEN cd."tcvIsEstimate" AND (cd."tcvBasis" LIKE 'value_engine_v%' OR cd."tcvBasis" LIKE 'third_party_estimated:%' OR cd."tcvBasis" LIKE 'comparable_inferred_v%' OR cd."tcvBasis" LIKE 'model_estimated_v2%') THEN cd."tcvEstimateMidUsd" END)`);
 
 export interface AnalyticsData {
@@ -107,7 +110,10 @@ export async function GET() {
   // (GlobalData imports for untracked vendors) while the deal count read only
   // tracked ones, giving a "149% of deals valued" KPI.
   const ids = await getTrackedEntityIds();
-  const inScope = Prisma.sql`(cme."primaryEntityId" = ANY(${ids}) OR cd."vendorId" = ANY(${ids}))`;
+  // Terminated and disputed contracts are published as events but are not
+  // won business: they never count towards deal numbers or contract value.
+  const won = Prisma.sql`upper(coalesce(cme."eventStatus", '')) NOT IN ('TERMINATED', 'DISPUTED')`;
+  const inScope = Prisma.sql`(cme."primaryEntityId" = ANY(${ids}) OR cd."vendorId" = ANY(${ids})) AND ${won}`;
   const [
     totalDeals,
     byYearRaw, topVendorsByTcvRaw, topVendorsByDealsRaw,
@@ -115,7 +121,7 @@ export async function GET() {
     monthlyRaw, tcvSummary, topGeographies,
   ] = await Promise.all([
     // Total deals
-    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", ...scope } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", ...scope, AND: [WON_ONLY] } }),
     // By year
     prisma.$queryRaw<{ yr: string; deals: bigint; tcv: number; avgtcv: number }[]>`
       SELECT TO_CHAR(cme."announcementDate", 'YYYY') yr,
@@ -135,7 +141,7 @@ export async function GET() {
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL AND e.id = ANY(${ids})
+      WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL AND e.id = ANY(${ids}) AND ${won}
         AND ${TCV} < 10000000000
       GROUP BY e.id ORDER BY tcv DESC LIMIT 20
     `,
@@ -146,7 +152,7 @@ export async function GET() {
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published' AND e.id = ANY(${ids})
+      WHERE cme."publicationStatus"='published' AND e.id = ANY(${ids}) AND ${won}
       GROUP BY e.id ORDER BY deals DESC LIMIT 20
     `,
     // Service lines

@@ -14,8 +14,12 @@ export const MIN_CONFIDENCE = 0.4;
 /** Families whose event is meaningless without a named counterparty. */
 export const COUNTERPARTY_FAMILIES = new Set(["CONTRACT", "M_AND_A", "PARTNERSHIP"]);
 
-/** Event statuses the store may publish. */
-const PUBLISHABLE_STATUS = new Set(["announced", "completed"]);
+/**
+ * Event statuses the store may publish. Terminated and disputed events publish
+ * as what they are (eventStatus is stored and shown); analytics exclude them
+ * from deal counts and contract value, so they never read as won business.
+ */
+const PUBLISHABLE_STATUS = new Set(["announced", "completed", "terminated", "disputed"]);
 
 export interface GateDecision {
   status: "published" | "needs_review";
@@ -36,9 +40,6 @@ export function decidePublication(result: ExtractionResult, vendorId: string | n
   const status = result.eventStatus ?? "none";
   if (status === "opportunity") {
     reasons.push(result.family === "CONTRACT" ? "opportunity_not_award" : "opportunity_not_event");
-  } else if (status === "terminated" || status === "disputed") {
-    // A loss to a named competitor is an event (incumbent_displacement); other endings and disputes are for a person.
-    if (!(result.family === "CONTRACT" && result.eventType === "incumbent_displacement")) reasons.push(`contract_${status}`);
   } else if (!PUBLISHABLE_STATUS.has(status)) {
     reasons.push("no_event_status");
   }

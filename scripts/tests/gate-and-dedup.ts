@@ -29,8 +29,9 @@ ok("no counterparty → review", decidePublication(res({ eventStatus: "announced
 ok("invalid event type → review", decidePublication(res({ eventStatus: "announced", eventType: "technology_alliance", eventTypeValid: false }), "e").reason?.startsWith("event_type_invalid:technology_alliance") === true);
 ok("rule-based extraction → review", decidePublication(res({ eventStatus: "announced", extractionMethod: "rule_fallback" }), "e").reason === "rule_based_extraction");
 ok("tender → review", decidePublication(res({ eventStatus: "opportunity" }), "e").reason === "opportunity_not_award");
-ok("terminated contract → review", decidePublication(res({ eventStatus: "terminated" }), "e").reason === "contract_terminated");
-ok("disputed contract → review", decidePublication(res({ eventStatus: "disputed" }), "e").reason === "contract_disputed");
+ok("terminated contract publishes (labelled; excluded from deal value)", decidePublication(res({ eventStatus: "terminated" }), "e").status === "published");
+ok("disputed contract publishes (labelled; excluded from deal value)", decidePublication(res({ eventStatus: "disputed" }), "e").status === "published");
+ok("terminated contract with no vendor still goes to review", decidePublication(res({ eventStatus: "terminated" }), null).reason?.includes("vendor_unresolved") === true);
 ok("loss to a named competitor publishes as displacement", decidePublication(res({ eventStatus: "terminated", eventType: "incumbent_displacement" }), "e").status === "published");
 ok("no status → review", decidePublication(res({ eventStatus: null }), "e").reason === "no_event_status");
 ok("very low confidence → review", decidePublication(res({ eventStatus: "announced", confidenceScore: 0.3 }), "e").reason === "low_confidence:0.30");

@@ -1,3 +1,4 @@
+import { adminDenied } from "@/lib/admin-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
@@ -6,6 +7,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const denied = adminDenied(req);
+  if (denied) return denied;
   const { id } = await params;
   const body = await req.json().catch(() => ({})) as {
     action: "approve" | "reject" | "set_title";

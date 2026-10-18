@@ -1,3 +1,4 @@
+import { adminDenied } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { MODEL_TIERS, MODEL_PRICING, costOf } from "@/lib/ingestion/classifier";
@@ -10,7 +11,9 @@ const FALLBACK_TRIAGE = { input: 800, output: 150 };
 const FALLBACK_ANALYSIS = { input: 1100, output: 700 };
 
 // GET /api/costs — model tiers, historical spend, and a per-run estimate.
-export async function GET() {
+export async function GET(req: Request) {
+  const denied = adminDenied(req);
+  if (denied) return denied;
   const [runs, totals] = await Promise.all([
     prisma.ingestionRun.findMany({
       where: { costUsd: { gt: 0 } },

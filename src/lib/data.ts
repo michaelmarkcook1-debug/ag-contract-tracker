@@ -10,6 +10,7 @@ function shapeEvent(e: {
   analystInsight: string | null; originalArticleUrl: string | null;
   reviewReason?: string | null;
   confidenceBasis?: string | null;
+  eventStatus?: string | null;
   primaryEntity: { canonicalName: string; slug: string } | null;
   contractDetails: {
     vendorRaw: string | null; vendor: { canonicalName: string } | null;
@@ -54,6 +55,7 @@ function shapeEvent(e: {
     publicationStatus: e.publicationStatus,
     reviewReason: e.reviewReason ?? null,
     confidenceBasis: e.confidenceBasis ?? null,
+    eventStatus: e.eventStatus ?? null,
     analystInsight: e.analystInsight,
     primaryEntityName: e.primaryEntity?.canonicalName ?? null,
     primaryEntitySlug: e.primaryEntity?.slug ?? null,
@@ -300,7 +302,8 @@ export async function getVendorProfile(slug: string): Promise<VendorProfile | nu
   const [familyCounts, disclosed] = await Promise.all([
     prisma.canonicalMarketEvent.groupBy({ by: ["family"], where: published, _count: { id: true } }),
     prisma.contractDetails.aggregate({
-      where: { canonicalEvent: { ...published, family: "CONTRACT" }, tcvCommittedUsd: { gt: 0 } },
+      // Terminated or disputed contracts are not won value.
+      where: { canonicalEvent: { ...published, family: "CONTRACT", OR: [{ eventStatus: null }, { eventStatus: { notIn: ["TERMINATED", "DISPUTED", "terminated", "disputed"] } }] }, tcvCommittedUsd: { gt: 0 } },
       _sum: { tcvCommittedUsd: true },
       _count: { id: true },
     }),
