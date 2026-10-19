@@ -215,14 +215,19 @@ keepId: if SAME, the id of the record to KEEP (higher confidence, more complete 
 // ── Apply decisions ───────────────────────────────────────────────────────────
 async function applyDecisions(decisions: PairDecision[]): Promise<number> {
   const same = decisions.filter(d => d.verdict === "SAME" && d.confidence >= 0.80 && d.keepId);
-  const excludeIds = same.map(d => (d.keepId === d.eventAId ? d.eventBId : d.eventAId));
-  const unique = [...new Set(excludeIds)];
-  if (unique.length === 0) return 0;
-  await prisma.canonicalMarketEvent.updateMany({
-    where: { id: { in: unique }, publicationStatus: { not: "excluded_noise" } },
-    data: { publicationStatus: "excluded_noise", humanReviewRequired: false },
-  });
-  return unique.length;
+  // Loser -> the copy it duplicates. Every exclusion records why, so it can be audited and reversed.
+  const losers = new Map<string, string>();
+  for (const d of same) losers.set(d.keepId === d.eventAId ? d.eventBId : d.eventAId, d.keepId!);
+  if (losers.size === 0) return 0;
+  let n = 0;
+  for (const [id, keepId] of losers) {
+    const r = await prisma.canonicalMarketEvent.updateMany({
+      where: { id, publicationStatus: { not: "excluded_noise" } },
+      data: { publicationStatus: "excluded_noise", humanReviewRequired: false, reviewReason: `duplicate_of:${keepId}` },
+    });
+    n += r.count;
+  }
+  return n;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────

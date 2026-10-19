@@ -280,12 +280,11 @@ async function main() {
         stats.errors++;
       } else if (decision.excludeIds.length > 0) {
         stats.clustersWithDupes++;
-        // Exclude duplicates
-        for (let i = 0; i < decision.excludeIds.length; i += 200) {
-          const batch = decision.excludeIds.slice(i, i + 200);
+        // Exclude duplicates, each stamped with the id of the copy kept, so the exclusion is auditable and reversible.
+        for (const id of decision.excludeIds) {
           const result = await prisma.canonicalMarketEvent.updateMany({
-            where: { id: { in: batch }, publicationStatus: "published" },
-            data: { publicationStatus: "excluded_noise", humanReviewRequired: false },
+            where: { id, publicationStatus: "published" },
+            data: { publicationStatus: "excluded_noise", humanReviewRequired: false, reviewReason: `duplicate_of:${decision.keepId}` },
           });
           stats.excluded += result.count;
         }

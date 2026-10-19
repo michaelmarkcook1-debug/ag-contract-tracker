@@ -73,8 +73,9 @@ async function main() {
   console.log(`queue after: ${rows.length - losers.size}`);
   if (!apply) { console.log("\n(dry run — re-run with --apply)"); await prisma.$disconnect(); return; }
   const ids = [...losers.keys()];
-  for (let i = 0; i < ids.length; i += 200)
-    await prisma.canonicalMarketEvent.updateMany({ where: { id: { in: ids.slice(i, i+200) } }, data: { publicationStatus: "excluded_noise", humanReviewRequired: false } });
+  // Every loser carries the id of the copy it duplicates, so the exclusion is auditable and reversible.
+  for (const id of ids)
+    await prisma.canonicalMarketEvent.update({ where: { id }, data: { publicationStatus: "excluded_noise", humanReviewRequired: false, reviewReason: `duplicate_of:${losers.get(id)}` } });
   console.log(`\n✓ collapsed ${ids.length} semantic duplicates`);
   await prisma.$disconnect();
 }
