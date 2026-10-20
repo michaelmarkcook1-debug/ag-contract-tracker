@@ -47,7 +47,7 @@ const LENGTH_MAP: Record<string, number> = { "one": 12, "two": 24, "three": 36, 
 // triage, which is where the saving comes from.
 export const MODEL_TIERS = {
   /** Cheap classifier: family, vendor, in/out of scope. Small max_tokens. */
-  triage: "claude-haiku-4-5",
+  triage: "claude-haiku-5-5",
   /** Deeper reasoning for scope interpretation and competitive analyst insight. */
   analysis: "claude-sonnet-5",
 } as const;
@@ -65,6 +65,11 @@ export const MODEL_TIERS = {
  * because spend is billed from the API's reported usage, not an estimate.
  */
 export const MODEL_PRICING: Record<string, { inputPerM: number; outputPerM: number }> = {
+  // Claude 5.5 rows verified against platform.claude.com/docs/en/about-claude/pricing on 2026-10-20. Haiku 5.5 is priced by
+  // prompt length: $0.10/$0.50 up to 100,000 prompt tokens, $0.50/$2.50 above; triage prompts are far below the threshold.
+  "claude-haiku-5-5": { inputPerM: 0.10, outputPerM: 0.50 },
+  "claude-sonnet-5-5": { inputPerM: 2.0, outputPerM: 10.0 },
+  "claude-opus-5-5": { inputPerM: 4.0, outputPerM: 20.0 },
   "claude-haiku-4-5": { inputPerM: 1.0, outputPerM: 5.0 },
   "claude-sonnet-5": { inputPerM: 2.0, outputPerM: 10.0 },
   "claude-sonnet-4-6": { inputPerM: 3.0, outputPerM: 15.0 },
