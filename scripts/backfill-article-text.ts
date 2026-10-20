@@ -27,22 +27,24 @@ async function main() {
     const ents = await prisma.entity.findMany({ where: { slug: { in: vendors } }, select: { id: true } });
     where.primaryEntityId = { in: ents.map((e: any) => e.id) };
   }
-  const evs = await prisma.canonicalMarketEvent.findMany({ where, select: { id: true, announcementDate: true, sourceEvents: { select: { id: true, sourceUrl: true, rawText: true, readAttempts: true } } } });
+  const evs = await prisma.canonicalMarketEvent.findMany({ where, orderBy: { announcementDate: "desc" }, select: { id: true, announcementDate: true, sourceEvents: { select: { id: true, sourceUrl: true, rawText: true, readAttempts: true } } } });
   // One source row per event to fetch: the first without readable text that has not exhausted its attempts.
   const todo: { eventId: string; sourceId: string; url: string; attempts: number }[] = [];
-  let withText = 0, exhausted = 0;
+  let withText = 0, exhausted = 0, notPages = 0;
   for (const e of evs as any[]) {
     if (e.sourceEvents.some((s: any) => readableArticleText(s.rawText, 300, 50))) { withText++; continue; }
-    const s = e.sourceEvents.find((s: any) => (s.readAttempts ?? 0) < maxAttempts);
+    // Procurement records carry a feed key (AU_AusTender, US_USAspending, EU_TED ...) as their source, not a page: nothing to fetch.
+    const pages = e.sourceEvents.filter((s: any) => /^https?:\/\//i.test(s.sourceUrl));
+    if (!pages.length) { notPages++; continue; }
+    const s = pages.find((s: any) => (s.readAttempts ?? 0) < maxAttempts);
     if (!s) { exhausted++; continue; }
     todo.push({ eventId: e.id, sourceId: s.id, url: s.sourceUrl, attempts: s.readAttempts ?? 0 });
   }
-  todo.sort(() => 0); // keep database order; newest first would need announcementDate, which is fine either way
   const work = todo.slice(0, Number.isFinite(limit) ? limit : todo.length);
-  console.log(`published events ${evs.length}: with text ${withText}, to fetch ${todo.length} (attempts exhausted ${exhausted}); this run ${work.length}`);
+  console.log(`published events ${evs.length}: with text ${withText}, not a page (procurement records) ${notPages}, to fetch ${todo.length} newest first (attempts exhausted ${exhausted}); this run ${work.length}`);
   if (!apply) { console.log("(dry run — re-run with --apply)"); await prisma.$disconnect(); return; }
 
-  let i = 0, ok = 0, resolvedNoText = 0, failed = 0; const t0 = Date.now(); const hosts = new Map<string, number>();
+  let i = 0, ok = 0, resolvedNoText = 0, failed = 0; const t0 = Date.now(); const hosts = new Map<string, number>(); const noTextHosts = new Map<string, number>();
   const worker = async () => {
     while (i < work.length) {
       const w = work[i++];
@@ -54,7 +56,7 @@ async function main() {
         hosts.set(host, (hosts.get(host) ?? 0) + 1);
         await prisma.sourceEvent.update({ where: { id: w.sourceId }, data: { rawText: out.article!.text.slice(0, 60_000), publisherUrl: out.publisherUrl ?? undefined, readAttempts: w.attempts + 1 } });
       } else {
-        if (out.publisherUrl) resolvedNoText++; else failed++;
+        if (out.publisherUrl) { resolvedNoText++; try { const h = new URL(out.publisherUrl).hostname.replace(/^www\./, ""); noTextHosts.set(h, (noTextHosts.get(h) ?? 0) + 1); } catch {} } else failed++;
         await prisma.sourceEvent.update({ where: { id: w.sourceId }, data: { publisherUrl: out.publisherUrl ?? undefined, readAttempts: w.attempts + 1 } });
       }
       if ((ok + resolvedNoText + failed) % 100 === 0) console.log(`  ${ok + resolvedNoText + failed}/${work.length}: text ${ok}, resolved-no-text ${resolvedNoText}, unresolved ${failed}, ${Math.round((Date.now() - t0) / 1000)}s`);
@@ -64,6 +66,7 @@ async function main() {
   await Promise.all(Array.from({ length: concurrency }, worker));
   console.log(`✓ done: text stored for ${ok}, resolved but no text ${resolvedNoText}, unresolved ${failed}, ${Math.round((Date.now() - t0) / 1000)}s`);
   console.log("top publishers:", [...hosts].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([h, n]) => `${h} ${n}`).join(", "));
+  console.log("resolved but unreadable, by host:", [...noTextHosts].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([h, n]) => `${h} ${n}`).join(", "));
   await prisma.$disconnect();
 }
 main().catch((e) => { console.error(e.message); process.exit(1); });
