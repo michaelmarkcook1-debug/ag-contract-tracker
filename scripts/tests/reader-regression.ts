@@ -31,7 +31,7 @@ const idA = canonicalContractEventId("Serco", "UK Ministry of Defence", null, "N
 ok("identity is deterministic, URL-free and name-variant tolerant", idA === canonicalContractEventId("Serco", "Ministry of Defence (UK)", null, "NEW_WIN", new Date("2026-09-20")) && idA === canonicalContractEventId("Serco", "the Ministry of Defence", null, "NEW_WIN", new Date("2026-09-09")), idA);
 ok("buyer key ignores generic words", buyerKey("Danske Bank A/S", null) === "danske" && buyerKey("UK Ministry of Justice", null) !== buyerKey("UK Ministry of Defence", null));
 ok("a renewal is not the same identity as the new win", idA !== canonicalContractEventId("Serco", "UK Ministry of Defence", null, "RENEWAL", new Date("2026-09-02")));
-ok("policy version and model are recorded constants", PROMPT_POLICY_VERSION.startsWith("reader/") && READER_MODEL === "claude-sonnet-5");
+ok("policy version and model are recorded constants", PROMPT_POLICY_VERSION.startsWith("reader/") && READER_MODEL === "claude-sonnet-5-5");
 
 if (process.argv.includes("--unit-only") || !process.env.ANTHROPIC_API_KEY) { console.log(`\n${pass} passed, ${fail} failed (semantic cases skipped)`); process.exit(fail ? 1 : 0); }
 

@@ -16,7 +16,7 @@ import { readArticle, READER_MODEL, PROMPT_POLICY_VERSION, type Reading, type Gr
 import { matchTrackedVendorPreferring } from "@/lib/ingestion/sources";
 import { orgsMatch } from "@/lib/ingestion/dedup";
 
-const JUDGE_MODEL = "claude-opus-5";
+const JUDGE_MODEL = "claude-opus-5-5";
 const JUDGE_VERSION = "judge/1.0.0-2026-09-08";
 const MAX_CHARS = 60_000;
 

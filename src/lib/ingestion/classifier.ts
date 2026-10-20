@@ -49,7 +49,7 @@ export const MODEL_TIERS = {
   /** Cheap classifier: family, vendor, in/out of scope. Small max_tokens. */
   triage: "claude-haiku-5-5",
   /** Deeper reasoning for scope interpretation and competitive analyst insight. */
-  analysis: "claude-sonnet-5",
+  analysis: "claude-sonnet-5-5",
 } as const;
 
 /**

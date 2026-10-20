@@ -14,9 +14,11 @@
 import crypto from "crypto";
 import { TRACKED_VENDORS, matchTrackedVendorPreferring } from "./sources";
 
-export const READER_MODEL = "claude-sonnet-5";
+export const READER_MODEL = "claude-sonnet-5-5";
 /** Bump when the reading rules or schema change — recorded on every result (§23). */
-export const PROMPT_POLICY_VERSION = "reader/2.2.0-2026-09-08";
+// 2.3.0: reader model moved from Sonnet 5 to Sonnet 5.5 (2026-10-20); rules and schema unchanged. A new version so results
+// read under the new model are never treated as the same read as the old ones.
+export const PROMPT_POLICY_VERSION = "reader/2.3.0-2026-10-20";
 
 /** Output allowance for one reader call. Scales with the number of events an
  *  article reports, not its length — see callModel. */

@@ -31,7 +31,7 @@ import { trackedEventScope } from "../src/lib/data";
 import { inferTcv, clampEstimate, loadComparablePools, isApprovedEstimateBasis, MODEL_ESTIMATE_BASIS } from "../src/lib/tcv/infer";
 
 const CACHE_PATH = process.env.TCV_CACHE ?? "/tmp/tcv-estimates.json";
-const MODEL = "claude-sonnet-5";
+const MODEL = "claude-sonnet-5-5";
 const SYSTEM = `You estimate the total contract value (TCV, USD) of IT-services contracts from their description, for a market-intelligence platform. The value was not disclosed; give a plausible range — typically a 2–4x band — from scope, term, client size, geography, service line and comparable deals you know of. Return JSON only: {"lowUsd": number, "highUsd": number, "rationale": "≤25 words"}. If the text cannot support any estimate, return {"lowUsd": null, "highUsd": null, "rationale": "why"}.`;
 const NOT_CONTRACT = /not (?:a |an )?(?:client |services |commercial |it[- ]services |formal |traditional )?(?:contract|deal|award|engagement)|award announcement|analyst[- ]?(?:recognition|award|ranking|report)|recognition|research|report announcement|(?:program|product|platform|service|offering) launch|launch announcement|exhibit|employer|joint venture|preliminary|discussion|sponsorship|marketing|thought leadership/i;
 const money = (n: number) => n >= 1e9 ? `$${(n / 1e9).toFixed(2)}bn` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}m` : `$${(n / 1e3).toFixed(0)}k`;
