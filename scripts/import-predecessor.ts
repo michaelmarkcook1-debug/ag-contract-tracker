@@ -11,6 +11,8 @@ import crypto from "crypto";
 import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { extractArticle, ruleBasedExtract } from "../src/lib/ingestion/classifier";
+import { sourceSupportsEvent } from "../src/lib/event-identity";
+import { resolveTransaction } from "../src/lib/ingestion/transaction-resolution";
 import type { RawArticle } from "../src/lib/ingestion/crawler";
 
 const PRED_PATH = "/Users/michaelcook/Documents/Dev Projects/byson/b-yson-training-nextjs-branded/data/contracts.json";
@@ -88,7 +90,7 @@ async function main() {
     data: { runType: "predecessor_import", sourceFilter: "predecessor" },
   });
 
-  const stats = { processed: 0, published: 0, queued: 0, excluded: 0, errors: 0 };
+  const stats = { processed: 0, published: 0, queued: 0, excluded: 0, duplicates: 0, errors: 0 };
   const CONCURRENCY = 10;        // parallel LLM workers
   const PROGRESS_EVERY = 50;
   const startTime = Date.now();
@@ -118,11 +120,13 @@ async function main() {
 
       if (result.family === "EXCLUDED") { stats.excluded++; return; }
 
-      const isHighConfidence = result.confidenceScore >= 0.72 && result.extractionMethod === "llm";
-      const publicationStatus = isHighConfidence ? "published" : "needs_review";
       const vendorId = await resolveVendorId(result.vendorRaw);
-
-      await prisma.$transaction(async (tx) => {
+      const supported = sourceSupportsEvent({
+        sourceTitle: article.title, sourceUrl, sourceType: article.sourceType, rawText: c.body || article.snippet,
+      }, { family: result.family, referenceTitle: result.canonicalTitle, providerName: result.vendorRaw,
+        counterpartyNames: [result.clientRaw], articleType: result.articleType });
+      const highConfidence = !!vendorId && supported && result.confidenceScore >= 0.72 && result.extractionMethod === "llm";
+      const outcome = await prisma.$transaction(async (tx) => {
         const sourceEvent = await tx.sourceEvent.create({
           data: {
             sourceUrl,
@@ -139,6 +143,13 @@ async function main() {
           },
         });
 
+        const match = supported && result.family === "M_AND_A" ? await resolveTransaction(tx, {
+          family: result.family, canonicalTitle: result.canonicalTitle, provider: result.vendorRaw, target: result.clientRaw,
+          announcementDate: article.publishedAt, eventType: result.eventType, eventStatus: result.eventStatus,
+        }, vendorId, sourceEvent.id) : "none";
+        if (match === "attached") return "duplicate";
+        const publicationStatus = highConfidence && match !== "ambiguous" ? "published" : "needs_review";
+        const reviewReason = !supported ? "event_source_mismatch" : match === "ambiguous" ? "possible_duplicate" : null;
         const event = await tx.canonicalMarketEvent.create({
           data: {
             family: result.family,
@@ -152,7 +163,7 @@ async function main() {
             confidenceScore: result.confidenceScore,
             commercialRelevanceScore: result.tcvUsd ? Math.min(0.95, 0.6 + result.confidenceScore * 0.35) : result.confidenceScore * 0.8,
             humanReviewRequired: publicationStatus === "needs_review",
-            publicationStatus,
+            publicationStatus, reviewReason, counterpartyRaw: result.clientRaw,
             analystInsight: result.analystInsight,
             originalArticleUrl: sourceUrl,
             primaryEntityId: vendorId,
@@ -184,9 +195,11 @@ async function main() {
             },
           });
         }
+        return publicationStatus;
       });
 
-      if (publicationStatus === "published") stats.published++; else stats.queued++;
+      if (outcome === "duplicate") stats.duplicates++;
+      else if (outcome === "published") stats.published++; else stats.queued++;
     } catch (err) {
       stats.errors++;
       if (stats.errors <= 5) console.error(`  Error on ${c.id}:`, (err as Error).message);
@@ -242,6 +255,7 @@ async function main() {
   console.log(`\n${"=".repeat(50)}`);
   console.log(`Import complete in ${totalMin} min:`);
   console.log(`  Processed:    ${stats.processed.toLocaleString()}`);
+  console.log(`  Merged evidence: ${stats.duplicates.toLocaleString()}`);
   console.log(`  Published:    ${stats.published.toLocaleString()}`);
   console.log(`  Queued:       ${stats.queued.toLocaleString()}`);
   console.log(`  Excluded:     ${stats.excluded.toLocaleString()}`);

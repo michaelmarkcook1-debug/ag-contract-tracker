@@ -598,17 +598,15 @@ export const PROCUREMENT_SOURCES: SourceDefinition[] = [
   }] as SourceDefinition[] : []),
 ];
 
-// Order matters: the pipeline crawls in this sequence and may be cut short by
-// the serverless time budget. Put the highest-yield, most-reliable sources
-// FIRST (Google News covers every tracked vendor and rarely fails), so a short
-// run still returns real data. The fragile direct vendor/IR feeds go last.
+// Start with provider-owned releases and IR sources. Keep aggregators for
+// gap-filling and preserve all registered discovery sources.
 export const ALL_SOURCES: SourceDefinition[] = [
-  ...GOOGLE_NEWS_SOURCES,
-  ...BUYER_SIDE_SOURCES,
-  ...WIRE_SOURCES,
-  ...PROCUREMENT_SOURCES,
   ...VENDOR_RSS_SOURCES,
   ...INVESTOR_RELATIONS_SOURCES,
+  ...BUYER_SIDE_SOURCES,
+  ...PROCUREMENT_SOURCES,
+  ...WIRE_SOURCES,
+  ...GOOGLE_NEWS_SOURCES,
 ];
 
 // ── Relevance filter ────────────────────────────────────────────────────────

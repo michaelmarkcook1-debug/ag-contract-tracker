@@ -42,10 +42,10 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
           {stats.needsReviewCount > 0 && (
-            <Link href="/admin" className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
+            <a href="/admin" className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
               <Activity className="h-3 w-3" />
               {stats.needsReviewCount} pending review
-            </Link>
+            </a>
           )}
           <Link href="/events" className="flex items-center gap-1.5 text-xs bg-foreground/[0.06] hover:bg-foreground/[0.1] px-3 py-1.5 rounded-full transition-colors font-medium">
             Open Tracker

@@ -286,8 +286,17 @@ const normOrg = (s: string | null) => (s ?? "").toLowerCase().replace(/[^a-z0-9 
 export function reconcile(cands: GroundedEvent[]): GroundedEvent[] {
   const out: GroundedEvent[] = [];
   for (const c of cands) {
+    // Overlapping segments can repeat an identical observation. Party and
+    // family alone cannot reconcile different tranches or transaction stages.
+    if (c.family !== "CONTRACT") {
+      if (!out.some(o => o.family === c.family && JSON.stringify(o) === JSON.stringify(c))) out.push(c);
+      continue;
+    }
     const twin = out.find(o => o.family === c.family && (o.provider ?? "") === (c.provider ?? "")
-      && (normOrg(o.buyer) === normOrg(c.buyer) || (!o.buyer && !c.buyer && normOrg(o.buyerDescriptor) === normOrg(c.buyerDescriptor)))
+      && (o.buyer && c.buyer ? normOrg(o.buyer) === normOrg(c.buyer) : !o.buyer && !c.buyer && normOrg(o.buyerDescriptor) === normOrg(c.buyerDescriptor))
+      && (c.family !== "CONTRACT" || (o.commercialEventType === c.commercialEventType && o.eventStatus === c.eventStatus
+        && !!c.supporting.event && o.supporting.event === c.supporting.event && o.title === c.title
+        && (!o.contractValue || !c.contractValue || o.contractValue === c.contractValue)))
       && (o.commercialEventType === c.commercialEventType || o.commercialEventType === "UNKNOWN" || c.commercialEventType === "UNKNOWN"));
     if (!twin) { out.push(c); continue; }
     // later segments fill what earlier ones lacked; supporting passages accumulate

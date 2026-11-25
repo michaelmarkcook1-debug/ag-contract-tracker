@@ -1,4 +1,7 @@
 import { connection } from "next/server";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { isAdminRequest } from "@/lib/admin-auth";
 import { prisma } from "@/lib/db";
 import { getEvents, trackedEventScope } from "@/lib/data";
 import { syncSourceRegistry } from "@/lib/ingestion/pipeline";
@@ -14,6 +17,7 @@ export default async function AdminPage() {
   // review queue and its counts — is baked at build time, so approvals appear
   // to do nothing and newly ingested events never show up.
   await connection();
+  if (!isAdminRequest(await headers())) redirect("/admin/sign-in");
 
   // Seed the registry only when empty. This used to run on every page load,
   // which meant 90+ upserts per view; the pipeline reads sources from code, so
@@ -45,11 +49,16 @@ export default async function AdminPage() {
 
   return (
     <div className="px-4 py-5 md:p-6 space-y-5 max-w-6xl">
-      <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
         <h1 className="text-xl font-semibold">Admin</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
           Ingestion pipeline · Review queue · Source health
         </p>
+        </div>
+        <form action="/api/admin/session" method="post">
+          <button name="action" value="sign-out" className="whitespace-nowrap rounded-md border border-border px-3 py-1.5 text-sm hover:bg-foreground/5">Sign out</button>
+        </form>
       </div>
 
       <Tabs defaultValue="pipeline">

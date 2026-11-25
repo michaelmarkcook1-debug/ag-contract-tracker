@@ -40,8 +40,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <nav className="hidden md:flex items-center gap-1" aria-label="Main">
-            {NAV.map(({ href, label, icon: Icon }) => (
-              <Link
+            {NAV.map(({ href, label, icon: Icon }) => {
+              const NavLink = href === "/admin" ? "a" : Link;
+              return <NavLink
                 key={href}
                 href={href}
                 aria-current={isActive(href) ? "page" : undefined}
@@ -54,8 +55,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon className="h-3.5 w-3.5" />
                 {label}
-              </Link>
-            ))}
+              </NavLink>;
+            })}
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
@@ -75,8 +76,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/60 bg-background/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
       >
         <div className="grid grid-cols-5 h-16">
-          {NAV.map(({ href, label, icon: Icon }) => (
-            <Link
+          {NAV.map(({ href, label, icon: Icon }) => {
+            const NavLink = href === "/admin" ? "a" : Link;
+            return <NavLink
               key={href}
               href={href}
               aria-current={isActive(href) ? "page" : undefined}
@@ -87,8 +89,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Icon className={cn("h-5 w-5", isActive(href) && "text-emerald-400")} />
               {label}
-            </Link>
-          ))}
+            </NavLink>;
+          })}
         </div>
       </nav>
     </div>

@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { EventSummary, EventFilters, EventsResponse, DashboardStats, VendorProfile } from "./types";
 import { TRACKED_VENDORS } from "./ingestion/sources";
 import { isApprovedEstimateBasis } from "./tcv/infer";
+import { isPublicHttpUrl, preferredPublicArticleSource, sourceMatchesReference } from "./source-authority";
 
 function shapeEvent(e: {
   id: string; family: string; eventType: string; canonicalTitle: string;
@@ -9,9 +10,11 @@ function shapeEvent(e: {
   confidenceScore: number; commercialRelevanceScore: number; publicationStatus: string;
   analystInsight: string | null; originalArticleUrl: string | null;
   reviewReason?: string | null;
+  counterpartyRaw?: string | null;
   confidenceBasis?: string | null;
   eventStatus?: string | null;
-  primaryEntity: { canonicalName: string; slug: string } | null;
+  primaryEntity: { canonicalName: string; slug: string; websiteUrl: string | null } | null;
+  sourceEvents: Array<{ sourceUrl: string; sourceName: string | null; sourceType: string; sourceTitle: string | null; publisherUrl: string | null }>;
   contractDetails: {
     vendorRaw: string | null; vendor: { canonicalName: string } | null;
     clientRaw: string | null; client: { canonicalName: string } | null;
@@ -37,11 +40,27 @@ function shapeEvent(e: {
   orgChangeDetails: {
     orgEventType: string | null; personName: string | null;
   } | null;
-}): EventSummary {
+}, adjudication?: {url: string; qualification: string | null}): EventSummary {
   const cd = e.contractDetails;
   const ma = e.maDetails;
   const pt = e.partnershipDetails;
   const oc = e.orgChangeDetails;
+  const sourceContext = { referenceTitle: e.canonicalTitle, providerName: e.primaryEntity?.canonicalName ?? cd?.vendorRaw,
+    counterpartyNames: e.family === "CONTRACT" && !cd?.clientAnonymised
+      ? [cd?.clientRaw, cd?.client?.canonicalName, e.counterpartyRaw]
+      : e.family === "M_AND_A" ? [ma?.targetRaw, ma?.target?.canonicalName, e.counterpartyRaw] : [] };
+  const preferredSource = preferredPublicArticleSource(
+    e.sourceEvents,
+    e.originalArticleUrl,
+    e.primaryEntity?.websiteUrl,
+    sourceContext,
+  );
+  const audited = adjudication?.url === e.originalArticleUrl && isPublicHttpUrl(adjudication?.url) &&
+    e.sourceEvents.some(s => s.sourceUrl === adjudication?.url);
+  const named = sourceContext.counterpartyNames.some(Boolean);
+  const disputed = e.reviewReason?.split(",").includes("event_source_mismatch");
+  const original = audited ? e.originalArticleUrl : !disputed && preferredSource && (!named || sourceMatchesReference(preferredSource, sourceContext))
+    ? preferredSource.sourceUrl ?? null : null;
   return {
     id: e.id,
     family: e.family,
@@ -102,12 +121,15 @@ function shapeEvent(e: {
     personName: oc?.personName ?? null,
     orgEventType: oc?.orgEventType ?? null,
     // source
-    originalArticleUrl: e.originalArticleUrl ?? null,
+    originalArticleUrl: original,
+    unverifiedReferenceUrl: !original && isPublicHttpUrl(e.originalArticleUrl) ? e.originalArticleUrl : null,
+    sourceQualification: audited ? adjudication?.qualification ?? null : null,
   };
 }
 
 const eventInclude = {
-  primaryEntity: { select: { canonicalName: true, slug: true } },
+  primaryEntity: { select: { canonicalName: true, slug: true, websiteUrl: true } },
+  sourceEvents: { select: { sourceUrl: true, sourceName: true, sourceType: true, sourceTitle: true, publisherUrl: true } },
   contractDetails: {
     select: {
       vendorRaw: true, vendor: { select: { canonicalName: true } },
@@ -138,14 +160,34 @@ const eventInclude = {
   orgChangeDetails: { select: { orgEventType: true, personName: true } },
 } as const;
 
+async function shapeEvents(rows: Parameters<typeof shapeEvent>[0][]) {
+  if (!rows.length) return [];
+  const receipts = await prisma.reviewAction.findMany({
+    where: { eventId: { in: rows.map(e => e.id) }, action: "source_link_verified" },
+    select: { eventId: true, newValue: true }, orderBy: { createdAt: "desc" },
+  });
+  const verified = new Map<string, {url: string; qualification: string | null}>();
+  const titles = new Map(rows.map(e => [e.id,e.canonicalTitle]));
+  for (const receipt of receipts) {
+    if (verified.has(receipt.eventId)) continue;
+    try {
+      const decision = JSON.parse(receipt.newValue ?? "null");
+      if (typeof decision?.url === "string" && decision.eventTitle === titles.get(receipt.eventId))
+        verified.set(receipt.eventId, {url: decision.url,
+          qualification: typeof decision.qualification === "string" ? decision.qualification : null});
+    } catch { /* An unparseable review receipt cannot vouch for a source. */ }
+  }
+  return rows.map(row => shapeEvent(row, verified.get(row.id)));
+}
+
 export async function getEvents(filters: EventFilters = {}): Promise<EventsResponse> {
   const { family, vendor, industry, geography, serviceLine, status, search, dateFrom, dateTo, page = 1, pageSize = 25 } = filters;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const where: Record<string, any> = { publicationStatus: { not: "excluded_noise" } };
+  const where: Record<string, any> = { publicationStatus: { notIn: ["excluded_noise", "suppressed_duplicate", "excluded_duplicate"] } };
 
   if (family && family !== "all") where.family = family;
-  if (status && status !== "all") where.publicationStatus = status;
+  if (status && status !== "all") where.publicationStatus = { ...where.publicationStatus, equals: status };
   if (industry) where.industry = { contains: industry };
   if (dateFrom || dateTo) {
     where.announcementDate = {};
@@ -186,7 +228,7 @@ export async function getEvents(filters: EventFilters = {}): Promise<EventsRespo
   ]);
 
   return {
-    events: rows.map(shapeEvent),
+    events: await shapeEvents(rows),
     total,
     page,
     pageSize,
@@ -276,7 +318,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     latestEventDate: latestEventRow?.announcementDate?.toISOString() ?? null,
     topVendors: topVendorRows.map((v) => ({ name: v.canonicalName, slug: v.slug, count: v._count.primaryEvents })),
     topIndustries: topIndustryRows.map((r) => ({ industry: r.industry!, count: r._count.id })),
-    recentEvents: recentRows.map(shapeEvent),
+    recentEvents: await shapeEvents(recentRows),
     familyTrend,
   };
 }
@@ -322,7 +364,7 @@ export async function getVendorProfile(slug: string): Promise<VendorProfile | nu
     totalEvents: Object.values(eventCounts).reduce((sum, n) => sum + n, 0),
     disclosedTcvUsd: disclosed._sum.tcvCommittedUsd ?? 0,
     disclosedContracts: disclosed._count.id,
-    recentEvents: entity.primaryEvents.map(shapeEvent),
+    recentEvents: await shapeEvents(entity.primaryEvents),
   };
 }
 

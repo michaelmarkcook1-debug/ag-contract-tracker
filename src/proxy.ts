@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isAdminRequest, ADMIN_REALM } from "@/lib/admin-auth";
+import { adminDenied, isAdminRequest } from "@/lib/admin-auth";
 
 /**
  * Admin pages and every write or spend path require the admin password. The
@@ -7,8 +7,17 @@ import { isAdminRequest, ADMIN_REALM } from "@/lib/admin-auth";
  * cron routes are not listed: they carry their own CRON_SECRET check.
  */
 export function proxy(request: NextRequest) {
-  if (isAdminRequest(request.headers)) return NextResponse.next();
-  return new NextResponse("Admin login required", { status: 401, headers: { "www-authenticate": ADMIN_REALM } });
+  const pathname = request.nextUrl.pathname.replace(/\/$/, "");
+  if (pathname === "/admin/sign-in") return NextResponse.next();
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    if (isAdminRequest(request.headers)) return NextResponse.next();
+    if (request.method === "GET" || request.method === "HEAD") {
+      return NextResponse.redirect(new URL("/admin/sign-in", request.url), {
+        headers: { "cache-control": "private, no-store" },
+      });
+    }
+  }
+  return adminDenied(request) ?? NextResponse.next();
 }
 
 export const config = {

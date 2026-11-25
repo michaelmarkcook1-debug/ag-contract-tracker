@@ -92,6 +92,8 @@ export interface EventSummary {
   orgEventType: string | null;
   // Source
   originalArticleUrl: string | null;
+  unverifiedReferenceUrl?: string | null;
+  sourceQualification?: string | null;
 }
 
 export interface EventFilters {

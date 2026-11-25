@@ -151,8 +151,17 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
           className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-2"
         >
           <ExternalLink className="h-3.5 w-3.5" />
-          View original source
+          {event.sourceQualification ? "View supporting source" : "View original source"}
         </a>
+      )}
+      {event.sourceQualification && <p className="text-xs text-muted-foreground">{event.sourceQualification}</p>}
+      {!event.originalArticleUrl && event.unverifiedReferenceUrl && (
+        <p className="py-2 text-xs text-muted-foreground">
+          Source match unverified.{" "}
+          <a href={event.unverifiedReferenceUrl} target="_blank" rel="noopener noreferrer" className="underline">
+            Inspect the stored reference
+          </a>
+        </p>
       )}
 
       {/* Vendor link */}
