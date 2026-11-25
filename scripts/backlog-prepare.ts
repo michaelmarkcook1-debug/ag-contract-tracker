@@ -176,6 +176,170 @@ async function stepTitles() {
   report("titles", { threshold: THRESHOLD, collapsed, againstRead, bands: Object.fromEntries(Object.entries(bands).map(([b, v]) => [b, v.length])), pendingAfter: apply ? left : left - collapsed });
 }
 
+// ── Step 1c: same story, by what the headline says ────────────────────────────
+/**
+ * Word overlap cannot tell that "AWS cloud contract could cost Home Office over
+ * £1 billion" and "UK Home Office cloud contract with AWS estimated over £1
+ * billion" are one story, and it happily pairs two different tennis fixtures.
+ * Here a model reads the headlines. Candidates are found for free (same week,
+ * distinctive words in common, not already matched by the word rule); the model
+ * is asked one question per queued headline: does it report the same specific
+ * event as any of these? It is told to say no when unsure, because a wrong yes
+ * means an article is never read.
+ *
+ * Verdicts are cached in _scratch, so a dry run is paid for once and --apply
+ * reuses it.
+ *
+ *   --step context [--model sonnet|haiku] [--limit N] [--budget 5] [--show] [--apply]
+ */
+const CONTEXT_SYSTEM = [
+  "You compare news headlines for an IT-services market tracker. Each headline has a date.",
+  "Decide whether the HEADLINE reports the same story as one of the numbered CANDIDATES.",
+  "Same story means the same specific event: the same companies and the same deal, launch, appointment, result, ruling or incident. Different wording, a different outlet, or framing it as a share-price reaction to that event does not make it a different story.",
+  "NOT the same story: a different event involving the same companies; a later development (a deal completed, cancelled or disputed after it was announced; a different quarter's results); a general, opinion or round-up piece that only touches on the event; two instalments of a recurring item (different fixtures, dates, rankings or reports).",
+  "If you are not sure, answer 0.",
+  "Reply with JSON only: {\"same\": <candidate number, or 0 for none>, \"why\": \"<10 words>\"}",
+].join("\n");
+const CONTEXT_MODELS: Record<string, { id: string; inPerM: number; outPerM: number }> = {
+  sonnet: { id: "claude-sonnet-5-5", inPerM: 2, outPerM: 10 },
+  haiku: { id: "claude-haiku-5-5", inPerM: 0.1, outPerM: 0.5 },
+};
+
+/**
+ * The vendor's own release: a newsroom or investor-relations feed, or a headline whose publisher is the vendor the
+ * feed tracks ("… - Kyndryl" in the Kyndryl feed), or a release with no publisher suffix at all in a vendor feed.
+ */
+function isPrimarySource(r: { t: string | null; feed: string | null; type: string }): boolean {
+  if (/^(vendor_press_release|investor_relations_release|company_press_release|official_provider_website)$/.test(r.type)) return true;
+  const flat = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const feed = flat(r.feed ?? "");
+  if (feed.length < 3 || feed === "marketwide") return false;
+  const m = /\s[-–—|]\s([^-–—|]{2,60})$/.exec(r.t ?? "");
+  if (!m) return false;
+  const publisher = flat(m[1]);
+  return publisher.length >= 3 && (publisher.includes(feed) || feed.includes(publisher));
+}
+
+async function stepContext() {
+  const modelKey = arg("--model", "sonnet");
+  const model = CONTEXT_MODELS[modelKey];
+  if (!model) { console.log("--model sonnet|haiku"); return; }
+  const BUDGET = Number(arg("--budget", "5"));
+  const cacheFile = `_scratch/context-verdicts-${modelKey}.json`;
+  const cache: Record<string, { cands: string[]; same: number; why: string }> = fs.existsSync(cacheFile) ? JSON.parse(fs.readFileSync(cacheFile, "utf8")) : {};
+  const rows = await prisma.$queryRawUnsafe<{ id: string; t: string | null; d: Date | null; status: string; read: boolean; pub: string | null; len: number; c: Date; feed: string | null; type: string }[]>(`
+    select id, "sourceTitle" t, "publicationDate" d, "processingStatus" status, ("modelId" is not null) read, "publisherUrl" pub,
+      coalesce(length("rawText"),0) len, "createdAt" c, "sourceName" feed, "sourceType" type
+    from "SourceEvent" where "sourceType" <> 'procurement_notice' and "sourceTitle" is not null
+      and ("processingStatus" = 'pending' or "modelId" is not null)`);
+  const items = rows.map(r => ({ r, tok: titleTokens(r.t) })).filter((x): x is { r: typeof rows[number]; tok: Set<string> } => x.tok !== null);
+  const df = new Map<string, number>();
+  for (const { tok } of items) for (const w of tok) df.set(w, (df.get(w) ?? 0) + 1);
+  const rare = (tok: Set<string>) => [...tok].filter(w => df.get(w)! <= 400).sort((x, y) => (df.get(x)! - df.get(y)!) || x.localeCompare(y)).slice(0, 5);
+  const index = new Map<string, number[]>();
+  items.forEach((it, i) => { for (const k of rare(it.tok)) (index.get(k) ?? index.set(k, []).get(k)!).push(i); });
+  const rank = (r: typeof rows[number]) => (r.read ? 0 : 1) * 1e12 - (r.pub ? 1e9 : 0) - r.len;
+  const order = items.map((_, i) => i).sort((x, y) => rank(items[x].r) - rank(items[y].r) || items[x].r.c.getTime() - items[y].r.c.getTime());
+  const pos = new Map(order.map((i, p) => [i, p]));
+
+  // For each queued headline: up to six higher-ranked headlines from the same week that share at least two
+  // distinctive words with it. Pairs the word rule already matches (>= 0.7) are left to --step titles.
+  const jobs: { i: number; cands: number[] }[] = [];
+  for (const i of order) {
+    const { r, tok } = items[i];
+    if (r.status !== "pending") continue;
+    const mine = new Set(rare(tok));
+    const scored = new Map<number, number>();
+    for (const k of mine) for (const j of index.get(k) ?? []) {
+      if (j === i || scored.has(j) || pos.get(j)! >= pos.get(i)!) continue;
+      const o = items[j];
+      if (o.r.d && r.d && Math.abs(o.r.d.getTime() - r.d.getTime()) > 7 * DAY) continue;
+      let shared = 0;
+      for (const w of o.tok) if (mine.has(w)) shared++;
+      if (shared < 2) continue;
+      let all = 0;
+      for (const w of tok) if (o.tok.has(w)) all++;
+      const sim = all / (tok.size + o.tok.size - all);
+      if (sim < 0.2) continue;
+      scored.set(j, sim);
+    }
+    const cands = [...scored.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([j]) => j);
+    if (cands.length) jobs.push({ i, cands });
+  }
+  const LIMIT_N = LIMIT > 0 ? LIMIT : jobs.length;
+  const todo = jobs.slice(0, LIMIT_N);
+  const day = (d: Date | null) => d ? d.toISOString().slice(0, 10) : "undated";
+  let spent = 0, asked = 0, stoppedForBudget = false, failures = 0;
+  const statuses: Record<number, number> = {};
+  let cursor = 0;
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    for (;;) {
+      const job = todo[cursor++];
+      if (!job) return;
+      const id = items[job.i].r.id;
+      const candIds = job.cands.map(j => items[j].r.id);
+      const hit = cache[id];
+      if (hit && hit.cands.join() === candIds.join()) continue;
+      if (spent >= BUDGET) { stoppedForBudget = true; return; }
+      const user = `HEADLINE (${day(items[job.i].r.d)}): ${items[job.i].r.t}\n\nCANDIDATES:\n` + job.cands.map((j, n) => `${n + 1}. (${day(items[j].r.d)}) ${items[j].r.t}`).join("\n");
+      try {
+        // The API turns requests away under load (429/529); wait and ask again rather than lose the verdict.
+        let res: Response | null = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+            headers: { "x-api-key": process.env.ANTHROPIC_API_KEY ?? "", "anthropic-version": "2023-06-01", "content-type": "application/json" },
+            body: JSON.stringify({ model: model.id, max_tokens: 2500, system: [{ type: "text", text: CONTEXT_SYSTEM, cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: user }] }),
+            signal: AbortSignal.timeout(60_000) });
+          if (res.ok || (res.status !== 429 && res.status < 500)) break;
+          statuses[res.status] = (statuses[res.status] ?? 0) + 1;
+          await new Promise(r => setTimeout(r, 1500 * 2 ** attempt + Math.random() * 500));
+        }
+        if (!res || !res.ok) { failures++; if (res) statuses[res.status] = (statuses[res.status] ?? 0) + 1; continue; }
+        const d = await res.json() as { content?: { type?: string; text?: string }[]; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } };
+        const u = d.usage ?? {};
+        spent += ((u.input_tokens ?? 0) * model.inPerM + (u.cache_read_input_tokens ?? 0) * model.inPerM * 0.1 + (u.cache_creation_input_tokens ?? 0) * model.inPerM * 1.25 + (u.output_tokens ?? 0) * model.outPerM) / 1e6;
+        const raw = (d.content ?? []).filter(c => c.type === "text").map(c => c.text ?? "").join("");
+        const v = /"same"\s*:\s*(\d+)/.exec(raw);
+        if (!v) { failures++; if (process.env.CONTEXT_DEBUG && failures <= 6) console.log("  unparsed:", JSON.stringify({ stop: (d as { stop_reason?: string }).stop_reason, types: (d.content ?? []).map(c => c.type), raw: raw.slice(0, 200), out: u.output_tokens })); continue; }   // no verdict is not a "no": leave it unjudged
+        const n = Number(v[1]);
+        cache[id] = { cands: candIds, same: n >= 1 && n <= candIds.length ? n : 0, why: (/"why"\s*:\s*"([^"]*)/.exec(raw)?.[1] ?? "").slice(0, 120) };
+        if (++asked % 100 === 0) { fs.writeFileSync(cacheFile, JSON.stringify(cache)); console.log(`  ${asked} judged · $${spent.toFixed(2)}`); }
+      } catch { failures++; }
+    }
+  }));
+  fs.mkdirSync("_scratch", { recursive: true });
+  fs.writeFileSync(cacheFile, JSON.stringify(cache));
+
+  // Apply in rank order. A match to a headline that was itself matched away follows through to that one's keeper.
+  const keeperOf = new Map<string, string>();
+  const byId = new Map(items.map(it => [it.r.id, it.r]));
+  let collapsed = 0, againstRead = 0, judged = 0, protectedPrimary = 0;
+  const pairs: string[] = [];
+  for (const job of todo) {
+    const r = items[job.i].r;
+    const v = cache[r.id];
+    if (!v || v.cands.join() !== job.cands.map(j => items[j].r.id).join()) continue;
+    judged++;
+    if (!v.same) continue;
+    let keep = v.cands[v.same - 1];
+    while (keeperOf.has(keep)) keep = keeperOf.get(keep)!;
+    const k = byId.get(keep);
+    if (!k || keep === r.id) continue;
+    // The vendor's own announcement is the primary source. It is always read, even when a report about it was read first.
+    if (isPrimarySource(r) && !isPrimarySource(k)) { protectedPrimary++; continue; }
+    keeperOf.set(r.id, keep);
+    await exclude(r.id, `duplicate_story:${keep}`);
+    collapsed++; if (k.read) againstRead++;
+    pairs.push(`${String(r.t).slice(0, 112)}  [${day(r.d)}]\n          = ${String(k.t).slice(0, 112)}  [${day(k.d)}]${k.read ? "  (already read)" : ""}\n            ${v.why}`);
+  }
+  const left = await prisma.sourceEvent.count({ where: { processingStatus: "pending" } });
+  console.log(`queued headlines with candidates: ${jobs.length}; judged ${judged}${LIMIT > 0 ? ` (limit ${LIMIT})` : ""}; new verdicts this pass ${asked} for $${spent.toFixed(2)} (${model.id}); no verdict ${failures}${Object.keys(statuses).length ? ` (refusals seen: ${JSON.stringify(statuses)})` : ""}${stoppedForBudget ? "; STOPPED at the budget" : ""}`);
+  console.log(`same story as an earlier or already-read headline: ${collapsed} (${againstRead} already read); vendor's own announcements kept regardless: ${protectedPrimary}`);
+  console.log(`pending ${apply ? "now" : "unchanged (dry run)"}: ${left}${apply ? "" : ` → would be ${left - collapsed}`}`);
+  if (process.argv.includes("--show")) [...pairs].sort(() => Math.random() - 0.5).slice(0, Number(arg("--samples", "20"))).forEach(x => console.log("  " + x));
+  report("context", { model: model.id, candidates: jobs.length, judged, collapsed, againstRead, spentUsd: spent, pendingAfter: apply ? left : left - collapsed });
+}
+
 // ── Step 2: fetch ─────────────────────────────────────────────────────────────
 /**
  * Resolve and fetch every pending row that lacks readable text. Google News
@@ -307,9 +471,10 @@ async function stepContent() {
 (async () => {
   if (STEP === "headlines") await stepHeadlines();
   else if (STEP === "titles") await stepTitles();
+  else if (STEP === "context") await stepContext();
   else if (STEP === "fetch") await stepFetch();
   else if (STEP === "content") await stepContent();
-  else console.log("--step headlines|titles|fetch|content");
+  else console.log("--step headlines|titles|context|fetch|content");
   await prisma.$disconnect();
   process.exit(0);
 })();
