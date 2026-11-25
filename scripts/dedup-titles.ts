@@ -187,7 +187,7 @@ keepId: if SAME, the id of the record to KEEP (prefer higher confidence, more sp
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-haiku-5-5",
         max_tokens: 200,
         messages: [{ role: "user", content: prompt }],
       }),
