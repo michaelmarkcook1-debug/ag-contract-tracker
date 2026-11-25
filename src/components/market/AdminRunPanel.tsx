@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Play, RefreshCw, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { Play, Pause, Square, RefreshCw, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 
 interface IngestionStatus {
   /** Operating phase: "historical" while the backfill runner reinforces the store (the cron stands down), else "current". */
@@ -24,142 +24,78 @@ interface IngestionStatus {
   } | null;
 }
 
-interface RunResult {
-  success: boolean;
-  error?: string;
-  result?: {
-    runId?: string;
-    status?: string;
-    message?: string;
-    phase?: string; sourcesAvailable?: number; sourcesProcessed?: number; sourcesTotal?: number;
-    articlesFound?: number; articlesDuped?: number; eventsExtracted?: number;
-    articlesStale?: number; articlesRelevant?: number; articlesTriaged?: number; articlesExcluded?: number; articlesMerged?: number;
-    eventsPublished?: number; eventsQueued?: number; eventsDeferred?: number; errors?: string[];
-  };
+/** A run owned by the server (src/lib/ingestion/manual-run.ts). The page only watches it. */
+interface ServerRun {
+  id: string;
+  state: "running" | "paused" | "ended" | "completed" | "failed";
+  dryRun: boolean;
+  sourcesTotal: number; offset: number; batch: number; stepping: number | null;
+  totals: { articlesFound: number; articlesDuped: number; articlesRelevant: number; articlesTriaged: number; articlesExcluded: number; articlesMerged: number; eventsPublished: number; eventsQueued: number; eventsDeferred: number; costUsd: number };
+  live: { phase: string; found: number; toRead: number; read: number } | null;
+  errors: string[];
+  message: string | null;
 }
+type RunCommand = "run" | "pause" | "end";
 
 export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatus }) {
   const [status, setStatus] = useState(initialStatus);
-  const [running, setRunning] = useState(false);
-  const [lastResult, setLastResult] = useState<RunResult | null>(null);
+  const [run, setRun] = useState<ServerRun | null>(null);
+  const [command, setCommand] = useState<RunCommand>("run");
+  const [sending, setSending] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [maxSources, setMaxSources] = useState<string>("all");
+  const lastState = useRef<string | null>(null);
 
   const refreshStatus = useCallback(async () => {
     const res = await fetch("/api/ingestion");
-    const data = await res.json();
-    setStatus(data);
+    setStatus(await res.json());
   }, []);
 
-  const [batchProgress, setBatchProgress] = useState("");
+  const apply = useCallback((d: { run?: ServerRun | null; command?: RunCommand }) => {
+    setRun(d.run ?? null);
+    setCommand(d.command ?? "run");
+  }, []);
 
-  const triggerRun = useCallback(async (dryRun = false) => {
-    setRunning(true);
-    setLastResult(null);
-    setBatchProgress("");
-
-    // Sources per API call. The route runs under a 300s ceiling with a 200s
-    // model budget, so a batch this size finishes with room to spare.
-    const BATCH_SIZE = 30;
-    const limit = maxSources === "all" ? 999 : parseInt(maxSources);
-    let offset = 0;
-    let totalArticles = 0;
-    let totalStored = 0;
-    let totalMerged = 0;
-    let totalStale = 0;
-    let totalRelevant = 0;
-    let totalTriaged = 0;
-    let totalExcluded = 0;
-    let totalPublished = 0;
-    let totalQueued = 0;
-    let totalDeferred = 0;
-    let totalErrors: string[] = [];
-    let sourcesAvailable = 0;
-    let batchNum = 0;
-
+  /** Tell the server what to do with the run. The run itself never depends on this page staying open. */
+  const send = useCallback(async (action: "start" | "pause" | "resume" | "end", extra: Record<string, unknown> = {}) => {
+    setSending(true); setRunError(null);
     try {
-      while (offset < limit) {
-        batchNum++;
-        const batchLimit = Math.min(BATCH_SIZE, limit - offset);
-        setBatchProgress(`Batch ${batchNum}: processing sources ${offset + 1}–${offset + batchLimit}…`);
-
-        const res = await fetch("/api/ingestion", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            sourceFilter,
-            maxSources: batchLimit,
-            sourceOffset: offset,
-            dryRun,
-          }),
-        });
-
-        const text = await res.text();
-        let data: RunResult;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          setLastResult({ success: false, error: `Batch ${batchNum} returned non-JSON: ${text.slice(0, 150)}` });
-          break;
-        }
-
-        if (!data.success) {
-          setLastResult({ success: false, error: data.error ?? `Batch ${batchNum} failed` });
-          break;
-        }
-
-        const r = data.result;
-        if (r) {
-          totalArticles += r.articlesFound ?? 0;
-          totalStored += r.articlesDuped ?? 0;
-          totalMerged += r.articlesMerged ?? 0;
-          totalStale += r.articlesStale ?? 0;
-          totalRelevant += r.articlesRelevant ?? 0;
-          totalTriaged += r.articlesTriaged ?? 0;
-          totalExcluded += r.articlesExcluded ?? 0;
-          totalPublished += r.eventsPublished ?? 0;
-          totalQueued += r.eventsQueued ?? 0;
-          totalDeferred += r.eventsDeferred ?? 0;
-          totalErrors = totalErrors.concat(r.errors ?? []);
-          sourcesAvailable = r.sourcesAvailable ?? 0;
-        }
-
-        offset += batchLimit;
-
-        // Stop if we've processed all available sources
-        if (sourcesAvailable > 0 && offset >= sourcesAvailable) break;
-        // Stop if this batch had no sources (past the end)
-        if (r && (r.sourcesTotal ?? 0) === 0) break;
-
-        setBatchProgress(`Batch ${batchNum} done. ${totalArticles} articles found so far…`);
-      }
-
-      setLastResult({
-        success: true,
-        result: {
-          message: `Pipeline complete — ${batchNum} batches.`,
-          articlesFound: totalArticles,
-          articlesDuped: totalStored,
-          articlesMerged: totalMerged,
-          articlesStale: totalStale,
-          articlesRelevant: totalRelevant,
-          articlesTriaged: totalTriaged,
-          articlesExcluded: totalExcluded,
-          eventsPublished: totalPublished,
-          eventsQueued: totalQueued,
-          eventsDeferred: totalDeferred,
-          errors: totalErrors,
-        },
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setLastResult({ success: false, error: msg });
+      const res = await fetch("/api/ingestion/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
+      const d = await res.json();
+      if (d.run !== undefined) apply(d);
+      if (!res.ok && res.status !== 409) setRunError(d.error ?? `Could not ${action} the run`);
+    } catch {
+      setRunError("Network error. The run itself is unaffected; this page will catch up.");
     } finally {
-      setRunning(false);
-      setBatchProgress("");
-      await refreshStatus();
+      setSending(false);
     }
-  }, [sourceFilter, maxSources, refreshStatus]);
+  }, [apply]);
+
+  // Watch the run: on arrival, then every few seconds while it is live.
+  const active = run?.state === "running" || run?.state === "paused";
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try { const d = await (await fetch("/api/ingestion/run", { cache: "no-store" })).json(); if (!cancelled) apply(d); } catch { /* next tick */ }
+    };
+    load();
+    if (!active) return () => { cancelled = true; };
+    const t = setInterval(load, run?.state === "running" ? 2500 : 8000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [active, run?.state, apply]);
+
+  // When a run reaches its end, refresh the "Last Run" card below.
+  useEffect(() => {
+    const st = run?.state ?? null;
+    if (lastState.current && lastState.current !== st && st && st !== "running" && st !== "paused") refreshStatus();
+    lastState.current = st;
+  }, [run?.state, refreshStatus]);
+
+  const pausing = run?.state === "running" && command === "pause";
+  const ending = run?.state === "running" && command === "end";
+  const from = run ? Math.min(run.offset + 1, Math.max(run.sourcesTotal, 1)) : 0;
+  const to = run ? (run.sourcesTotal ? Math.min(run.offset + 30, run.sourcesTotal) : run.offset + 30) : 0;
 
   const statusColor = (s: string) => {
     if (s === "completed") return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
@@ -224,47 +160,65 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button onClick={() => triggerRun(false)} disabled={running} className="gap-2 flex-1">
-              {running ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {running ? (batchProgress || "Running pipeline…") : "Run pipeline"}
-            </Button>
-            <Button variant="outline" onClick={() => triggerRun(true)} disabled={running} className="text-xs">
-              Dry run
-            </Button>
-          </div>
-
-          {lastResult && (
-            <div className={`p-3 rounded-md text-xs space-y-1 ${lastResult.success ? "bg-emerald-500/10 border border-emerald-500/20" : "bg-red-500/10 border border-red-500/20"}`}>
-              {lastResult.success && lastResult.result ? (
-                <>
-                  <p className="font-medium text-emerald-400">
-                    {lastResult.result.message ?? "Run complete"}
-                  </p>
-                  {lastResult.result.articlesFound != null && (
-                    <div className="grid grid-cols-3 gap-2 mt-2 text-emerald-400/80">
-                      <div><div className="font-mono font-bold text-base text-emerald-400">{lastResult.result.articlesFound}</div>articles found</div>
-                      <div><div className="font-mono font-bold text-base text-emerald-400">{lastResult.result.eventsPublished}</div>published</div>
-                      <div><div className="font-mono font-bold text-base text-amber-400">{lastResult.result.eventsQueued}</div>needs review</div>
-                    </div>
-                  )}
-                  {lastResult.result.articlesTriaged != null && (
-                    <p className="text-muted-foreground mt-1 font-mono" title="found → already stored on an earlier run (skipped free) → too old → candidates → triaged → excluded by the model → merged into events already stored → published / review">
-                      {lastResult.result.articlesDuped} already stored · {lastResult.result.articlesStale} too old · {lastResult.result.articlesRelevant} candidates · {lastResult.result.articlesTriaged} triaged · {lastResult.result.articlesExcluded} excluded by the model · {lastResult.result.articlesMerged} merged into existing events
-                    </p>
-                  )}
-                  {(lastResult.result.eventsDeferred ?? 0) > 0 && (
-                    <p className="text-muted-foreground mt-1">
-                      {lastResult.result.eventsDeferred} candidates deferred to the next run (model budget). Run again to ingest more.
-                    </p>
-                  )}
-                  {(lastResult.result.errors?.length ?? 0) > 0 && (
-                    <p className="text-yellow-400 mt-1">{lastResult.result.errors!.length} source errors</p>
-                  )}
-                </>
+          {/* Idle: start. Running: the same button pauses, with a small End run beside it. */}
+          {!active ? (
+            <div className="flex gap-2">
+              <Button onClick={() => send("start", { sourceFilter, maxSources: maxSources === "all" ? 0 : parseInt(maxSources) })} disabled={sending} className="gap-2 flex-1">
+                <Play className="h-4 w-4" />Run pipeline
+              </Button>
+              <Button variant="outline" onClick={() => send("start", { sourceFilter, maxSources: maxSources === "all" ? 0 : parseInt(maxSources), dryRun: true })} disabled={sending} className="text-xs">
+                Dry run
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              {run?.state === "paused" ? (
+                <Button onClick={() => send("resume")} disabled={sending} className="gap-2 flex-1"><Play className="h-4 w-4" />Resume</Button>
               ) : (
-                <p className="text-red-400">{lastResult.error ?? "Unknown error"}</p>
+                <Button onClick={() => send("pause")} disabled={sending || pausing || ending} className="gap-2 flex-1">
+                  {pausing || ending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                  {ending ? "Ending: storing what was read…" : pausing ? "Pausing: finishing articles in hand…" : "Pause"}
+                </Button>
               )}
+              <Button variant="outline" size="sm" onClick={() => send("end")} disabled={sending || ending} className="h-9 gap-1.5 text-xs border-red-500/30 hover:bg-red-500/10" title="Stop now. Everything read up to this point is stored.">
+                <Square className="h-3 w-3 text-red-400" />End run
+              </Button>
+            </div>
+          )}
+
+          {runError && <p className="text-xs text-red-400">{runError}</p>}
+
+          {active && run && (
+            <div className="p-3 rounded-md text-xs space-y-1.5 bg-blue-500/10 border border-blue-500/20">
+              <p className="font-medium text-blue-300">
+                {run.state === "paused" ? "Paused" : run.dryRun ? "Dry run in progress" : "Run in progress"} · batch {run.batch}
+                {run.sourcesTotal > 0 ? ` · sources ${from}–${to} of ${run.sourcesTotal}` : ""}
+              </p>
+              {run.state === "running" && run.live && (
+                <p className="text-muted-foreground">
+                  {run.live.phase === "crawling" ? "Collecting the feeds…" : run.live.phase === "storing" ? "Storing what was read…" : `Reading: ${Math.min(run.live.read, run.live.toRead)} of ${run.live.toRead} articles in this batch`}
+                </p>
+              )}
+              <p className="text-muted-foreground font-mono">
+                so far: {run.totals.articlesTriaged} read · {run.totals.eventsPublished} published · {run.totals.eventsQueued} for review · ${run.totals.costUsd.toFixed(2)}
+              </p>
+              <p className="text-muted-foreground/70">This run carries on if you leave this page. Only Pause or End run stops it.</p>
+            </div>
+          )}
+
+          {!active && run && (
+            <div className={`p-3 rounded-md text-xs space-y-1 ${run.state === "failed" ? "bg-red-500/10 border border-red-500/20" : "bg-emerald-500/10 border border-emerald-500/20"}`}>
+              <p className={`font-medium ${run.state === "failed" ? "text-red-400" : "text-emerald-400"}`}>{run.message ?? (run.state === "failed" ? "Run failed" : "Run complete")}</p>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-emerald-400/80">
+                <div><div className="font-mono font-bold text-base text-emerald-400">{run.totals.articlesTriaged}</div>articles read</div>
+                <div><div className="font-mono font-bold text-base text-emerald-400">{run.totals.eventsPublished}</div>published</div>
+                <div><div className="font-mono font-bold text-base text-amber-400">{run.totals.eventsQueued}</div>for review</div>
+              </div>
+              <p className="text-muted-foreground mt-1 font-mono">
+                {run.totals.articlesFound} in the feeds · {run.totals.articlesDuped} seen before · {run.totals.articlesExcluded} read with no event · {run.totals.articlesMerged} added to existing events · ${run.totals.costUsd.toFixed(2)}
+              </p>
+              {run.totals.eventsDeferred > 0 && <p className="text-muted-foreground mt-1">{run.totals.eventsDeferred} articles were not reached and stay queued for the next run.</p>}
+              {run.errors.length > 0 && <p className="text-yellow-400 mt-1" title={run.errors.slice(0, 8).join("\n")}>{run.errors.length} notes or source errors</p>}
             </div>
           )}
         </CardContent>

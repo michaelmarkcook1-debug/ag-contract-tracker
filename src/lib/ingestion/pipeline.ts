@@ -70,6 +70,13 @@ export interface PipelineOptions {
    * before it recorded anything (six cron runs died that way, 2026-09-13…23).
    */
   deadlineMs?: number;
+  /**
+   * Cooperative stop for a run someone paused or ended. When `stop` turns true
+   * no further source is crawled and no further read starts; reads already in
+   * flight finish, everything read is stored, and everything found but not
+   * read is kept pending. Nothing is discarded — the run is cut short, not killed.
+   */
+  stopSignal?: { stop: boolean };
 }
 
 /** Total number of crawlable sources (for callers computing a rotating window). */
@@ -99,6 +106,8 @@ export const SCHEDULED_SWEEP: PipelineOptions = {
 };
 
 export interface PipelineProgress {
+  /** True when stopSignal cut the run short (paused or ended by a person). */
+  interrupted?: boolean;
   phase: "crawling" | "classifying" | "storing" | "done";
   sourcesAvailable: number;
   sourcesProcessed: number;
@@ -323,6 +332,7 @@ export async function runPipeline(
   let crawlCursor = options.articles ? sources.length : 0;
   async function crawlWorker() {
     while (true) {
+      if (options.stopSignal?.stop) return;
       const idx = crawlCursor++;
       if (idx >= sources.length) return;
       const source = sources[idx];
@@ -462,7 +472,7 @@ export async function runPipeline(
   let serviceStrikes = 0;
   let serviceDown: string | null = null;
   const serviceFailed: RawArticle[] = [];
-  const shouldStop = () => serviceDown !== null || llmCalls >= maxExtractions || Date.now() - llmStart > timeBudgetMs
+  const shouldStop = () => options.stopSignal?.stop === true || serviceDown !== null || llmCalls >= maxExtractions || Date.now() - llmStart > timeBudgetMs
     || (deadlineMs != null && Date.now() - runStartedAt > deadlineMs);
   const addUsageTo = (u: Reading["usage"]) => {
     progress.usage = {
@@ -485,6 +495,7 @@ export async function runPipeline(
       if (shouldStop()) return;
       const i = cursor++;
       if (i >= dedupedArticles.length) return;
+      progress.articlesProcessed = cursor;   // live, for anyone watching the run
       const raw = dedupedArticles[i];
       llmCalls++;
       try {
@@ -572,6 +583,7 @@ export async function runPipeline(
   try { await storeDeferred([...serviceFailed, ...dedupedArticles.slice(Math.min(cursor, dedupedArticles.length))], run.id); }
   catch (err) { progress.errors.push(`Deferred store error: ${err instanceof Error ? err.message : String(err)}`); }
 
+  progress.interrupted = options.stopSignal?.stop === true;
   progress.phase = "done";
   await prisma.ingestionRun.update({
     where: { id: run.id },
