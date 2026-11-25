@@ -11,7 +11,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { runPipeline, prioritise, SCHEDULED_SWEEP } from "@/lib/ingestion/pipeline";
 import { storePending, storeDeferred, findReadByContent, storeDuplicateContent, sameStoryHeadline, isContractValue, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
-import { PROMPT_POLICY_VERSION } from "@/lib/ingestion/reader";
+import { PROMPT_POLICY_VERSION, isServiceFailure } from "@/lib/ingestion/reader";
 import type { RawArticle } from "@/lib/ingestion/crawler";
 
 let pass = 0, fail = 0;
@@ -63,6 +63,28 @@ const art = (i: number, body: string | null = null): RawArticle => ({ title: `Qu
     const kept = await prisma.sourceEvent.count({ where: { sourceUrl: { in: late.map(l => l.url) }, processingStatus: "pending" } });
     ok("articles not reached are persisted pending", kept === 2, `${kept} pending`);
     ok("the scheduled sweep has a deadline inside the 300s ceiling", (SCHEDULED_SWEEP.deadlineMs ?? 999_999) + 90_000 + 25_000 <= 300_000, `${SCHEDULED_SWEEP.deadlineMs}ms`);
+
+    console.log("\n=== a model-service outage is not the article's fault ===");
+    for (const e of ["model HTTP 400", "model HTTP 400: invalid_request_error: Your credit balance is too low to access the Anthropic API.", "model HTTP 401: authentication_error: invalid x-api-key",
+      "model HTTP 429: rate_limit_error: too many requests", "model HTTP 529: overloaded_error: Overloaded", "model HTTP 500", "model call failed: fetch failed", "ANTHROPIC_API_KEY not configured"])
+      ok(`service failure: ${e.slice(0, 60)}`, isServiceFailure(e));
+    for (const e of ["model HTTP 400: invalid_request_error: messages.0.content.0.text: must be valid UTF-8", "model call failed: The operation was aborted due to timeout",
+      "model output hit max_tokens (truncated)", "model returned no JSON (stop_reason=refusal, 0 chars)", "model JSON did not parse"])
+      ok(`article failure: ${e.slice(0, 60)}`, !isServiceFailure(e));
+    {
+      // Simulated outage: with no API key every read is refused before any spend.
+      const outage = Array.from({ length: 9 }, (_, i) => art(50 + i, body));
+      const key = process.env.ANTHROPIC_API_KEY; delete process.env.ANTHROPIC_API_KEY;
+      let o;
+      try { o = await runPipeline({ articles: outage, maxArticleAgeDays: 0, concurrency: 1, timeBudgetMs: 60_000, runType: "queue_test" }); }
+      finally { process.env.ANTHROPIC_API_KEY = key; }
+      const rows = await prisma.sourceEvent.findMany({ where: { sourceUrl: { in: outage.map(a => a.url) } }, select: { processingStatus: true, readAttempts: true } });
+      ok("reading stops after 5 consecutive refusals", o.errors.some(e => e.startsWith("Model API unavailable")) && o.articlesTriaged === 0, o.errors[0]?.slice(0, 90));
+      ok("every article is kept pending", rows.length === 9 && rows.every(r => r.processingStatus === "pending"), `${rows.length} rows`);
+      ok("no failed attempt is recorded against any of them", rows.every(r => r.readAttempts === 0));
+      const run = await prisma.ingestionRun.findFirst({ where: { runType: "queue_test" }, orderBy: { startedAt: "desc" }, select: { status: true } });
+      ok("the run is recorded as failed, not completed", run?.status === "failed", run?.status);
+    }
 
     console.log("\n=== one paid read per article content ===");
     const text = "Wipro wins a five-year contract from a Nordic retailer to run its cloud estate. ".repeat(4);

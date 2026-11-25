@@ -224,8 +224,34 @@ async function callModel(userText: string): Promise<ModelResult> {
   } catch (err) {
     return { parsed: null, usage: EMPTY_USAGE, error: `model call failed: ${err instanceof Error ? err.message : String(err)}` };
   }
-  if (!res.ok) return { parsed: null, usage: EMPTY_USAGE, error: `model HTTP ${res.status}` };
+  if (!res.ok) {
+    // Keep the API's own reason. A bare "HTTP 400" hid thirteen days on which
+    // every read was refused for an account-level cause, not an article one.
+    const body = await res.json().catch(() => null) as { error?: { type?: string; message?: string } } | null;
+    const detail = [body?.error?.type, body?.error?.message].filter(Boolean).join(": ").replace(/\s+/g, " ").slice(0, 200);
+    return { parsed: null, usage: EMPTY_USAGE, error: `model HTTP ${res.status}${detail ? `: ${detail}` : ""}` };
+  }
   return parseReaderResponse(await res.json() as ModelResponse);
+}
+
+const ACCOUNT_OR_ACCESS = /credit balance|billing|quota|usage limit|spend limit|api[ -]?key|authenticat|permission|organi[sz]ation|not_found_error|model:/i;
+/**
+ * True when a read failed because the model service could not be used — no key,
+ * no credit, no permission, rate-limited, overloaded, unreachable — rather than
+ * because of anything about the article. Such a failure must never count
+ * against the article: it will read normally once the service is back.
+ * A timeout, a truncated or unparseable answer and a refusal ARE about the article.
+ */
+export function isServiceFailure(error: string): boolean {
+  if (/ANTHROPIC_API_KEY not configured/.test(error)) return true;
+  const http = /^model HTTP (\d{3})(?::\s*(.*))?$/.exec(error);
+  if (http) {
+    const status = Number(http[1]), detail = http[2] ?? "";
+    if (status === 401 || status === 403 || status === 404 || status === 429 || status >= 500) return true;
+    // 400 is "invalid request": the account's (no credit) or, rarely, this article's. With no detail, assume the account.
+    return status === 400 && (!detail || ACCOUNT_OR_ACCESS.test(detail));
+  }
+  return /^model call failed:/.test(error) && !/timeout|aborted/i.test(error);
 }
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);

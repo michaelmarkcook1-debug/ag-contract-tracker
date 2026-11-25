@@ -6,8 +6,11 @@ import { ALL_SOURCES, VENDOR_RSS_SOURCES, INVESTOR_RELATIONS_SOURCES, PROCUREMEN
 import { crawlSource, RawArticle } from "./crawler";
 import { EMPTY_USAGE, TokenUsage } from "./classifier";
 import { retrieveArticle, readableArticleText } from "./article-text";
-import { readArticle, type Reading } from "./reader";
+import { readArticle, isServiceFailure, type Reading } from "./reader";
 import { storeReading, storeNonEvent, storePending, storeUnreadable, storeDeferred, findReadByContent, storeDuplicateContent, MAX_READ_ATTEMPTS } from "./store";
+
+/** Consecutive model-service failures (not article failures) after which a run stops reading. */
+const SERVICE_FAILURE_LIMIT = 5;
 
 /** The reader gets the whole page; this only bounds pathological documents. */
 const READER_MAX_CHARS = 60_000;
@@ -453,7 +456,12 @@ export async function runPipeline(
   let llmCalls = 0;
   let cursor = 0;
   const llmStart = Date.now();
-  const shouldStop = () => llmCalls >= maxExtractions || Date.now() - llmStart > timeBudgetMs
+  // Model service unusable (no credit, bad key, overloaded): reading stops and
+  // the articles are left exactly as they were, with no failed attempt recorded.
+  let serviceStrikes = 0;
+  let serviceDown: string | null = null;
+  const serviceFailed: RawArticle[] = [];
+  const shouldStop = () => serviceDown !== null || llmCalls >= maxExtractions || Date.now() - llmStart > timeBudgetMs
     || (deadlineMs != null && Date.now() - runStartedAt > deadlineMs);
   const addUsageTo = (u: Reading["usage"]) => {
     progress.usage = {
@@ -498,7 +506,17 @@ export async function runPipeline(
         if (prior) { contentDuplicates.push({ article, text, textHash, prior }); llmCalls--; continue; }
         const out = await readArticle({ title: article.title, text, provider: article.provider, sourceType: article.sourceType, publishedAt: article.publishedAt });
         addUsageTo(out.ok ? out.reading.usage : out.usage);
-        if (!out.ok) { pendings.push({ article, text, error: out.error }); continue; }
+        if (!out.ok) {
+          if (isServiceFailure(out.error)) {
+            serviceFailed.push(article);
+            if (++serviceStrikes >= SERVICE_FAILURE_LIMIT) serviceDown ??= out.error;
+            continue;
+          }
+          serviceStrikes = 0;   // the model answered; the problem is this article
+          pendings.push({ article, text, error: out.error });
+          continue;
+        }
+        serviceStrikes = 0;
         readings.push({ article, text, reading: out.reading });
       } catch (err) {
         progress.errors.push(`Read error (${raw.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`);
@@ -507,6 +525,9 @@ export async function runPipeline(
   }
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, readWorker));
   progress.articlesTriaged = readings.length + pendings.length;
+  const down = serviceDown as string | null;   // assigned inside the workers; TypeScript cannot see that
+  if (down) progress.errors.unshift(`Model API unavailable — reading stopped after ${SERVICE_FAILURE_LIMIT} consecutive refusals (${down.slice(0, 160)}). ${serviceFailed.length} article(s) left pending with no failed attempt recorded.`);
+  else if (serviceFailed.length) progress.errors.push(`${serviceFailed.length} read(s) hit a model service error and stay pending with no failed attempt recorded`);
   for (const d of contentDuplicates) {
     try { if (await storeDuplicateContent(d.article, d.text, d.textHash, d.prior, run.id)) progress.articlesMerged++; }
     catch (err) { progress.errors.push(`Duplicate-content store error (${d.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
@@ -542,17 +563,17 @@ export async function runPipeline(
   }
 
   progress.articlesProcessed = Math.min(cursor, dedupedArticles.length);
-  progress.eventsDeferred = Math.max(0, dedupedArticles.length - cursor);
+  progress.eventsDeferred = Math.max(0, dedupedArticles.length - cursor) + serviceFailed.length;
   // Articles the budget did not reach are persisted as PENDING so the next run
   // reads them even if the feed has moved on. Nothing found is dropped.
-  try { await storeDeferred(dedupedArticles.slice(Math.min(cursor, dedupedArticles.length)), run.id); }
+  try { await storeDeferred([...serviceFailed, ...dedupedArticles.slice(Math.min(cursor, dedupedArticles.length))], run.id); }
   catch (err) { progress.errors.push(`Deferred store error: ${err instanceof Error ? err.message : String(err)}`); }
 
   progress.phase = "done";
   await prisma.ingestionRun.update({
     where: { id: run.id },
     data: {
-      status: progress.errors.length > newArticles.length * 0.3 ? "partial" : "completed",
+      status: down ? (readings.length ? "partial" : "failed") : progress.errors.length > newArticles.length * 0.3 ? "partial" : "completed",
       completedAt: new Date(),
       articlesFound: progress.articlesFound,
       articlesDuped: progress.articlesDuped,
