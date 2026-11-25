@@ -299,7 +299,7 @@ async function main() {
       done++;
     } catch (err) { console.error(`merge ${m.loser.id}: ${String(err).slice(-160)}`); }
   }
-  console.log(`applied: ${done} duplicates folded into their survivors. Undo with: npx tsx scripts/dedup-catalogue.ts --undo`);
+  console.log(`applied: ${done} duplicates folded into their survivors. Undo with: npx tsx scripts/dedup-catalogue.ts ${SCOPE === "review" ? "--scope review " : ""}--undo`);
 }
 
 main().then(() => prisma.$disconnect()).then(() => process.exit(0));
