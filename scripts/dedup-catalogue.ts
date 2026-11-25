@@ -18,9 +18,15 @@
  *               reviewReason duplicate_of:<survivor>. Logged to ReviewAction,
  *               and --undo reverses every merge this script made.
  *
+ * Two scopes:
+ *   --scope catalogue (default)  every live CONTRACT record against the others
+ *   --scope review               every record waiting in review, of any family, against the published catalogue and the
+ *                                rest of the queue. A review item held because its article only mentions the event
+ *                                (event_source_mismatch) is folded WITHOUT donating that article to the survivor.
+ *
  * Dry run by default.
- *   npx tsx scripts/dedup-catalogue.ts [--limit N] [--budget 5] [--show] [--samples 30] [--apply]
- *   npx tsx scripts/dedup-catalogue.ts --undo
+ *   npx tsx scripts/dedup-catalogue.ts [--scope review] [--limit N] [--budget 5] [--show] [--samples 30] [--apply]
+ *   npx tsx scripts/dedup-catalogue.ts [--scope review] --undo
  */
 import fs from "fs";
 import { prisma } from "@/lib/db";
@@ -30,12 +36,17 @@ const arg = (n: string, d: string) => { const i = process.argv.indexOf(n); retur
 const apply = process.argv.includes("--apply");
 const LIMIT = Number(arg("--limit", "0"));
 const BUDGET = Number(arg("--budget", "5"));
-const WINDOW_DAYS = 45;
+const SCOPE = arg("--scope", "catalogue") === "review" ? "review" : "catalogue";
 const REMENTION_DAYS = 365;
+/** How far apart two reports of one event can be dated. Review items get a wider look: there are few of them. */
+const WINDOW: Record<string, number> = SCOPE === "review"
+  ? { CONTRACT: 90, M_AND_A: 60, PARTNERSHIP: 60, NEW_OFFERING: 45, ORG_CHANGE: 14, FINANCIAL_RESULTS: 14 }
+  : { CONTRACT: 45 };
+const windowDays = (family: string) => WINDOW[family] ?? 45;
 const DAY = 86_400_000;
 const MODEL = { id: "claude-haiku-5-5", inPerM: 0.1, outPerM: 0.5 };
-const CACHE = "_scratch/catalogue-verdicts-v2.json";
-const ACTION = "dedup_catalogue";
+const CACHE = SCOPE === "review" ? "_scratch/review-verdicts.json" : "_scratch/catalogue-verdicts-v2.json";
+const ACTION = SCOPE === "review" ? "dedup_review" : "dedup_catalogue";
 const VERSION = "dedup-catalogue/1.1.0-2026-11-25";
 
 const SYSTEM = [
@@ -49,8 +60,20 @@ const SYSTEM = [
   "Reply with JSON only: {\"same\": <candidate number, or 0 for none>, \"why\": \"<12 words>\"}",
 ].join("\n");
 
+const SYSTEM_REVIEW = [
+  "You compare records in an IT-services market tracker. Every record below is for the same provider and the same kind of event: a contract, an acquisition or stake, a partnership, a product or service launch, a leadership change, or financial results.",
+  "Decide whether RECORD describes the same event as one of the numbered CANDIDATES.",
+  "Same event: the same specific deal, transaction, alliance, launch, appointment or results announcement, as reported by different sources. The other party's name may be written differently (an acronym, a parent or agency name, a legal suffix). A stated value on one record and none on the other does not make them different.",
+  "A later record that only re-reports or refers back to something already recorded, with no new development of its own, is the same event.",
+  "An unnamed party matches a named one only when the date, scope and stated value together clearly identify the same deal.",
+  "NOT the same: a different other party; a different deal, product or role with the same party; a different stage of the same thing (talks and the signed deal, an announced acquisition and its completion, an award and its later extension, dispute or termination); stated values that clearly conflict; a different reporting period.",
+  "If you are not sure, answer 0.",
+  "Reply with JSON only: {\"same\": <candidate number, or 0 for none>, \"why\": \"<12 words>\"}",
+].join("\n");
+
 interface Ev {
-  id: string; title: string; date: Date | null; status: string; vendorKey: string; client: string | null; anon: boolean;
+  id: string; family: string; reason: string | null; label: string;
+  title: string; date: Date | null; status: string; vendorKey: string; client: string | null; anon: boolean;
   type: string | null; eventStatus: string | null; stated: number | null; estimate: number | null; origValue: number | null; origCcy: string | null;
   term: number | null; scope: string | null; sources: number; created: Date;
 }
@@ -80,31 +103,49 @@ function line(e: Ev): string {
   // Only a value the parties stated is shown. Our own estimate is a calculation, and two similar records get the same
   // one, which reads as evidence of identity when it is none.
   const value = e.stated != null ? `${money(e.stated)} stated` : "not stated";
-  return `(${day(e.date)}) [${e.type ?? "?"}${e.eventStatus ? ", " + e.eventStatus.toLowerCase() : ""}] client: ${e.client ?? (e.anon ? "unnamed" : "none given")} | value: ${value}${e.term ? ` | term: ${e.term} months` : ""} | ${e.title.slice(0, 150)}${e.scope ? ` | scope: ${e.scope.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").slice(0, 170)}` : ""}`;
+  return `(${day(e.date)}) [${SCOPE === "review" ? e.family.toLowerCase() + " · " : ""}${e.type ?? "?"}${e.eventStatus ? ", " + e.eventStatus.toLowerCase() : ""}] ${e.label}: ${e.client ?? (e.anon ? "unnamed" : "none given")} | value: ${value}${e.term ? ` | term: ${e.term} months` : ""} | ${e.title.slice(0, 150)}${e.scope ? ` | scope: ${e.scope.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").slice(0, 170)}` : ""}`;
 }
 
 async function load(): Promise<Ev[]> {
-  const ids = await prisma.canonicalMarketEvent.findMany({ where: { family: "CONTRACT", publicationStatus: { in: ["published", "needs_review"] } }, select: { id: true } });
+  const where = SCOPE === "review"
+    ? { publicationStatus: { in: ["published", "needs_review"] }, family: { in: Object.keys(WINDOW) } }
+    : { family: "CONTRACT", publicationStatus: { in: ["published", "needs_review"] } };
+  const ids = await prisma.canonicalMarketEvent.findMany({ where, select: { id: true } });
   const out: Ev[] = [];
   for (let i = 0; i < ids.length; i += 500) {
     const page = await prisma.canonicalMarketEvent.findMany({
       where: { id: { in: ids.slice(i, i + 500).map(r => r.id) } },
       select: {
-        id: true, canonicalTitle: true, announcementDate: true, publicationStatus: true, primaryEntityId: true, counterpartyRaw: true, eventStatus: true, createdAt: true,
+        id: true, family: true, eventType: true, reviewReason: true, canonicalTitle: true, announcementDate: true, publicationStatus: true, primaryEntityId: true, counterpartyRaw: true, eventStatus: true, createdAt: true,
+        primaryEntity: { select: { canonicalName: true } },
         contractDetails: { select: { vendorRaw: true, clientRaw: true, clientAnonymised: true, contractEventType: true, tcvCommittedUsd: true, tcvEstimateMidUsd: true, tcvOriginalValue: true, tcvOriginalCurrency: true, contractLengthMonths: true, scopeSummary: true } },
+        maDetails: { select: { maEventType: true, acquirerRaw: true, targetRaw: true, dealValueUsd: true, statusAtAnnouncement: true, rationale: true } },
+        partnershipDetails: { select: { partnershipType: true, entityARaw: true, entityBRaw: true, scopeSummary: true } },
+        offeringDetails: { select: { offeringType: true, offeringName: true, scopeSummary: true } },
+        orgChangeDetails: { select: { orgEventType: true, personName: true, roleName: true } },
         _count: { select: { sourceEvents: true } },
       },
     });
     for (const e of page) {
-      const cd = e.contractDetails;
-      const vendorKey = e.primaryEntityId ?? (cd?.vendorRaw ? "raw:" + words(cd.vendorRaw).join(" ") : "");
+      const cd = e.contractDetails, ma = e.maDetails, pt = e.partnershipDetails, of = e.offeringDetails, oc = e.orgChangeDetails;
+      const provider = e.primaryEntity?.canonicalName ?? cd?.vendorRaw ?? e.canonicalTitle.split("|")[0];
+      const vendorKey = e.primaryEntityId ?? (provider.trim() ? "raw:" + words(provider).join(" ") : "");
       if (!vendorKey) continue;
+      // The other party: whichever named side is not the provider itself.
+      const other = (...names: (string | null | undefined)[]) => names.find(n => !!n && clientSim(n, provider) < 0.5) ?? null;
+      const positive = (v: number | null | undefined) => v && v > 0 ? v : null;   // a stated value of exactly 0 is an empty field
+      let label = "client", client: string | null = null, type: string | null = e.eventType, stated: number | null = null, scope: string | null = null;
+      if (e.family === "CONTRACT") { client = cd?.clientRaw ?? e.counterpartyRaw ?? null; type = cd?.contractEventType ?? e.eventType; stated = positive(cd?.tcvCommittedUsd); scope = cd?.scopeSummary ?? null; }
+      else if (e.family === "M_AND_A") { label = "other party"; client = other(ma?.targetRaw, ma?.acquirerRaw, e.counterpartyRaw); type = [ma?.maEventType ?? e.eventType, ma?.statusAtAnnouncement].filter(Boolean).join("/"); stated = positive(ma?.dealValueUsd); scope = ma?.rationale ?? null; }
+      else if (e.family === "PARTNERSHIP") { label = "partner"; client = other(pt?.entityBRaw, pt?.entityARaw, e.counterpartyRaw); type = pt?.partnershipType ?? e.eventType; scope = pt?.scopeSummary ?? null; }
+      else if (e.family === "NEW_OFFERING") { label = "product"; client = of?.offeringName ?? null; type = of?.offeringType ?? e.eventType; scope = of?.scopeSummary ?? null; }
+      else if (e.family === "ORG_CHANGE") { label = "person"; client = [oc?.personName, oc?.roleName].filter(Boolean).join(", ") || null; type = oc?.orgEventType ?? e.eventType; }
+      else { label = "period"; client = null; }
       out.push({
-        id: e.id, title: e.canonicalTitle, date: e.announcementDate, status: e.publicationStatus, vendorKey,
-        client: cd?.clientRaw ?? e.counterpartyRaw ?? null, anon: !!cd?.clientAnonymised, type: cd?.contractEventType ?? null, eventStatus: e.eventStatus,
-        // A stated value of exactly 0 is an empty field, not a contract worth nothing.
-        stated: cd?.tcvCommittedUsd && cd.tcvCommittedUsd > 0 ? cd.tcvCommittedUsd : null, estimate: cd?.tcvEstimateMidUsd ?? null, origValue: cd?.tcvOriginalValue ?? null, origCcy: cd?.tcvOriginalCurrency ?? null,
-        term: cd?.contractLengthMonths ?? null, scope: cd?.scopeSummary ?? null, sources: e._count.sourceEvents, created: e.createdAt,
+        id: e.id, family: e.family, reason: e.reviewReason, label,
+        title: e.canonicalTitle, date: e.announcementDate, status: e.publicationStatus, vendorKey: vendorKey + "|" + e.family, client, anon: !!cd?.clientAnonymised,
+        type, eventStatus: e.eventStatus, stated, estimate: cd?.tcvEstimateMidUsd ?? null, origValue: cd?.tcvOriginalValue ?? null, origCcy: cd?.tcvOriginalCurrency ?? null,
+        term: cd?.contractLengthMonths ?? null, scope, sources: e._count.sourceEvents, created: e.createdAt,
       });
     }
   }
@@ -116,10 +157,12 @@ const rank = (e: Ev) => [e.status === "published" ? 0 : 1, e.stated != null ? 0 
 const before = (a: Ev, b: Ev) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i]; return a.id < b.id; };
 
 async function undo() {
-  const acts = await prisma.reviewAction.findMany({ where: { action: ACTION }, select: { eventId: true, previousValue: true } });
+  const acts = await prisma.reviewAction.findMany({ where: { action: ACTION }, select: { eventId: true, previousValue: true, reviewerNote: true } });
   let n = 0;
   for (const a of acts) {
-    const r = await prisma.canonicalMarketEvent.updateMany({ where: { id: a.eventId, publicationStatus: "excluded_noise", reviewReason: { startsWith: "duplicate_of:" } }, data: { publicationStatus: a.previousValue ?? "published", reviewReason: null, humanReviewRequired: a.previousValue === "needs_review" } });
+    // A review item goes back with the reason it was held for.
+    const was = / · was:(.*)$/.exec(a.reviewerNote ?? "")?.[1] || null;
+    const r = await prisma.canonicalMarketEvent.updateMany({ where: { id: a.eventId, publicationStatus: "excluded_noise", reviewReason: { startsWith: "duplicate_of:" } }, data: { publicationStatus: a.previousValue ?? "published", reviewReason: a.previousValue === "needs_review" ? was : null, humanReviewRequired: a.previousValue === "needs_review" } });
     n += r.count;
   }
   await prisma.reviewAction.createMany({ data: acts.map(a => ({ eventId: a.eventId, action: "dedup_catalogue_undone", previousValue: "excluded_noise", newValue: a.previousValue ?? "published", reviewerNote: VERSION })) });
@@ -140,6 +183,7 @@ async function main() {
     const tok = new Map(group.map(e => [e.id, new Set(words(e.title + " " + (e.scope ?? "").slice(0, 200)).filter(w => !STOP.has(w) && !vendorWords.has(w) && w.length > 1))]));
     for (const e of group) {
       if (!e.date) continue;
+      if (SCOPE === "review" && e.status !== "needs_review") continue;   // only the queue is judged; the catalogue is what it is judged against
       const scored: [Ev, number][] = [];
       for (const o of group) {
         if (o.id === e.id || !o.date || !before(o, e)) continue;
@@ -149,7 +193,7 @@ async function main() {
         const sameValue = e.stated != null && o.stated != null && Math.abs(e.stated - o.stated) <= 0.01 * Math.max(e.stated, o.stated);
         // Beyond the normal window only one case is worth asking about: the same client and the same stated value,
         // which is how a contract re-reported months later shows up (and how its value gets counted twice).
-        if (gap > WINDOW_DAYS * DAY && !(sameValue && c >= 0.5)) continue;
+        if (gap > windowDays(e.family) * DAY && !(sameValue && c >= 0.5)) continue;
         const t = jaccard(tok.get(e.id)!, tok.get(o.id)!);
         const bothNamed = !!e.client && !!o.client;
         const plausible = c >= 0.5 || sameValue || t >= 0.4 || (!bothNamed && t >= 0.25) || (bothNamed && t >= 0.3);
@@ -176,7 +220,7 @@ async function main() {
           res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
             headers: { "x-api-key": process.env.ANTHROPIC_API_KEY ?? "", "anthropic-version": "2023-06-01", "content-type": "application/json" },
             // 2500: on the hard comparisons Haiku thinks first, and a small allowance runs out mid-thought.
-            body: JSON.stringify({ model: MODEL.id, max_tokens: 2500, system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: user }] }),
+            body: JSON.stringify({ model: MODEL.id, max_tokens: 2500, system: [{ type: "text", text: SCOPE === "review" ? SYSTEM_REVIEW : SYSTEM, cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: user }] }),
             signal: AbortSignal.timeout(60_000) });
           if (res.ok || (res.status !== 429 && res.status < 500)) break;
           await new Promise(r => setTimeout(r, 1500 * 2 ** attempt));
@@ -216,11 +260,18 @@ async function main() {
     merges.push({ loser: job.e, keep, why: v.why });
   }
 
-  console.log(`live contract records: ${events.length}; with at least one candidate: ${jobs.length}; judged ${judged}${LIMIT > 0 ? ` (limit ${LIMIT})` : ""}; new verdicts ${asked} for $${spent.toFixed(2)} (${MODEL.id}); no verdict ${failures}${stopped ? "; STOPPED at the budget" : ""}`);
+  console.log(`${SCOPE === "review" ? `review queue: ${events.filter(e => e.status === "needs_review").length} records, compared against ${events.filter(e => e.status === "published").length} published` : `live contract records: ${events.length}`}; with at least one candidate: ${jobs.length}; judged ${judged}${LIMIT > 0 ? ` (limit ${LIMIT})` : ""}; new verdicts ${asked} for $${spent.toFixed(2)} (${MODEL.id}); no verdict ${failures}${stopped ? "; STOPPED at the budget" : ""}`);
   const pub = merges.filter(m => m.loser.status === "published").length;
   const stated = merges.filter(m => m.loser.status === "published" && m.loser.stated != null);
   const kept = stated.filter(m => m.keep.stated != null);
   console.log(`duplicates found: ${merges.length} (${pub} published, ${merges.length - pub} in review)`);
+  if (SCOPE === "review") {
+    const fam: Record<string, number> = {}, into: Record<string, number> = {};
+    for (const m of merges) { fam[m.loser.family] = (fam[m.loser.family] ?? 0) + 1; into[m.keep.status] = (into[m.keep.status] ?? 0) + 1; }
+    console.log(`  by kind: ${Object.entries(fam).map(([k, v]) => `${k.toLowerCase()} ${v}`).join(", ")}`);
+    console.log(`  duplicate of something already published: ${into.published ?? 0}; duplicate of another review item: ${into.needs_review ?? 0}`);
+    console.log(`  held as a passing mention (their article is not attached to the survivor): ${merges.filter(m => (m.loser.reason ?? "").includes("event_source_mismatch")).length}`);
+  }
   console.log(`stated contract value counted twice today and removed by this merge: $${(kept.reduce((s, m) => s + (m.loser.stated ?? 0), 0) / 1e9).toFixed(1)}bn across ${kept.length} records`);
   const lost = merges.filter(m => m.loser.stated != null && m.keep.stated == null);
   if (lost.length) console.log(`note: ${lost.length} duplicates carry a stated value their survivor lacks (the survivor was published, the duplicate was in review); the value stays on the duplicate's record`);
@@ -239,9 +290,11 @@ async function main() {
         const cur = await tx.canonicalMarketEvent.findUnique({ where: { id: m.loser.id }, select: { publicationStatus: true, sourceEvents: { select: { id: true } } } });
         if (!cur || cur.publicationStatus === "excluded_noise") return;
         // The duplicate's sources also support the survivor. They stay linked to the duplicate too, so an undo needs nothing else.
-        if (cur.sourceEvents.length) await tx.canonicalMarketEvent.update({ where: { id: m.keep.id }, data: { sourceEvents: { connect: cur.sourceEvents.map(s => ({ id: s.id })) } } });
+        // An article that only mentions the event in passing does not support it, so it is not handed to the survivor.
+        const donate = !(m.loser.reason ?? "").includes("event_source_mismatch");
+        if (donate && cur.sourceEvents.length) await tx.canonicalMarketEvent.update({ where: { id: m.keep.id }, data: { sourceEvents: { connect: cur.sourceEvents.map(s => ({ id: s.id })) } } });
         await tx.canonicalMarketEvent.update({ where: { id: m.loser.id }, data: { publicationStatus: "excluded_noise", humanReviewRequired: false, reviewReason: `duplicate_of:${m.keep.id}` } });
-        await tx.reviewAction.create({ data: { eventId: m.loser.id, action: ACTION, previousValue: cur.publicationStatus, newValue: "excluded_noise", reviewerNote: `${VERSION} duplicate_of:${m.keep.id} · ${m.why}`.slice(0, 500) } });
+        await tx.reviewAction.create({ data: { eventId: m.loser.id, action: ACTION, previousValue: cur.publicationStatus, newValue: "excluded_noise", reviewerNote: `${VERSION} duplicate_of:${m.keep.id} · ${m.why}`.slice(0, 380) + ` · was:${m.loser.reason ?? ""}`.slice(0, 120) } });
       });
       done++;
     } catch (err) { console.error(`merge ${m.loser.id}: ${String(err).slice(-160)}`); }
