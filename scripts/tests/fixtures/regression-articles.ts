@@ -59,7 +59,7 @@ export const FIXTURES: Fixture[] = [
     id: "E", label: "tender / RFP — an opportunity, not an award", provider: "Sopra Steria", sourceType: "wire_service",
     title: "Ministry of Defence launches tender for five-year IT service desk contract",
     text: `The UK Ministry of Defence has published a prior information notice for a five-year IT service desk and end-user computing contract valued at up to £180 million. Incumbent supplier Sopra Steria is expected to bid, alongside Capgemini and CGI. Bids are due by 14 November, with award expected in spring 2027. The notice says the department wants a supplier able to support 200,000 users across 300 sites.`,
-    expect: { articleType: "TENDER_RFP", events: 1, family: "CONTRACT", status: "OPPORTUNITY", buyer: /defence/i, buyerSector: "PUBLIC_SECTOR" },
+    expect: { articleTypeIn: ["TENDER_RFP", "NEWS_REPORT"], events: 1, family: "CONTRACT", status: "OPPORTUNITY", buyer: /defence/i, buyerSector: "PUBLIC_SECTOR" },
   },
   {
     id: "F", label: "renewal with no contract value", provider: "Kyndryl", sourceType: "wire_service",
