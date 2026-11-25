@@ -1,10 +1,7 @@
-import { adminDenied } from "@/lib/admin-auth";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-export async function GET(req: Request) {
-  const denied = adminDenied(req);
-  if (denied) return denied;
+export async function GET() {
   const runs = await prisma.ingestionRun.findMany({
     orderBy: { startedAt: "desc" },
     take: 20,

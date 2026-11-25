@@ -1,4 +1,3 @@
-import { adminDenied } from "@/lib/admin-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { runPipeline, syncSourceRegistry, ROUTE_TIME_BUDGET_MS } from "@/lib/ingestion/pipeline";
 
@@ -11,8 +10,6 @@ export const maxDuration = 300;
 // POST /api/ingestion — trigger a pipeline run
 // Supports sourceOffset/maxSources for batched processing from the Admin UI.
 export async function POST(req: NextRequest) {
-  const denied = adminDenied(req);
-  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const {
@@ -63,9 +60,7 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/ingestion — check API key status and source counts
-export async function GET(req: Request) {
-  const denied = adminDenied(req);
-  if (denied) return denied;
+export async function GET() {
   const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
   const { prisma } = await import("@/lib/db");
   const { getIngestionMode } = await import("@/lib/ingestion/mode");
