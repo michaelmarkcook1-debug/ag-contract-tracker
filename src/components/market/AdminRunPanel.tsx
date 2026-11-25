@@ -186,7 +186,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
       {status.hasApiKey && (
         <div className="flex items-center gap-2 text-xs text-emerald-400">
           <CheckCircle2 className="h-3.5 w-3.5" />
-          LLM extraction enabled (triage: Haiku 4.5 · analysis: Sonnet 5)
+          Reading enabled · Sonnet 5.5 reads every article in full
         </div>
       )}
 
@@ -287,13 +287,16 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
                 earlier run (as events or recorded exclusions) and skipped before any
                 model spend — not duplicate events. A feed re-crawled soon after a
                 sweep is expected to be almost entirely already stored. */}
-            <div className="flex justify-between"><span>Articles found</span><span className="font-mono">{status.lastRun.articlesFound}</span></div>
-            <div className="flex justify-between" title="URLs ingested on an earlier run — skipped before any model spend"><span>Already stored</span><span className="font-mono">{status.lastRun.articlesDuped}</span></div>
+            <div className="flex justify-between" title="Every item in every feed, including items the feeds repeat from earlier days"><span>Items in the feeds</span><span className="font-mono">{status.lastRun.articlesFound}</span></div>
+            <div className="flex justify-between" title="URLs ingested on an earlier run — skipped before any model spend"><span>Seen on an earlier day</span><span className="font-mono">{status.lastRun.articlesDuped}</span></div>
             {status.lastRun.articlesStale != null && status.lastRun.articlesStale > 0 && (
               <div className="flex justify-between" title="Older than the age cutoff"><span>Too old</span><span className="font-mono">{status.lastRun.articlesStale}</span></div>
             )}
+            {status.lastRun.articlesFound - status.lastRun.articlesDuped > 0 && (
+              <div className="flex justify-between" title="Items seen for the first time in this run"><span>New today</span><span className="font-mono">{status.lastRun.articlesFound - status.lastRun.articlesDuped}</span></div>
+            )}
             {status.lastRun.articlesRelevant != null && (
-              <div className="flex justify-between" title="Survived the rules, vendor gate and age cutoff"><span>Candidates</span><span className="font-mono">{status.lastRun.articlesRelevant}</span></div>
+              <div className="flex justify-between" title="New articles that name a tracked vendor, plus the backlog queued from earlier runs"><span>Waiting to be read</span><span className="font-mono">{status.lastRun.articlesRelevant}</span></div>
             )}
             {status.mode && (
               <div className="flex justify-between" title={status.mode.note ?? undefined}>
@@ -302,18 +305,18 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
               </div>
             )}
             {status.lastRun.articlesTriaged != null && (
-              <div className="flex justify-between"><span>Triaged by the model</span><span className="font-mono">{status.lastRun.articlesTriaged}</span></div>
+              <div className="flex justify-between" title="Whole article read by the model in this run. A run reads for about three minutes; the rest wait for the next run."><span>Read this run</span><span className="font-mono">{status.lastRun.articlesTriaged}</span></div>
             )}
             {status.lastRun.articlesExcluded != null && (
-              <div className="flex justify-between" title="Judged out of scope by the model; recorded so they are never re-bought"><span>Excluded by the model</span><span className="font-mono text-zinc-500">{status.lastRun.articlesExcluded}</span></div>
+              <div className="flex justify-between" title="Read in full and found to report no contract, deal, partnership, launch, leadership change or results. Normal for news feeds; recorded so it is never paid for again."><span>Read, no event in it</span><span className="font-mono text-zinc-500">{status.lastRun.articlesExcluded}</span></div>
             )}
             {status.lastRun.articlesMerged != null && status.lastRun.articlesMerged > 0 && (
-              <div className="flex justify-between" title="Re-reports attached to an event already stored"><span>Merged into existing</span><span className="font-mono">{status.lastRun.articlesMerged}</span></div>
+              <div className="flex justify-between" title="A second report of an event already stored; attached to it as another source"><span>Added to an existing event</span><span className="font-mono">{status.lastRun.articlesMerged}</span></div>
             )}
-            <div className="flex justify-between"><span>Published</span><span className="font-mono text-emerald-400">{status.lastRun.eventsPublished}</span></div>
-            <div className="flex justify-between"><span>Queued for review</span><span className="font-mono text-amber-400">{status.lastRun.eventsQueued}</span></div>
+            <div className="flex justify-between"><span>New events published</span><span className="font-mono text-emerald-400">{status.lastRun.eventsPublished}</span></div>
+            <div className="flex justify-between"><span>New events held for review</span><span className="font-mono text-amber-400">{status.lastRun.eventsQueued}</span></div>
             {status.lastRun.articlesDeferred != null && status.lastRun.articlesDeferred > 0 && (
-              <div className="flex justify-between" title="Candidates not reached within the run's budget — picked up next run"><span>Deferred</span><span className="font-mono">{status.lastRun.articlesDeferred}</span></div>
+              <div className="flex justify-between" title="Not reached in this run's reading time. Nothing is dropped: they stay queued for the next run."><span>Not reached, queued for next run</span><span className="font-mono">{status.lastRun.articlesDeferred}</span></div>
             )}
           </CardContent>
         </Card>

@@ -82,12 +82,12 @@ export default async function AdminPage() {
                 <Separator />
                 <div className="space-y-2 text-xs text-muted-foreground">
                   {[
-                    ["1. Crawl", "Fetch RSS/API sources (Google News queries are date-bounded)."],
-                    ["2. Dedup", "Skip URLs already stored — including ones previously excluded."],
-                    ["3. Select", "Structural only: age cutoff (60 days) and, for market-wide wires, a tracked-vendor name. Every rejection is recorded with its reason."],
-                    ["4. Read + triage", "Publisher page fetched (Google News links decoded). Haiku reads the article: article type, event status, family, vendor, counterparty. Out-of-scope articles are recorded with their type, not re-bought."],
-                    ["5. Dedupe + analyse", "Re-reports attach to the stored event as extra sources (vendor, counterparty, ±14 days). Sonnet reads every in-scope article: scope, parties, value (stated or a labelled estimate), insight."],
-                    ["6. Gate + store", "Publishes on the model's reading: vendor resolved, counterparty named, event type valid, event announced or completed. Tenders, terminations, disputes and low confidence go to needs_review with the reasons."],
+                    ["1. Crawl", "Fetch every RSS/API feed. Most of each day's items were already seen on an earlier day and are skipped at once."],
+                    ["2. Vendor filter", "Only for the market-wide press wires: an item whose headline names no tracked vendor is dropped before anything is fetched or paid for. Every drop is recorded with its reason."],
+                    ["3. Fetch", "The publisher's page is fetched (Google News links decoded). A page with no readable article text is recorded as unreadable."],
+                    ["4. Read", "Sonnet 5.5 reads the whole article once: what kind of article it is and every commercial event in it, each with the passage that supports it. Most news articles contain no event; that is recorded so it is never paid for twice. Reading is time-limited per run, and anything not reached stays queued."],
+                    ["5. Source check + dedupe", "Each event must be reported by its article, not just mentioned in it: a headline rule first, then an independent second read for anything it flags. A second report of a stored event is attached to it as another source."],
+                    ["6. Gate + store", "Publishes when the vendor is tracked, the counterparty is named, and the event is announced, completed, terminated or disputed. Tenders, unnamed counterparties, possible duplicates and unsupported events go to review with the reason."],
                   ].map(([step, desc]) => (
                     <div key={step} className="flex flex-col sm:flex-row gap-0.5 sm:gap-3">
                       <span className="text-zinc-500 font-mono sm:w-28 shrink-0">{step}</span>
