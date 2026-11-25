@@ -22,6 +22,7 @@ import { prisma } from "@/lib/db";
 import { readableArticleText } from "@/lib/ingestion/article-text";
 import { readerPrompts, readerRequestParams, parseReaderResponse, assembleReading } from "@/lib/ingestion/reader";
 import { storeReading, storeNonEvent, storePending, storeUnreadable, findReadByContent, storeDuplicateContent, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
+import { confirmFlaggedSources } from "@/lib/ingestion/source-check";
 import type { RawArticle } from "@/lib/ingestion/crawler";
 
 process.on("unhandledRejection", e => console.error("unhandled (continuing):", String(e).slice(0, 200)));
@@ -29,6 +30,8 @@ const arg = (n: string, d: string) => { const i = process.argv.indexOf(n); retur
 const BUDGET = Number(arg("--budget", "0"));
 const PILOT = Number(arg("--pilot", "120"));
 const apply = process.argv.includes("--apply");
+/** Stop after this many articles have been submitted in this session (0 = no cap). For a test run. */
+const MAX_ARTICLES = Number(arg("--max-articles", "0"));
 const STATE = "_scratch/batch-read.json";
 const API = "https://api.anthropic.com/v1/messages/batches";
 const headers = () => ({ "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "content-type": "application/json" });
@@ -81,7 +84,8 @@ async function nextItems(n: number, exclude: Set<string>, runId: string): Promis
     const text = readableArticleText(p.rawText) ?? "";
     if (!text) { unreadable++; if (apply) await storeUnreadable(article, runId); continue; }
     const hash = crypto.createHash("sha256").update(text).digest("hex");
-    const prior = await findReadByContent(hash, article.title);
+    // With the article and its text, as the pipeline calls it: a contract's earlier read is only reused when this article supports the stored event.
+    const prior = await findReadByContent(hash, article.title, article, text);
     if (prior) { dupes++; if (apply) await storeDuplicateContent(article, text, hash, prior, runId); continue; }
     items.push({ rowId: p.id, article, text, segments: readerPrompts({ title: article.title, text, provider: article.provider, sourceType: article.sourceType, publishedAt: article.publishedAt }).prompts.length });
   }
@@ -127,7 +131,30 @@ async function waitFor(id: string): Promise<string> {
   }
 }
 
-type Counts = { published: number; queued: number; merged: number; nonEvent: number; failed: number; costUsd: number; outputTokens: number; inputTokens: number };
+/** Anthropic's error type for a failed batch request, when it gives one. */
+function errType(e: unknown): string {
+  const inner = (e as { error?: { type?: string; message?: string } } | undefined)?.error;
+  return [inner?.type, inner?.message].filter(Boolean).join(": ").slice(0, 160);
+}
+/**
+ * A batch request that expired, was cancelled, went missing or failed on the
+ * service side says nothing about the article: it stays queued with no failed
+ * attempt recorded. Only an invalid request is about this article.
+ */
+const batchSideFailure = (error: string) => /^batch (expired|canceled|result missing)/.test(error) || (/^batch errored/.test(error) && !/invalid_request_error/.test(error));
+
+async function withRetry<T>(what: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await fn(); }
+    catch (err) {
+      if (attempt >= 3) throw err;
+      console.error(`  ${what}: ${String(err).slice(-120)} (retry ${attempt})`);
+      await sleep(2000 * attempt);
+    }
+  }
+}
+
+type Counts = { published: number; queued: number; merged: number; nonEvent: number; failed: number; requeued: number; storeErrors: number; checks: number; lifted: number; costUsd: number; outputTokens: number; inputTokens: number };
 
 /** Collect one ended batch and store every article exactly as the pipeline does. */
 async function collect(rec: BatchRec, runId: string): Promise<Counts> {
@@ -140,26 +167,48 @@ async function collect(rec: BatchRec, runId: string): Promise<Counts> {
     const r = JSON.parse(line) as { custom_id: string; result: { type: string; message?: Parameters<typeof parseReaderResponse>[0]; error?: unknown } };
     byId.set(r.custom_id, r.result.type === "succeeded" && r.result.message
       ? parseReaderResponse(r.result.message, 0.5)
-      : { parsed: null, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }, error: `batch ${r.result.type}` });
+      : { parsed: null, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }, error: `batch ${r.result.type}${errType(r.result.error) ? `: ${errType(r.result.error)}` : ""}` });
   }
-  const c: Counts = { published: 0, queued: 0, merged: 0, nonEvent: 0, failed: 0, costUsd: 0, outputTokens: 0, inputTokens: 0 };
-  // Sequential, like the pipeline's store phase: a re-report must see the
-  // event stored a moment earlier and attach to it.
-  for (const it of rec.items) {
+  const c: Counts = { published: 0, queued: 0, merged: 0, nonEvent: 0, failed: 0, requeued: 0, storeErrors: 0, checks: 0, lifted: 0, costUsd: 0, outputTokens: 0, inputTokens: 0 };
+  // Assemble every reading first, then give the second opinion (source-check.ts)
+  // to the events the headline rule would hold: eight at a time, ahead of the
+  // store loop, which has to stay sequential.
+  const assembled = rec.items.map(it => {
     const results = Array.from({ length: it.segments }, (_, s) => byId.get(`${it.rowId}_${s}`)
       ?? { parsed: null, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }, error: "batch result missing" });
     const { text } = readerPrompts({ title: it.article.title, text: it.text });
-    const out = assembleReading(text, results);
     // Every segment is billed even when an earlier one failed.
     for (const r of results) { c.costUsd += r.usage.costUsd; c.outputTokens += r.usage.outputTokens; c.inputTokens += r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.cacheWriteTokens; }
+    return { it, out: assembleReading(text, results) };
+  });
+  let next = 0;
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    for (;;) {
+      const a = assembled[next++];
+      if (!a) return;
+      if (!a.out.ok || a.out.reading.events.length === 0) continue;
+      c.costUsd += await confirmFlaggedSources(a.it.article, a.it.text, a.out.reading);
+      for (const ev of a.out.reading.events) if (ev.sourceCheck) { c.checks++; if (ev.sourceConfirmed) c.lifted++; }
+    }
+  }));
+  // Sequential, like the pipeline's store phase: a re-report must see the
+  // event stored a moment earlier and attach to it.
+  for (const { it, out } of assembled) {
     try {
-      if (!out.ok) { c.failed++; await storePending(it.article, it.text, out.error, runId); continue; }
-      if (out.reading.events.length === 0) { c.nonEvent++; await storeNonEvent(it.article, it.text, out.reading, runId); continue; }
-      const s = await storeReading(it.article, it.text, out.reading, runId);
+      if (!out.ok) {
+        // Not the article's fault: leave it queued exactly as it was.
+        if (batchSideFailure(out.error)) { c.requeued++; continue; }
+        c.failed++; await withRetry(`pending ${it.rowId}`, () => storePending(it.article, it.text, out.error, runId)); continue;
+      }
+      const reading = out.reading;
+      if (reading.events.length === 0) { c.nonEvent++; await withRetry(`store ${it.rowId}`, () => storeNonEvent(it.article, it.text, reading, runId)); continue; }
+      const s = await withRetry(`store ${it.rowId}`, () => storeReading(it.article, it.text, reading, runId));
       c.published += s.published; c.queued += s.queued; c.merged += s.merged;
       if (s.published + s.queued + s.merged === 0) c.nonEvent++;
     } catch (err) {
-      console.error(`store ${it.rowId}: ${String(err).slice(-200)}`);
+      // The paid result is still held by Anthropic for 29 days; the article stays queued.
+      c.storeErrors++;
+      console.error(`store ${it.rowId} FAILED after retries: ${String(err).slice(-200)}`);
     }
   }
   return c;
@@ -172,7 +221,7 @@ async function collect(rec: BatchRec, runId: string): Promise<Counts> {
     const runId = apply ? (await prisma.ingestionRun.create({ data: { runType: "backlog_batch" }, select: { id: true } })).id : "dry";
     state = { runId, spentUsd: 0, batches: [] };
   }
-  const totals: Counts = { published: 0, queued: 0, merged: 0, nonEvent: 0, failed: 0, costUsd: 0, outputTokens: 0, inputTokens: 0 };
+  const totals: Counts = { published: 0, queued: 0, merged: 0, nonEvent: 0, failed: 0, requeued: 0, storeErrors: 0, checks: 0, lifted: 0, costUsd: 0, outputTokens: 0, inputTokens: 0 };
   let articlesRead = 0;
   const add = (c: Counts) => { for (const k of Object.keys(totals) as (keyof Counts)[]) totals[k] += c[k]; };
 
@@ -181,7 +230,7 @@ async function collect(rec: BatchRec, runId: string): Promise<Counts> {
     rec.collected = true; rec.costUsd = c.costUsd;
     state!.spentUsd += c.costUsd; articlesRead += rec.items.length; add(c);
     saveState(state!);
-    console.log(`collected ${rec.id}: ${rec.items.length} articles · $${c.costUsd.toFixed(2)} ($${(c.costUsd / rec.items.length).toFixed(4)}/article) · published ${c.published}, review ${c.queued}, merged ${c.merged}, no event ${c.nonEvent}, failed ${c.failed} · spent $${state!.spentUsd.toFixed(2)} of $${BUDGET}`);
+    console.log(`collected ${rec.id}: ${rec.items.length} articles · $${c.costUsd.toFixed(2)} ($${(c.costUsd / rec.items.length).toFixed(4)}/article) · published ${c.published}, review ${c.queued}, merged ${c.merged}, no event ${c.nonEvent}, failed ${c.failed}, requeued ${c.requeued}, store errors ${c.storeErrors} · second opinions ${c.checks} (${c.lifted} lifted) · spent $${state!.spentUsd.toFixed(2)} of $${BUDGET}`);
   };
 
   // Anything submitted before a crash is collected first.
@@ -204,7 +253,10 @@ async function collect(rec: BatchRec, runId: string): Promise<Counts> {
     const left = BUDGET - state.spentUsd;
     const m = model();
     if (m && left * 0.85 < m.avg * 20) { console.log(`stopping: $${left.toFixed(2)} left buys fewer than ~20 articles`); break; }
-    const want = m ? Math.min(2000, Math.ceil((left * 0.85 / m.avg) * 1.3)) : PILOT;
+    const submitted = state.batches.reduce((n, b) => n + b.items.length, 0);
+    if (MAX_ARTICLES && submitted >= MAX_ARTICLES) { console.log(`stopping: the ${MAX_ARTICLES}-article cap for this run is reached`); break; }
+    const room = MAX_ARTICLES ? MAX_ARTICLES - submitted : Infinity;
+    const want = Math.min(room, m ? Math.min(2000, Math.ceil((left * 0.85 / m.avg) * 1.3)) : PILOT);
     const { items: candidates, skipped } = await nextItems(want, inFlight(), state.runId);
     if (skipped.unreadable || skipped.dupes) console.log(`  skipped before spend: ${skipped.unreadable} unreadable, ${skipped.dupes} copies of articles already read`);
     let items = candidates, projected = 0;
