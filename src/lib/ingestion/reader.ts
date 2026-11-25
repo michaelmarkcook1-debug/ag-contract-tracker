@@ -95,6 +95,9 @@ export interface GroundedEvent extends RawEventCandidate {
   supporting: Record<string, string>;
   /** claims the model made that the text did not support and were dropped */
   dropped: string[];
+  /** Set by source-check.ts when the headline rule flagged this event and an independent read found the article does report it. */
+  sourceConfirmed?: boolean;
+  sourceCheck?: { verdict: string; why: string };
 }
 
 export interface Reading {

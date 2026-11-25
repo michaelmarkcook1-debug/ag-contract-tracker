@@ -11,6 +11,7 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { sameContract, sourceSupportsEvent } from "../event-identity";
 import { resolveTransaction, storedEventQuote } from "./transaction-resolution";
+import { firstPassSupports, SOURCE_CHECK_VERSION } from "./source-check";
 import type { RawArticle } from "./crawler";
 import type { Reading, GroundedEvent } from "./reader";
 import { canonicalContractEventId, PROMPT_POLICY_VERSION } from "./reader";
@@ -397,8 +398,8 @@ async function storeArticleEvents(tx: Prisma.TransactionClient, article: RawArti
     const statedDate = parseDate(ev.announcementDate);
     const when = statedDate ?? articleDate;
     const referenceTitle = ev.title ?? article.title;
-    const supported = sourceSupportsEvent(articleSource(article, text), { family, referenceTitle, providerName: ev.provider,
-      counterpartyNames: [ev.buyer], articleType: reading.articleType, eventQuote: ev.supporting.event });
+    // First pass (headline rule), or the independent read that overrode its flag — see source-check.ts.
+    const supported = ev.sourceConfirmed === true || firstPassSupports(article, text, reading, ev);
     let multiple = false;
     if (supported && vendorId && when && family !== "M_AND_A") {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${family + ":" + vendorId}))`;
@@ -459,6 +460,9 @@ async function storeArticleEvents(tx: Prisma.TransactionClient, article: RawArti
         analystInsight: null,
         sourceEvents: { connect: { id: source.id } },
       } });
+      // Audit trail for a second opinion, whichever way it went.
+      if (ev.sourceCheck) await tx.reviewAction.create({ data: { eventId: created.id, action: "source_check", reviewerNote: `${SOURCE_CHECK_VERSION} ${ev.sourceCheck.verdict}: ${ev.sourceCheck.why}`.slice(0, 500),
+        previousValue: "event_source_mismatch", newValue: ev.sourceConfirmed ? "supported" : "event_source_mismatch" } });
       if (family === "CONTRACT") {
         await tx.contractDetails.create({ data: {
           canonicalEventId: created.id, vendorId: vendorId ?? undefined, vendorRaw: ev.provider, vendorConfidence: vendorId ? 0.9 : 0.6,

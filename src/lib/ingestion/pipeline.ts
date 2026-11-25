@@ -7,6 +7,7 @@ import { crawlSource, RawArticle } from "./crawler";
 import { EMPTY_USAGE, TokenUsage } from "./classifier";
 import { retrieveArticle, readableArticleText } from "./article-text";
 import { readArticle, isServiceFailure, type Reading } from "./reader";
+import { confirmFlaggedSources } from "./source-check";
 import { storeReading, storeNonEvent, storePending, storeUnreadable, storeDeferred, findReadByContent, storeDuplicateContent, MAX_READ_ATTEMPTS } from "./store";
 
 /** Consecutive model-service failures (not article failures) after which a run stops reading. */
@@ -517,6 +518,8 @@ export async function runPipeline(
           continue;
         }
         serviceStrikes = 0;
+        // Second opinion on events the headline rule would hold (source-check.ts); inside the read pool so the store phase stays fast.
+        if (out.reading.events.length) addUsageTo({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: await confirmFlaggedSources(article, text, out.reading) });
         readings.push({ article, text, reading: out.reading });
       } catch (err) {
         progress.errors.push(`Read error (${raw.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`);
