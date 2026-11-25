@@ -8,12 +8,15 @@
  */
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
+import { sameContract, sourceSupportsEvent } from "../event-identity";
+import { resolveTransaction, storedEventQuote } from "./transaction-resolution";
 import type { RawArticle } from "./crawler";
 import type { Reading, GroundedEvent } from "./reader";
 import { canonicalContractEventId, PROMPT_POLICY_VERSION } from "./reader";
 import { defaultEventType, isValidEventType, EMPTY_USAGE, type ExtractionResult } from "./classifier";
 import { decidePublication } from "./gate";
-import { orgsMatch, titleCounterparty, withinDays, amountsConflict, SAME_EVENT_WINDOW_DAYS } from "./dedup";
+import { orgsMatch, titleCounterparty, withinDays, SAME_EVENT_WINDOW_DAYS } from "./dedup";
 import { estimateContractValue, type ValueEstimate } from "@/lib/tcv/engine";
 
 /**
@@ -21,12 +24,12 @@ import { estimateContractValue, type ValueEstimate } from "@/lib/tcv/engine";
  * contract carries a value — stated when stated, otherwise calculated and
  * labelled). The stated field is never written here.
  */
-async function estimateFor(ev: GroundedEvent, article: RawArticle, text: string, eventType: string, when: Date): Promise<ValueEstimate | null> {
+async function estimateFor(ev: GroundedEvent, article: RawArticle, text: string, eventType: string, when: Date | null): Promise<ValueEstimate | null> {
   try {
     return await estimateContractValue({
       serviceLine: ev.serviceLine, sourceType: article.sourceType, sourceName: article.provider, contractLengthMonths: ev.durationMonths,
       provider: ev.provider, industry: ev.industry, geography: ev.geography, eventType, anonymised: !ev.buyer && !!ev.buyerDescriptor,
-      usersServed: ev.usersServed, announcementYear: when.getFullYear(), agentCount: ev.agentCount, agentTarget: ev.agentTarget,
+      usersServed: ev.usersServed, announcementYear: when?.getFullYear() ?? null, agentCount: ev.agentCount, agentTarget: ev.agentTarget,
       deliveryLocations: ev.deliveryLocations, workType: ev.workType, buyerCountry: ev.buyerCountry ?? ev.geography[0] ?? null, text,
     });
   } catch { return null; }
@@ -44,8 +47,8 @@ const CONTRACT_TYPE_MAP: Record<string, string> = {
   TERMINATION: "termination", CONTRACT_CHANGE: "contract_change", OTHER_COMMERCIAL_EVENT: "contract_change", UNKNOWN: "unknown",
 };
 
-/** Award-type disagreements between re-reports are tolerated; these are not awards. */
-const ENDING_TYPES = new Set(["TERMINATION", "SCOPE_REDUCTION"]);
+/** Legacy rows may have only the UI event type. */
+const CONTRACT_TYPES = Object.fromEntries(Object.entries(CONTRACT_TYPE_MAP).map(([k, v]) => [v, k]));
 
 const FX_TO_USD: Record<string, number> = { USD: 1, EUR: 1.09, GBP: 1.27, AUD: 0.66, CAD: 0.73, INR: 0.012, DKK: 0.146, SEK: 0.095, NOK: 0.093, CHF: 1.12, JPY: 0.0068, SGD: 0.75, AED: 0.27, SAR: 0.27, BRL: 0.18, ZAR: 0.055, NZD: 0.61, PLN: 0.26, CZK: 0.044 };
 /**
@@ -83,9 +86,9 @@ export function contractDates(effectiveDate: Date | null, announcementDate: Date
 function hashUrl(url: string): string { return crypto.createHash("sha256").update(url).digest("hex").slice(0, 16); }
 function parseDate(s: string | null | undefined): Date | null { if (!s) return null; const d = new Date(s); return Number.isNaN(d.getTime()) ? null : d; }
 
-async function resolveEntityId(name: string | null): Promise<string | null> {
+async function resolveEntityId(name: string | null, db: Prisma.TransactionClient): Promise<string | null> {
   if (!name) return null;
-  const e = await prisma.entity.findFirst({ where: { OR: [{ canonicalName: { equals: name } }, { aliases: { some: { alias: { equals: name } } } }] }, select: { id: true } });
+  const e = await db.entity.findFirst({ where: { OR: [{ canonicalName: { equals: name } }, { aliases: { some: { alias: { equals: name } } } }] }, select: { id: true } });
   return e?.id ?? null;
 }
 
@@ -115,8 +118,8 @@ function sourceRow(article: RawArticle, text: string, reading: Reading | null, r
  * existing EXTRACTED row is left alone and the caller must not store again.
  */
 async function upsertSource(article: RawArticle, text: string, reading: Reading | null, runId: string,
-  status: "extracted" | "excluded" | "pending", reason: string | null, error: string | null): Promise<{ id: string } | null> {
-  const existing = await prisma.sourceEvent.findUnique({ where: { sourceUrl: article.url }, select: { id: true, processingStatus: true, exclusionReason: true } });
+  status: "extracted" | "excluded" | "pending" | "needs_review", reason: string | null, error: string | null, db: Prisma.TransactionClient = prisma): Promise<{ id: string } | null> {
+  const existing = await db.sourceEvent.findUnique({ where: { sourceUrl: article.url }, select: { id: true, processingStatus: true, exclusionReason: true } });
   if (existing && existing.processingStatus === "extracted") return null;
   const data = {
     ...sourceRow(article, text, reading, runId),
@@ -127,8 +130,8 @@ async function upsertSource(article: RawArticle, text: string, reading: Reading 
     extractionConfidence: 0,
     ...(existing?.exclusionReason && existing.processingStatus === "excluded" ? { previousExclusionReason: existing.exclusionReason } : {}),
   };
-  if (existing) return prisma.sourceEvent.update({ where: { id: existing.id }, data, select: { id: true } });
-  return prisma.sourceEvent.create({ data: { sourceUrl: article.url, ...data }, select: { id: true } });
+  if (existing) return db.sourceEvent.update({ where: { id: existing.id }, data, select: { id: true } });
+  return db.sourceEvent.create({ data: { sourceUrl: article.url, ...data }, select: { id: true } });
 }
 
 /** Failed model reads allowed before an article stops being retried. */
@@ -182,16 +185,18 @@ export async function storeDeferred(articles: RawArticle[], runId: string): Prom
  * attached to whatever the first read produced — events as corroboration, or
  * the same exclusion reason.
  */
-export async function findReadByContent(textHash: string, title: string | null): Promise<{ id: string; processingStatus: string; exclusionReason: string | null; eventIds: string[] } | null> {
+export async function findReadByContent(textHash: string, title: string | null, article?: RawArticle, text = ""): Promise<{ id: string; processingStatus: string; exclusionReason: string | null; eventIds: string[] } | null> {
   const priors = await prisma.sourceEvent.findMany({
     where: { articleTextHash: textHash, promptPolicyVersion: PROMPT_POLICY_VERSION, processingStatus: { in: ["extracted", "excluded"] } },
-    select: { id: true, sourceTitle: true, processingStatus: true, exclusionReason: true, canonicalEvents: { select: { id: true } } },
+    select: { id: true, sourceTitle: true, processingStatus: true, articleType: true, exclusionReason: true, canonicalEvents: { select: eventReference } },
     take: 20,
   });
   // Identical extracted text is often page chrome (a paywall, a chatbot panel,
   // a newsroom shell) shared by different stories, so the text alone never
   // decides it — the headline has to name the same story too.
-  const prior = priors.find(p => sameStoryHeadline(p.sourceTitle, title));
+  const prior = priors.find(p => (p.processingStatus !== "extracted" || p.canonicalEvents.length > 0) && sameStoryHeadline(p.sourceTitle, title)
+    && p.canonicalEvents.every(e => !e.reviewReason?.includes("event_source_mismatch") && e.family !== "M_AND_A"
+      && (article ? supportsStored(article, text, p.articleType, e) : e.family !== "CONTRACT")));
   return prior ? { id: prior.id, processingStatus: prior.processingStatus, exclusionReason: prior.exclusionReason, eventIds: prior.canonicalEvents.map(e => e.id) } : null;
 }
 
@@ -211,15 +216,32 @@ export function sameStoryHeadline(a: string | null, b: string | null): boolean {
   return shared / Math.min(x.size, y.size) >= 0.6;
 }
 
-export async function storeDuplicateContent(article: RawArticle, text: string, textHash: string, prior: NonNullable<Awaited<ReturnType<typeof findReadByContent>>>, runId: string): Promise<void> {
-  const extracted = prior.processingStatus === "extracted" && prior.eventIds.length > 0;
-  const src = await upsertSource(article, text, null, runId, extracted ? "extracted" : "excluded",
-    extracted ? null : (prior.exclusionReason ?? "model:duplicate_content"), null);
-  if (!src) return;
-  await prisma.sourceEvent.update({ where: { id: src.id }, data: { articleTextHash: textHash, promptPolicyVersion: PROMPT_POLICY_VERSION, articleTextChars: text.length } });
-  for (const id of prior.eventIds) {
-    await prisma.canonicalMarketEvent.update({ where: { id }, data: { sourceEvents: { connect: { id: src.id } } } }).catch(() => {});
-  }
+const eventReference = { reviewReason: true, id: true, family: true, canonicalTitle: true, counterpartyRaw: true, supportingText: true,
+  primaryEntity: { select: { canonicalName: true } }, contractDetails: { select: { vendorRaw: true, clientRaw: true, clientAnonymised: true } } } as const;
+type StoredReference = Prisma.CanonicalMarketEventGetPayload<{ select: typeof eventReference }>;
+function articleSource(a: RawArticle, rawText: string) {
+  return { sourceTitle: a.title, sourceUrl: a.url, publisherUrl: a.publisherUrl, sourceType: a.sourceType, rawText };
+}
+function supportsStored(a: RawArticle, text: string, articleType: string | null, e: StoredReference, eventQuote = storedEventQuote(e.supportingText)) {
+  const buyer = e.counterpartyRaw ?? e.contractDetails?.clientRaw ?? (e.contractDetails?.clientAnonymised ? null : titleCounterparty(e.canonicalTitle));
+  return sourceSupportsEvent(articleSource(a, text), { family: e.family, referenceTitle: e.canonicalTitle,
+    counterpartyNames: [buyer], providerName: e.primaryEntity?.canonicalName ?? e.contractDetails?.vendorRaw, articleType, eventQuote });
+}
+export async function storeDuplicateContent(article: RawArticle, text: string, textHash: string, prior: NonNullable<Awaited<ReturnType<typeof findReadByContent>>>, runId: string): Promise<number> {
+  return prisma.$transaction(async tx => {
+    // Recheck the actual associations, not just the list of IDs from a previous read.
+    const current = await tx.sourceEvent.findUniqueOrThrow({ where: { id: prior.id }, select: { articleType: true,
+      canonicalEvents: { where: { publicationStatus: { in: ["published", "needs_review"] } }, select: eventReference } } });
+    const supported = current.canonicalEvents.filter(e => prior.processingStatus === "extracted" && prior.eventIds.includes(e.id)
+      && e.family !== "M_AND_A" && !e.reviewReason?.includes("event_source_mismatch") && supportsStored(article, text, current.articleType, e));
+    const mismatch = supported.length !== prior.eventIds.length;
+    const src = await upsertSource(article, text, null, runId, mismatch ? "needs_review" : supported.length ? "extracted" : "excluded",
+      supported.length || mismatch ? null : prior.exclusionReason ?? "model:duplicate_content", mismatch ? "event_source_mismatch" : null, tx);
+    if (!src) return 0;
+    await tx.sourceEvent.update({ where: { id: src.id }, data: { articleType: current.articleType, articleTextHash: textHash,
+      promptPolicyVersion: PROMPT_POLICY_VERSION, articleTextChars: text.length, canonicalEvents: { connect: supported.map(({ id }) => ({ id })) } } });
+    return supported.length;
+  });
 }
 
 /** No readable text (page gone, paywall, empty feed item): a structural exclusion that keeps any earlier verdict (§20). */
@@ -237,42 +259,52 @@ export interface StoreCounts { published: number; queued: number; merged: number
 /**
  * The stored event this grounded event re-reports, if any: same family, same
  * provider entity, announcement within the window, counterparty matching after
- * normalisation (or matching descriptors when neither side names one), event
- * type compatible (equal, or one side UNKNOWN), and no conflicting stated amount.
+ * normalisation (or matching descriptors when neither side names one), and
+ * affirmative event-specific evidence. Never pick a winner among several matches.
  */
-async function findExisting(ev: GroundedEvent, family: string, vendorId: string, when: Date): Promise<{ id: string; publicationStatus: string } | null> {
+async function findExisting(db: Prisma.TransactionClient, ev: GroundedEvent, family: string, vendorId: string, when: Date,
+  article: RawArticle, text: string, articleType: string): Promise<{ id: string } | "ambiguous" | null> {
+  if (family === "M_AND_A") return null;
   const pad = SAME_EVENT_WINDOW_DAYS * 86_400_000;
-  const cands = await prisma.canonicalMarketEvent.findMany({
-    where: { family, primaryEntityId: vendorId, announcementDate: { gte: new Date(when.getTime() - pad), lte: new Date(when.getTime() + pad) }, publicationStatus: { not: "excluded_noise" } },
-    select: { id: true, publicationStatus: true, counterpartyRaw: true, canonicalTitle: true, announcementDate: true, commercialEventType: true, contractDetails: { select: { clientRaw: true, clientDescriptor: true, tcvCommittedUsd: true } } },
-    take: 60,
+  const cands = await db.canonicalMarketEvent.findMany({
+    where: { family, primaryEntityId: vendorId, announcementDateBasis: { not: "unavailable" },
+      announcementDate: { gte: new Date(when.getTime() - pad), lte: new Date(when.getTime() + pad) }, publicationStatus: { in: ["published", "needs_review"] } },
+    select: { ...eventReference, publicationStatus: true, announcementDate: true, commercialEventType: true, eventType: true, eventStatus: true, contractDetails: { select: { ...eventReference.contractDetails.select, clientDescriptor: true, tcvCommittedUsd: true, contractLengthMonths: true, scopeSummary: true } } },
+
   });
-  const myType = ev.commercialEventType;
+  const matches: typeof cands = [];
   for (const c of cands) {
     if (!withinDays(when, c.announcementDate, SAME_EVENT_WINDOW_DAYS)) continue;
-    // Re-reports of one contract routinely disagree on the award type (one
-    // outlet says "wins", another "renews"); those are the same event. Only
-    // an ending (termination, scope reduction) is incompatible with an award.
-    const theirType = c.commercialEventType;
-    if (family === "CONTRACT" && theirType && theirType !== myType && (ENDING_TYPES.has(myType) || ENDING_TYPES.has(theirType))) continue;
-    const theirs = c.counterpartyRaw ?? c.contractDetails?.clientRaw ?? titleCounterparty(c.canonicalTitle);
+    if (c.reviewReason?.includes("event_source_mismatch")) continue;
+    const theirs = c.counterpartyRaw ?? c.contractDetails?.clientRaw ?? (c.contractDetails?.clientAnonymised ? null : titleCounterparty(c.canonicalTitle));
     const mine = ev.buyer;
     let same = false;
     if (mine && theirs) same = orgsMatch(mine, theirs);
     else if (!mine && !theirs && ev.buyerDescriptor && c.contractDetails?.clientDescriptor) same = orgsMatch(ev.buyerDescriptor, c.contractDetails.clientDescriptor);
-    if (!same) continue;
-    if (ev.contractValue != null && c.contractDetails?.tcvCommittedUsd != null) {
-      const mineUsd = toUsd(ev.contractValue, ev.currency);
-      if (mineUsd && amountsConflict(`$${mineUsd}`, `$${c.contractDetails.tcvCommittedUsd}`)) continue;
+    if (!same || !supportsStored(article, text, articleType, c, ev.supporting.event)) continue;
+    if (family !== "CONTRACT") {
+      const passage = ev.supporting.event?.trim().replace(/\s+/g, " ");
+      if (!passage || passage.length < 60 || passage.split(" ").length < 10 ||
+        passage !== storedEventQuote(c.supportingText)?.trim().replace(/\s+/g, " ") ||
+        (c.eventStatus && c.eventStatus !== ev.eventStatus)) continue;
     }
-    return { id: c.id, publicationStatus: c.publicationStatus };
+    if (family === "CONTRACT" && !sameContract({
+      type: ev.commercialEventType, status: ev.eventStatus, provider: ev.provider, buyer: mine, descriptor: ev.buyerDescriptor,
+      title: ev.title, scope: ev.serviceScope, passage: ev.supporting.event, duration: ev.durationMonths,
+      amountUsd: ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : null,
+    }, {
+      type: c.commercialEventType ?? CONTRACT_TYPES[c.eventType] ?? "UNKNOWN", status: c.eventStatus, provider: ev.provider,
+      buyer: theirs, descriptor: c.contractDetails?.clientDescriptor, title: c.canonicalTitle, scope: c.contractDetails?.scopeSummary,
+      passage: storedEventQuote(c.supportingText), duration: c.contractDetails?.contractLengthMonths, amountUsd: c.contractDetails?.tcvCommittedUsd,
+    })) continue;
+    matches.push(c);
   }
-  return null;
+  return matches.length > 1 ? "ambiguous" : matches[0] ?? null;
 }
 
 /** A re-report may fill fields the stored event lacks; it never overwrites a stated value with another. */
-export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?: string): Promise<void> {
-  const cur = await prisma.canonicalMarketEvent.findUnique({ where: { id: eventId }, select: { family: true, buyerSector: true, aiRelevance: true, eventStatus: true, supportingText: true, canonicalContractEventId: true, commercialEventType: true, readerVersion: true, contractDetails: { select: { id: true, tcvCommittedUsd: true, contractLengthMonths: true, clientRaw: true, pricingModel: true, previousVendorRaw: true, agentCount: true, agentTarget: true, deliveryLocations: true, workType: true, usersServed: true, contractStartDate: true, contractStartDatePrecision: true, contractEndDate: true, outcomePricing: true, feeAtRisk: true, consumptionModel: true, renewalPeriodMonths: true, expansionValueUsd: true, acvUsd: true, scopeSummary: true } } } });
+export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?: string, db: Prisma.TransactionClient = prisma): Promise<void> {
+  const cur = await db.canonicalMarketEvent.findUnique({ where: { id: eventId }, select: { family: true, buyerSector: true, aiRelevance: true, eventStatus: true, supportingText: true, canonicalContractEventId: true, commercialEventType: true, readerVersion: true, contractDetails: { select: { id: true, tcvCommittedUsd: true, contractLengthMonths: true, clientRaw: true, pricingModel: true, previousVendorRaw: true, agentCount: true, agentTarget: true, deliveryLocations: true, workType: true, usersServed: true, contractStartDate: true, contractStartDatePrecision: true, contractEndDate: true, outcomePricing: true, feeAtRisk: true, consumptionModel: true, renewalPeriodMonths: true, expansionValueUsd: true, acvUsd: true, scopeSummary: true } } } });
   if (!cur) return;
   const support = { ...(cur.supportingText ? JSON.parse(cur.supportingText) as Record<string, string> : {}), ...ev.supporting };
   if (cur.commercialEventType && ev.commercialEventType !== "UNKNOWN" && ev.commercialEventType !== cur.commercialEventType && ev.supporting.event) support[`typeVariant:${ev.commercialEventType}`] = ev.supporting.event;
@@ -280,10 +312,10 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
   // from the first re-report that reaches it (upgrade in place, never a copy).
   let assignId: string | undefined;
   if (!cur.canonicalContractEventId && idKey) {
-    const taken = await prisma.canonicalMarketEvent.findUnique({ where: { canonicalContractEventId: idKey }, select: { id: true } });
+    const taken = await db.canonicalMarketEvent.findUnique({ where: { canonicalContractEventId: idKey }, select: { id: true } });
     if (!taken) assignId = idKey;
   }
-  await prisma.canonicalMarketEvent.update({ where: { id: eventId }, data: {
+  await db.canonicalMarketEvent.update({ where: { id: eventId }, data: {
     buyerSector: (!cur.buyerSector || cur.buyerSector === "UNKNOWN") && ev.buyerSector !== "UNKNOWN" ? ev.buyerSector : undefined,
     aiRelevance: (!cur.aiRelevance || cur.aiRelevance === "UNKNOWN") && ev.aiRelevance !== "UNKNOWN" ? ev.aiRelevance : undefined,
     eventStatus: (!cur.eventStatus || cur.eventStatus === "UNKNOWN") && ev.eventStatus !== "UNKNOWN" ? ev.eventStatus : undefined,
@@ -295,7 +327,7 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
   if (cur.contractDetails) {
     const cd = cur.contractDetails;
     const nowStated = cd.tcvCommittedUsd == null && isContractValue(ev.contractValue) && ev.valueIsTcv !== false && toUsd(ev.contractValue, ev.currency) != null;
-    await prisma.contractDetails.update({ where: { id: cd.id }, data: {
+    await db.contractDetails.update({ where: { id: cd.id }, data: {
       agentCount: cd.agentCount == null && ev.agentCount != null ? ev.agentCount : undefined,
       agentTarget: cd.agentTarget == null && ev.agentTarget != null ? ev.agentTarget : undefined,
       deliveryLocations: !cd.deliveryLocations && ev.deliveryLocations.length ? JSON.stringify(ev.deliveryLocations) : undefined,
@@ -342,26 +374,39 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
  * events stored seconds earlier must see them.
  */
 export async function storeReading(article: RawArticle, text: string, reading: Reading, runId: string): Promise<StoreCounts> {
+  return prisma.$transaction(tx => storeArticleEvents(tx, article, text, reading, runId), { timeout: 60_000, maxWait: 10_000 });
+}
+
+async function storeArticleEvents(tx: Prisma.TransactionClient, article: RawArticle, text: string, reading: Reading, runId: string): Promise<StoreCounts> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"source:" + article.url}))`;
   const counts: StoreCounts = { published: 0, queued: 0, merged: 0, skippedNoProvider: 0 };
   const withProvider = reading.events.filter(e => !!e.provider);
   counts.skippedNoProvider = reading.events.length - withProvider.length;
   if (withProvider.length === 0) {
-    await upsertSource(article, text, reading, runId, "excluded", reading.events.length ? "model:no_tracked_vendor" : `model:${reading.articleType.toLowerCase()}`, null);
+    await upsertSource(article, text, reading, runId, "excluded", reading.events.length ? "model:no_tracked_vendor" : `model:${reading.articleType.toLowerCase()}`, null, tx);
     return counts;
   }
-  const source = await upsertSource(article, text, reading, runId, "extracted", null, null);
+  const source = await upsertSource(article, text, reading, runId, "extracted", null, null, tx);
   if (!source) return counts;   // this URL already produced events on an earlier run
 
-  const articleDate = parseDate(article.publishedAt) ?? new Date();
-  for (const ev of withProvider) {
+  const articleDate = parseDate(article.publishedAt);
+  // Stable provider order for multi-provider releases acquiring multiple transaction locks.
+  for (const [index, ev] of withProvider.sort((a, b) => a.provider!.localeCompare(b.provider!)).entries()) {
     const family = ev.family;
-    const vendorId = await resolveEntityId(ev.provider);
-    const when = parseDate(ev.announcementDate) ?? articleDate;
-    if (vendorId) {
-      const existing = await findExisting(ev, family, vendorId, when);
-      if (existing) {
-        await prisma.canonicalMarketEvent.update({ where: { id: existing.id }, data: { sourceEvents: { connect: { id: source.id } } } });
-        await enrichExisting(existing.id, ev, canonicalContractEventId(ev.provider!, ev.buyer, ev.buyerDescriptor, family === "CONTRACT" ? ev.commercialEventType : family, when));
+    const vendorId = await resolveEntityId(ev.provider, tx);
+    const statedDate = parseDate(ev.announcementDate);
+    const when = statedDate ?? articleDate;
+    const referenceTitle = ev.title ?? article.title;
+    const supported = sourceSupportsEvent(articleSource(article, text), { family, referenceTitle, providerName: ev.provider,
+      counterpartyNames: [ev.buyer], articleType: reading.articleType, eventQuote: ev.supporting.event });
+    let multiple = false;
+    if (supported && vendorId && when && family !== "M_AND_A") {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${family + ":" + vendorId}))`;
+      const existing = await findExisting(tx, ev, family, vendorId, when, article, text, reading.articleType);
+      if (existing === "ambiguous") multiple = true;
+      else if (existing) {
+        await tx.canonicalMarketEvent.update({ where: { id: existing.id }, data: { sourceEvents: { connect: { id: source.id } } } });
+        await enrichExisting(existing.id, ev, canonicalContractEventId(ev.provider!, ev.buyer, ev.buyerDescriptor, family === "CONTRACT" ? ev.commercialEventType : family, when), tx);
         counts.merged++;
         continue;
       }
@@ -377,23 +422,32 @@ export async function storeReading(article: RawArticle, text: string, reading: R
       extractionMethod: "llm", summary: ev.summary, analystInsight: null, missingCritical: ev.dropped,
       eventTypeValid: isValidEventType(family, eventType), exclusionReason: null, eventStatus: ev.eventStatus.toLowerCase(), articleType: reading.articleType, usage: EMPTY_USAGE,
     };
+    const resolution = supported && family === "M_AND_A" ? await resolveTransaction(tx, {
+      family, canonicalTitle: referenceTitle, provider: ev.provider, target: ev.buyer, evidenceText: ev.supporting.event,
+      announcementDate: when, eventType, eventStatus: ev.eventStatus,
+    }, vendorId, source.id) : "none";
+    if (resolution === "attached") { counts.merged++; continue; }
     const gate = decidePublication(gateInput, vendorId);
-    const clientId = await resolveEntityId(ev.buyer);
-    const idKey = canonicalContractEventId(ev.provider!, ev.buyer, ev.buyerDescriptor, family === "CONTRACT" ? ev.commercialEventType : family, when);
-    const collision = await prisma.canonicalMarketEvent.findUnique({ where: { canonicalContractEventId: idKey }, select: { id: true } });
-    if (collision) {
-      await prisma.canonicalMarketEvent.update({ where: { id: collision.id }, data: { sourceEvents: { connect: { id: source.id } } } });
-      await enrichExisting(collision.id, ev);
-      counts.merged++;
-      continue;
+    if (!supported || resolution === "ambiguous" || multiple) {
+      gate.status = "needs_review";
+      gate.reason = [gate.reason, supported ? "possible_duplicate" : "event_source_mismatch"].filter(Boolean).join(",");
     }
+    const clientId = await resolveEntityId(ev.buyer, tx);
+    const monthKey = when ? canonicalContractEventId(ev.provider!, ev.buyer, ev.buyerDescriptor, family === "CONTRACT" ? ev.commercialEventType : family, when) : null;
+    // The month key is a bucket, not proof of identity. Retain a separate observation when occupied.
+    const observationKey = crypto.createHash("sha256").update(JSON.stringify([monthKey, article.url, index, referenceTitle, ev.supporting.event])).digest("hex").slice(0, 24);
+    const scoped = !supported || family === "M_AND_A" || !monthKey;
+    const collision = !scoped && await tx.canonicalMarketEvent.findUnique({ where: { canonicalContractEventId: monthKey }, select: { id: true } });
+    const idKey = scoped || collision ? observationKey : monthKey;
     const valueUsd = isContractValue(ev.contractValue) && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : null;
     const estimate = family === "CONTRACT" && valueUsd == null ? await estimateFor(ev, article, text, eventType, when) : null;
-    const dates = contractDates(parseDate(ev.effectiveDate), when, ev.durationMonths);
-    await prisma.$transaction(async tx => {
-      const created = await tx.canonicalMarketEvent.create({ data: {
+    const effective = parseDate(ev.effectiveDate);
+    const start = effective ?? when;
+    const dates = start ? contractDates(effective, start, ev.durationMonths)
+      : { start: null, startPrecision: "unknown", end: null, endPrecision: "unknown" };
+    const created = await tx.canonicalMarketEvent.create({ data: {
         family, eventType, canonicalTitle: (ev.title ?? article.title).slice(0, 500),
-        announcementDate: when, announcementDateBasis: ev.announcementDate ? "explicit" : (article.publishedAt ? "publication" : "unavailable"),
+        announcementDate: when, announcementDateBasis: statedDate ? "explicit" : (articleDate ? "publication" : "unavailable"),
         effectiveDate: parseDate(ev.effectiveDate),
         geography: JSON.stringify(ev.geography), industry: ev.industry, industryBasis: ev.industry ? "classified" : "unavailable",
         confidenceScore: 1, confidenceBasis: "asserted", commercialRelevanceScore: valueUsd ? 0.9 : 0.7,
@@ -425,7 +479,6 @@ export async function storeReading(article: RawArticle, text: string, reading: R
           platformsUsed: "[]", clientServiceCoverageLocation: JSON.stringify(ev.geography), secondaryMacroServiceLines: "[]", secondaryMicroServiceLines: "[]",
         } });
       }
-    }, { timeout: 20_000, maxWait: 10_000 });
     if (gate.status === "published") counts.published++; else counts.queued++;
   }
   return counts;

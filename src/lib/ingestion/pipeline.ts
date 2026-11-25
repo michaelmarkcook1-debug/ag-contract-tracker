@@ -494,7 +494,7 @@ export async function runPipeline(
         // One paid read per article content per policy: a second URL for text
         // already read is recorded against the first read, not read again.
         const textHash = crypto.createHash("sha256").update(text).digest("hex");
-        const prior = await findReadByContent(textHash, article.title);
+        const prior = await findReadByContent(textHash, article.title, article, text);
         if (prior) { contentDuplicates.push({ article, text, textHash, prior }); llmCalls--; continue; }
         const out = await readArticle({ title: article.title, text, provider: article.provider, sourceType: article.sourceType, publishedAt: article.publishedAt });
         addUsageTo(out.ok ? out.reading.usage : out.usage);
@@ -508,7 +508,7 @@ export async function runPipeline(
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, readWorker));
   progress.articlesTriaged = readings.length + pendings.length;
   for (const d of contentDuplicates) {
-    try { await storeDuplicateContent(d.article, d.text, d.textHash, d.prior, run.id); if (d.prior.eventIds.length) progress.articlesMerged++; }
+    try { if (await storeDuplicateContent(d.article, d.text, d.textHash, d.prior, run.id)) progress.articlesMerged++; }
     catch (err) { progress.errors.push(`Duplicate-content store error (${d.article.url.slice(0, 60)}): ${err instanceof Error ? err.message : String(err)}`); }
   }
   for (const u of unreadable) {

@@ -68,15 +68,22 @@ const art = (i: number, body: string | null = null): RawArticle => ({ title: `Qu
     const text = "Wipro wins a five-year contract from a Nordic retailer to run its cloud estate. ".repeat(4);
     const hash = crypto.createHash("sha256").update(text).digest("hex");
     const orig = await prisma.sourceEvent.create({ data: { sourceUrl: `${P}-40`, sourceTitle: "Wipro wins five-year cloud contract from Nordic retailer - Reuters", sourceType: "wire_service", processingStatus: "extracted", extractedFamily: "READ", articleTextHash: hash, promptPolicyVersion: PROMPT_POLICY_VERSION, ingestionRunId: runId } });
-    const ev = await prisma.canonicalMarketEvent.create({ data: { family: "CONTRACT", eventType: "new_win", canonicalTitle: "queue test event", sourceEvents: { connect: { id: orig.id } } } });
-    const prior = await findReadByContent(hash, "Wipro wins five-year cloud contract from Nordic retailer - Economic Times");
+    const ev = await prisma.canonicalMarketEvent.create({ data: { family: "CONTRACT", eventType: "new_win", canonicalTitle: "queue test event", sourceEvents: { connect: { id: orig.id } },
+      // The buyer is unnamed, so the stored event is supported by any article that names the provider.
+      contractDetails: { create: { vendorRaw: "Wipro", clientAnonymised: true } } } });
+    // A prior CONTRACT read is only reused when the new article itself supports the stored event,
+    // so the lookup takes the article and its text, as the pipeline passes them.
+    const copy: RawArticle = { ...art(41, text), title: "Wipro wins five-year cloud contract from Nordic retailer - Economic Times", provider: "Wipro" };
+    const prior = await findReadByContent(hash, copy.title, copy, text);
+    ok("a contract read is not reused on the headline alone", (await findReadByContent(hash, copy.title)) === null);
     ok("the earlier read is found by content hash + same-story headline", prior?.id === orig.id && prior.eventIds.includes(ev.id));
     ok("same text under a different story's headline is NOT treated as read (page chrome)",
       (await findReadByContent(hash, "Capita announces collaboration with Snowflake to power its AI stack - Capita")) === null);
-    await storeDuplicateContent(art(41, text), text, hash, prior!, runId);
+    await storeDuplicateContent(copy, text, hash, prior!, runId);
     const linked = await prisma.canonicalMarketEvent.findUnique({ where: { id: ev.id }, select: { sourceEvents: { select: { sourceUrl: true } } } });
     ok("a second URL for the same text is attached, not re-read", (linked?.sourceEvents.length ?? 0) === 2, `${linked?.sourceEvents.length} sources`);
     ok("a different policy is not treated as already read", (await findReadByContent(crypto.createHash("sha256").update(text + "x").digest("hex"), "Wipro wins five-year cloud contract from Nordic retailer")) === null);
+    await prisma.contractDetails.deleteMany({ where: { canonicalEventId: ev.id } });
     await prisma.canonicalMarketEvent.delete({ where: { id: ev.id } });
 
     console.log("\n=== identical text is not enough: headlines must match (real backlog cases) ===");
