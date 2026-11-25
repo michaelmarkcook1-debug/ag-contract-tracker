@@ -21,7 +21,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { readableArticleText } from "@/lib/ingestion/article-text";
 import { readerPrompts, readerRequestParams, parseReaderResponse, assembleReading } from "@/lib/ingestion/reader";
-import { storeReading, storeNonEvent, storePending, storeUnreadable, findReadByContent, storeDuplicateContent, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
+import { storeReading, storeNonEvent, storePending, findReadByContent, storeDuplicateContent, MAX_READ_ATTEMPTS } from "@/lib/ingestion/store";
 import { confirmFlaggedSources } from "@/lib/ingestion/source-check";
 import type { RawArticle } from "@/lib/ingestion/crawler";
 
@@ -66,7 +66,8 @@ async function nextItems(n: number, exclude: Set<string>, runId: string): Promis
   const order = await prisma.sourceEvent.findMany({
     where: { processingStatus: "pending", readAttempts: { lt: MAX_READ_ATTEMPTS }, id: { notIn: [...exclude] } },
     orderBy: [{ readAttempts: "asc" }, { publicationDate: { sort: "desc", nulls: "last" } }],
-    take: n, select: { id: true },
+    // A few extra, so rows set aside below do not leave the batch short.
+    take: Math.ceil(n * 1.3) + 10, select: { id: true },
   });
   const byId = new Map<string, { id: string; sourceUrl: string; publisherUrl: string | null; sourceTitle: string | null; sourceName: string | null; sourceType: string; publicationDate: Date | null; rawText: string | null }>();
   for (let i = 0; i < order.length; i += 100) {
@@ -82,7 +83,11 @@ async function nextItems(n: number, exclude: Set<string>, runId: string): Promis
   for (const p of rows) {
     const article: RawArticle = { title: p.sourceTitle ?? "", url: p.sourceUrl, publishedAt: p.publicationDate?.toISOString() ?? null, snippet: null, sourceId: "pending", provider: p.sourceName ?? "", sourceType: p.sourceType, publisherUrl: p.publisherUrl, bodyText: p.rawText };
     const text = readableArticleText(p.rawText) ?? "";
-    if (!text) { unreadable++; if (apply) await storeUnreadable(article, runId); continue; }
+    // No article text stored (typically just the Google News link: the page was never fetched). This runner does not
+    // fetch pages, so the row is left queued for the daily run, which does. Marking it unreadable here would drop an
+    // article nobody has looked at.
+    if (!text) { unreadable++; continue; }
+    if (items.length >= n) break;
     const hash = crypto.createHash("sha256").update(text).digest("hex");
     // With the article and its text, as the pipeline calls it: a contract's earlier read is only reused when this article supports the stored event.
     const prior = await findReadByContent(hash, article.title, article, text);
@@ -258,7 +263,7 @@ async function collect(rec: BatchRec, runId: string): Promise<Counts> {
     const room = MAX_ARTICLES ? MAX_ARTICLES - submitted : Infinity;
     const want = Math.min(room, m ? Math.min(2000, Math.ceil((left * 0.85 / m.avg) * 1.3)) : PILOT);
     const { items: candidates, skipped } = await nextItems(want, inFlight(), state.runId);
-    if (skipped.unreadable || skipped.dupes) console.log(`  skipped before spend: ${skipped.unreadable} unreadable, ${skipped.dupes} copies of articles already read`);
+    if (skipped.unreadable || skipped.dupes) console.log(`  set aside before spend: ${skipped.unreadable} with no page text yet (left queued for the daily run), ${skipped.dupes} copies of articles already read`);
     let items = candidates, projected = 0;
     if (m) {
       items = [];
