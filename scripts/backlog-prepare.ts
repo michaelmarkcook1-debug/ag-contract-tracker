@@ -97,6 +97,85 @@ async function stepHeadlines() {
   report("headlines", { collapsed, againstRead, groupsWithDupes, pendingAfter: apply ? left : left - collapsed });
 }
 
+// ── Step 1b: near-duplicate titles ────────────────────────────────────────────
+/**
+ * The same story under a reworded headline ("AWS and Minfy sign strategic
+ * collaboration" / "Minfy signs five-year collaboration agreement with AWS").
+ * Two headlines within 7 days are one story when the share of meaningful words
+ * they have in common (Jaccard) reaches the threshold AND every number in one
+ * appears in the other: "Q2 results" is never "Q3 results", "$26M" never "$62M".
+ * The keeper is an article already read, else the earlier pending copy.
+ */
+const TITLE_STOP = new Set(["the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "by", "at", "as", "is", "are", "its", "it", "from", "new", "that", "this", "after", "over", "into", "amid", "says", "said", "will", "has", "have", "be", "how", "why", "what", "inc", "ltd", "limited", "corp", "plc", "company", "group"]);
+export function titleTokens(title: string | null): Set<string> | null {
+  const h = normHeadline(title);
+  if (!h) return null;
+  // Numbers are kept whatever their length: "October 6" and "October 9" are different fixtures.
+  const t = new Set(h.split(" ").filter(w => (w.length > 1 || /\d/.test(w)) && !TITLE_STOP.has(w)));
+  return t.size >= 5 ? t : null;
+}
+export function titleSimilarity(a: Set<string>, b: Set<string>): number {
+  const numbers = (s: Set<string>) => [...s].filter(w => /\d/.test(w)).sort().join(" ");
+  if (numbers(a) !== numbers(b)) return 0;
+  let shared = 0;
+  for (const w of a) if (b.has(w)) shared++;
+  return shared / (a.size + b.size - shared);
+}
+
+async function stepTitles() {
+  const THRESHOLD = Number(arg("--threshold", "0.7"));   // 0.7: 30 of 30 sampled pairs at or above it were the same story; below it 4 of 34 were not
+  const rows = await prisma.$queryRawUnsafe<{ id: string; t: string | null; d: Date | null; status: string; read: boolean; pub: string | null; len: number; c: Date }[]>(`
+    select id, "sourceTitle" t, "publicationDate" d, "processingStatus" status, ("modelId" is not null) read, "publisherUrl" pub,
+      coalesce(length("rawText"),0) len, "createdAt" c
+    from "SourceEvent" where "sourceType" <> 'procurement_notice' and "sourceTitle" is not null
+      and ("processingStatus" = 'pending' or "modelId" is not null)`);
+  const items = rows.map(r => ({ r, tok: titleTokens(r.t) })).filter((x): x is { r: typeof rows[number]; tok: Set<string> } => x.tok !== null);
+  // Block on each headline's rarest words, so only plausible pairs are compared.
+  const df = new Map<string, number>();
+  for (const { tok } of items) for (const w of tok) df.set(w, (df.get(w) ?? 0) + 1);
+  const keysOf = (tok: Set<string>) => [...tok].sort((x, y) => (df.get(x)! - df.get(y)!) || x.localeCompare(y)).slice(0, 4).filter(w => df.get(w)! <= 400);
+  const index = new Map<string, number[]>();
+  items.forEach((it, i) => { for (const k of keysOf(it.tok)) (index.get(k) ?? index.set(k, []).get(k)!).push(i); });
+  // Keepers first: read articles, then pending by "most likely to have good text", then age.
+  const rank = (r: typeof rows[number]) => (r.read ? 0 : 1) * 1e12 - (r.pub ? 1e9 : 0) - r.len;
+  const order = items.map((_, i) => i).sort((x, y) => rank(items[x].r) - rank(items[y].r) || items[x].r.c.getTime() - items[y].r.c.getTime());
+  const pos = new Map(order.map((i, p) => [i, p]));
+  const dropped = new Set<number>();
+  const bands: Record<string, string[]> = { "0.90-1.00": [], "0.80-0.90": [], "0.70-0.80": [], "0.60-0.70": [] };
+  const bandOf = (v: number) => v >= 0.9 ? "0.90-1.00" : v >= 0.8 ? "0.80-0.90" : v >= 0.7 ? "0.70-0.80" : "0.60-0.70";
+  let collapsed = 0, againstRead = 0;
+  for (const i of order) {
+    const { r, tok } = items[i];
+    if (r.status !== "pending") continue;
+    let best = -1, bestSim = 0;
+    const seen = new Set<number>();
+    for (const k of keysOf(tok)) for (const j of index.get(k) ?? []) {
+      if (j === i || seen.has(j) || dropped.has(j) || pos.get(j)! >= pos.get(i)!) continue;
+      seen.add(j);
+      const o = items[j].r;
+      if (o.d && r.d && Math.abs(o.d.getTime() - r.d.getTime()) > 7 * DAY) continue;
+      const sim = titleSimilarity(tok, items[j].tok);
+      if (sim > bestSim) { bestSim = sim; best = j; }
+    }
+    if (best < 0 || bestSim < 0.6 || bestSim >= 0.9999) continue;   // exact matches belong to --step headlines
+    const k = items[best].r;
+    bands[bandOf(bestSim)].push(`${bestSim.toFixed(2)}  ${String(r.t).slice(0, 110)}\n          = ${String(k.t).slice(0, 110)}${k.read ? "  (already read)" : ""}`);
+    if (bestSim < THRESHOLD) continue;
+    dropped.add(i);
+    await exclude(r.id, `duplicate_headline:${k.id}`);
+    collapsed++; if (k.read) againstRead++;
+  }
+  const left = await prisma.sourceEvent.count({ where: { processingStatus: "pending" } });
+  console.log(`near-duplicate titles by similarity: ${Object.entries(bands).map(([b, v]) => `${b}: ${v.length}`).join(" · ")}`);
+  console.log(`threshold ${THRESHOLD}: pending rows collapsed ${collapsed} (${againstRead} were copies of an article already read)`);
+  console.log(`pending ${apply ? "now" : "unchanged (dry run)"}: ${left}${apply ? "" : ` → would be ${left - collapsed}`}`);
+  if (process.argv.includes("--show")) for (const [b, v] of Object.entries(bands)) {
+    console.log(`\n--- ${b} (${v.length})`);
+    [...v].sort(() => Math.random() - 0.5).slice(0, Number(arg("--samples", "10"))).forEach(x => console.log("  " + x));
+  }
+  report("titles", { threshold: THRESHOLD, collapsed, againstRead, bands: Object.fromEntries(Object.entries(bands).map(([b, v]) => [b, v.length])), pendingAfter: apply ? left : left - collapsed });
+}
+
 // ── Step 2: fetch ─────────────────────────────────────────────────────────────
 /**
  * Resolve and fetch every pending row that lacks readable text. Google News
@@ -227,9 +306,10 @@ async function stepContent() {
 
 (async () => {
   if (STEP === "headlines") await stepHeadlines();
+  else if (STEP === "titles") await stepTitles();
   else if (STEP === "fetch") await stepFetch();
   else if (STEP === "content") await stepContent();
-  else console.log("--step headlines|fetch|content");
+  else console.log("--step headlines|titles|fetch|content");
   await prisma.$disconnect();
   process.exit(0);
 })();
