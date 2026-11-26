@@ -32,6 +32,8 @@ const PILOT = Number(arg("--pilot", "120"));
 const apply = process.argv.includes("--apply");
 /** Stop after this many articles have been submitted in this session (0 = no cap). For a test run. */
 const MAX_ARTICLES = Number(arg("--max-articles", "0"));
+/** Store again the still-queued articles of an already collected batch (after a database outage during collection). */
+const RECOLLECT = arg("--recollect", "");
 const STATE = "_scratch/batch-read.json";
 const API = "https://api.anthropic.com/v1/messages/batches";
 const headers = () => ({ "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "content-type": "application/json" });
@@ -162,7 +164,7 @@ async function withRetry<T>(what: string, fn: () => Promise<T>): Promise<T> {
 type Counts = { published: number; queued: number; merged: number; nonEvent: number; failed: number; requeued: number; storeErrors: number; checks: number; lifted: number; costUsd: number; outputTokens: number; inputTokens: number };
 
 /** Collect one ended batch and store every article exactly as the pipeline does. */
-async function collect(rec: BatchRec, runId: string): Promise<Counts> {
+async function collect(rec: BatchRec, runId: string, only?: Set<string>): Promise<Counts> {
   const url = await waitFor(rec.id);
   const res = await getWithRetry(url);
   if (!res.ok) throw new Error(`batch results HTTP ${res.status}`);
@@ -178,12 +180,13 @@ async function collect(rec: BatchRec, runId: string): Promise<Counts> {
   // Assemble every reading first, then give the second opinion (source-check.ts)
   // to the events the headline rule would hold: eight at a time, ahead of the
   // store loop, which has to stay sequential.
-  const assembled = rec.items.map(it => {
+  // A second collection (--recollect) stores only the articles still queued; their reading was paid for the first time.
+  const assembled = rec.items.filter(it => !only || only.has(it.rowId)).map(it => {
     const results = Array.from({ length: it.segments }, (_, s) => byId.get(`${it.rowId}_${s}`)
       ?? { parsed: null, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }, error: "batch result missing" });
     const { text } = readerPrompts({ title: it.article.title, text: it.text });
     // Every segment is billed even when an earlier one failed.
-    for (const r of results) { c.costUsd += r.usage.costUsd; c.outputTokens += r.usage.outputTokens; c.inputTokens += r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.cacheWriteTokens; }
+    if (!only) for (const r of results) { c.costUsd += r.usage.costUsd; c.outputTokens += r.usage.outputTokens; c.inputTokens += r.usage.inputTokens + r.usage.cacheReadTokens + r.usage.cacheWriteTokens; }
     return { it, out: assembleReading(text, results) };
   });
   let next = 0;
@@ -237,6 +240,24 @@ async function collect(rec: BatchRec, runId: string): Promise<Counts> {
     saveState(state!);
     console.log(`collected ${rec.id}: ${rec.items.length} articles · $${c.costUsd.toFixed(2)} ($${(c.costUsd / rec.items.length).toFixed(4)}/article) · published ${c.published}, review ${c.queued}, merged ${c.merged}, no event ${c.nonEvent}, failed ${c.failed}, requeued ${c.requeued}, store errors ${c.storeErrors} · second opinions ${c.checks} (${c.lifted} lifted) · spent $${state!.spentUsd.toFixed(2)} of $${BUDGET}`);
   };
+
+  // A collected batch whose results could not all be stored (the database dropped): fetch its results again, which
+  // costs nothing, and store the articles that are still queued. Only the second opinions are paid for again.
+  if (RECOLLECT) {
+    const rec = state.batches.find(b => b.id === RECOLLECT);
+    if (!rec) { console.log(`no batch ${RECOLLECT} in ${STATE}`); process.exit(1); }
+    const ids = rec.items.map(i => i.rowId);
+    const queued = new Set<string>();
+    for (let i = 0; i < ids.length; i += 100) (await prisma.sourceEvent.findMany({ where: { id: { in: ids.slice(i, i + 100) }, processingStatus: "pending" }, select: { id: true } })).forEach(r => queued.add(r.id));
+    console.log(`${rec.id}: ${queued.size} of ${rec.items.length} articles still queued`);
+    if (apply && queued.size) {
+      const c = await collect(rec, state.runId, queued);
+      state.spentUsd += c.costUsd; saveState(state);
+      console.log(`stored again: published ${c.published}, review ${c.queued}, merged ${c.merged}, no event ${c.nonEvent}, failed ${c.failed}, requeued ${c.requeued}, store errors ${c.storeErrors} · second opinions ${c.checks} (${c.lifted} lifted) $${c.costUsd.toFixed(2)} · spent $${state.spentUsd.toFixed(2)} of $${BUDGET}`);
+    }
+    await prisma.$disconnect();
+    process.exit(0);
+  }
 
   // Anything submitted before a crash is collected first.
   for (const rec of state.batches.filter(b => !b.collected)) await finish(rec);
