@@ -60,7 +60,8 @@ export function gradeChurn(tcv: number, d: number | null, singleVendorClient: bo
   return { key: "low", label: "Low", tip: "Stable, early window" };
 }
 
-const AI_SUITED = new Set(["BPO", "Application Services", "AI & Analytics", "Digital & Cloud", "ITO", "Cybersecurity", "ERP & Enterprise Apps"]);
+/** FedSpend's AI_MACROS, mapped to this catalogue's service lines. */
+const AI_SUITED = new Set(["BPO", "Application Services", "Application Development", "AI & Analytics", "Digital & Cloud", "Cloud / Data Center", "ITO", "Infrastructure Services", "Cybersecurity", "ERP & Enterprise Apps", "Consulting & Advisory", "Systems Integration", "Digital Transformation"]);
 export function gradeAI(c: Pick<ContractRow, "aiRelevance" | "serviceLine">, tcv: number): Grade {
   if (c.aiRelevance === "EXPLICIT_AI" || c.aiRelevance === "AI_MATERIAL") return { key: "active", label: "AI active", tip: "AI is part of the scope already" };
   if (c.serviceLine && AI_SUITED.has(c.serviceLine)) {
@@ -100,3 +101,55 @@ export function analysis(c: ContractRow, s: Scores, d: number | null): string {
   if (c.endBasis === "estimated") parts.push("The end date is estimated from the start date and term.");
   return parts.join(" ");
 }
+
+/**
+ * Automation potential, FedSpend's automationLabel: derived from the AI grade. A contract already running AI has
+ * limited remaining automation headroom; a large AI-suited scope has the most.
+ */
+export const AUTOMATION_TIERS = ["high-potential", "moderate", "limited", "low-potential"] as const;
+export type AutomationTier = typeof AUTOMATION_TIERS[number];
+export const AUTOMATION_LABELS: Record<AutomationTier, string> = { "high-potential": "High potential", moderate: "Moderate", limited: "Limited (AI already in use)", "low-potential": "Low potential" };
+export function automationTier(ai: Grade): AutomationTier {
+  return ai.key === "high" ? "high-potential" : ai.key === "moderate" ? "moderate" : ai.key === "active" ? "limited" : "low-potential";
+}
+
+/** FedSpend's "Current AI usage" and "AI enhancement potential" lines. */
+export function aiUsage(ai: Grade): { current: string; potential: string } {
+  return {
+    current: ai.key === "active" ? "Active: AI is part of the contract's scope" : "None reported: the announcement describes no AI in the current scope",
+    potential: ai.key === "active" ? "Already using AI" : ai.key === "high" ? "High: a strong candidate for an AI-led re-bid" : ai.key === "moderate" ? "Moderate: targeted AI enhancements are viable" : "Lower priority: limited AI application in this scope",
+  };
+}
+
+/** FedSpend's AI_DEPLOY_MAP — what a challenger could bring to the re-bid — keyed by this catalogue's service lines. */
+const AI_DEPLOY: Record<string, string[]> = {
+  ITO: ["AI service desk and auto-triage", "Self-healing infrastructure (AIOps)", "Predictive capacity and failure prevention", "Automated incident response"],
+  "Infrastructure Services": ["AIOps monitoring and root-cause analysis", "Self-healing infrastructure", "Predictive maintenance", "Intelligent patch management"],
+  "Cloud / Data Center": ["AIOps for infrastructure monitoring", "Predictive auto-scaling", "Anomaly detection and root-cause analysis", "AI-driven cloud cost optimisation (FinOps)"],
+  "Digital & Cloud": ["AI-assisted cloud migration planning", "Predictive auto-scaling", "AI-driven cost optimisation", "GenAI features in modernised applications"],
+  "Application Development": ["AI code generation", "Automated test generation and regression", "AI code review and security scanning", "Requirements analysis with GenAI"],
+  "Application Services": ["AI-assisted application maintenance (L2/L3 ticket deflection)", "Automated testing and regression", "Legacy code comprehension with GenAI", "Predictive incident prevention"],
+  BPO: ["Agentic AI for transaction processing", "GenAI agent assist and auto-summarisation", "Intelligent document processing", "Outcome-based pricing on automated volumes"],
+  "AI & Analytics": ["GenAI analytics and natural-language querying", "MLOps and model governance", "Automated insight generation", "Agentic decision support"],
+  "Consulting & Advisory": ["GenAI research and analysis", "AI scenario modelling and forecasting", "Automated report generation", "Natural-language data querying"],
+  Cybersecurity: ["AI threat detection and response", "Automated SOC operations", "Behavioural analytics and insider threat", "AI vulnerability assessment"],
+  "ERP & Enterprise Apps": ["Embedded GenAI copilots in ERP workflows", "Intelligent document and invoice processing", "AI-assisted data migration", "Predictive finance and supply-chain planning"],
+  "Systems Integration": ["Intelligent workflow automation", "AI-driven data mapping and ETL", "Automated integration testing", "AI-assisted migration planning"],
+  "Digital Transformation": ["Agentic process redesign", "GenAI customer and employee experiences", "Intelligent workflow automation", "AI-driven operating-model analytics"],
+  "Network & Telco": ["AI network operations and self-optimising networks", "Predictive fault management", "Automated provisioning", "AI-driven capacity planning"],
+  "Engineering IT": ["ML-accelerated engineering and simulation", "Generative design", "Predictive quality analytics", "AI-assisted PLM data management"],
+};
+export function aiDeployment(serviceLine: string | null): string[] {
+  return (serviceLine && AI_DEPLOY[serviceLine]) || ["General AI/ML augmentation", "Automated reporting and analytics", "Process automation with AI agents", "Data-driven decision support"];
+}
+
+/** FedSpend's TCV size buckets. */
+export const TCV_BUCKETS = ["<$1M", "$1M – $10M", "$10M – $100M", "$100M – $1B", ">$1B"] as const;
+export function tcvBucket(v: number | null): typeof TCV_BUCKETS[number] | null {
+  if (v == null || v <= 0) return null;
+  return v < 1e6 ? "<$1M" : v < 10e6 ? "$1M – $10M" : v < 100e6 ? "$10M – $100M" : v < 1e9 ? "$100M – $1B" : ">$1B";
+}
+
+/** FedSpend's Portfolio Assessment weights for the "most critical contracts" ranking. */
+export const RISK_WEIGHT: Record<string, number> = { critical: 5, urgent: 4, concern: 2, standard: 1, positive: 0 };
+export const URGENCY_WEIGHT: Record<string, number> = { critical: 4, urgent: 4, near: 3, mid: 2, early: 1, expired: 0, unknown: 0 };

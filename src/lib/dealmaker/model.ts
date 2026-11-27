@@ -96,8 +96,8 @@ export function normaliseClient(name: string | null): string | null {
   return n.length >= 2 ? n : null;
 }
 
-const vendorKey = (c: ContractRow) => c.vendorId ?? c.vendorName.toLowerCase();
-const familyKey = (c: ContractRow) => c.clientKey && !c.clientAnonymised ? `${c.clientKey}|${c.serviceLine ?? "?"}` : null;
+export const vendorKey = (c: Pick<ContractRow, "vendorId" | "vendorName">) => c.vendorId ?? c.vendorName.toLowerCase();
+export const familyKey = (c: Pick<ContractRow, "clientKey" | "clientAnonymised" | "serviceLine">) => c.clientKey && !c.clientAnonymised ? `${c.clientKey}|${c.serviceLine ?? "?"}` : null;
 const sectorKey = (c: ContractRow) => c.industry ?? c.sector ?? "unknown";
 const clip = (x: number) => Math.max(0.05, Math.min(0.95, x));
 const RETAINED_TYPES = new Set(["RENEWAL", "EXTENSION", "EXPANSION"]);
@@ -200,5 +200,7 @@ export function fitModel(contracts: ContractRow[], today = new Date()) {
     return { renewalProb: Math.round(clip(p) * 100), displacementRisk: Math.round(clip(d) * 100), factors, familySize: nFam, familyVendors: nVen };
   }
 
-  return { score, stats: { contracts: contracts.length, families: byFamily.size, judged: tj, globalRenewalRate: globalRate, globalRetention } };
+  /** A vendor's record on scopes that came back to market: how many it kept. */
+  const vendorRecord = (c: Pick<ContractRow, "vendorId" | "vendorName">) => vendStats.get(vendorKey(c)) ?? { judged: 0, retained: 0 };
+  return { score, vendorRecord, byFamily, stats: { contracts: contracts.length, families: byFamily.size, judged: tj, globalRenewalRate: globalRate, globalRetention } };
 }

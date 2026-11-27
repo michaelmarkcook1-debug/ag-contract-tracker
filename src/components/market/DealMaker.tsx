@@ -8,13 +8,16 @@ import { Button } from "@/components/ui/button";
 import { ExternalLink, RefreshCw, Search, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RenewalRow } from "@/lib/dealmaker/data";
-import { WINDOWS, ACTION_LABELS, type WindowKey } from "@/lib/dealmaker/grades";
+import { WINDOWS, ACTION_LABELS, AUTOMATION_TIERS, AUTOMATION_LABELS, TCV_BUCKETS, type WindowKey, type AutomationTier } from "@/lib/dealmaker/grades";
+import { CATEGORIES } from "@/lib/dealmaker/news-categories";
+import { DealMakerPortfolio } from "./DealMakerPortfolio";
 
 interface Response {
   model: { version: string; contracts: number; families: number; judged: number; globalRenewalRate: number; globalRetention: number; computedAt: string };
   kpis: { upForRenewal: number; renewalTcvUsd: number; windows: { key: WindowKey; count: number; tcvUsd: number }[]; recentlyEnded: number; pitch: number; defend: number };
   charts: { byServiceLine: { name: string; tcv: number }[]; byIndustry: { name: string; tcv: number }[] };
-  facets: { vendors: string[]; serviceLines: string[]; regions: string[]; industries: string[] };
+  facets: { vendors: string[]; serviceLines: string[]; regions: string[]; countries: string[]; industries: string[] };
+  newsFetchedAt: string | null;
   total: number;
   rows: RenewalRow[];
 }
@@ -27,7 +30,10 @@ const TONE: Record<string, string> = {
   critical: "bg-red-500", urgent: "bg-orange-500", expired: "bg-zinc-400", near: "bg-amber-500", mid: "bg-sky-500", early: "bg-zinc-500", unknown: "bg-zinc-600",
   concern: "bg-amber-500", standard: "bg-zinc-500", positive: "bg-emerald-500", elevated: "bg-orange-500", moderate: "bg-sky-500", low: "bg-zinc-500",
   active: "bg-emerald-500", high: "bg-violet-500", limited: "bg-zinc-600",
+  "high-potential": "bg-violet-500", "low-potential": "bg-zinc-600",
 };
+const RISK_LABELS: Record<string, string> = { critical: "Critical", urgent: "Urgent", concern: "Some concerns", standard: "Standard", positive: "Positive" };
+const CATEGORY_LABEL: Record<string, string> = Object.fromEntries(CATEGORIES.map(c => [c.key, c.label]));
 function Pill({ k, label, tip }: { k: string; label: string; tip?: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-foreground/85" title={tip}>
@@ -82,14 +88,16 @@ export function DealMaker() {
   const [windows, setWindows] = useState<WindowKey[]>(["0-3", "3-6", "6-12"]);
   const [vendor, setVendor] = useState(""), [serviceLine, setServiceLine] = useState(""), [region, setRegion] = useState(""), [industry, setIndustry] = useState("");
   const [action, setAction] = useState(""), [sort, setSort] = useState("risk"), [q, setQ] = useState(""), [query, setQuery] = useState("");
+  const [country, setCountry] = useState(""), [risk, setRisk] = useState(""), [automation, setAutomation] = useState(""), [bucket, setBucket] = useState("");
+  const [tab, setTab] = useState<"renewals" | "portfolio">("renewals");
   const [selected, setSelected] = useState<RenewalRow | null>(null);
 
   const params = useMemo(() => {
     const p = new URLSearchParams();
     if (windows.length) p.set("window", windows.join(","));
-    for (const [k, v] of Object.entries({ vendor, serviceLine, region, industry, action, sort, q: query })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ vendor, serviceLine, region, country, industry, action, risk, automation, tcvBucket: bucket, sort, q: query })) if (v) p.set(k, v);
     return p.toString();
-  }, [windows, vendor, serviceLine, region, industry, action, sort, query]);
+  }, [windows, vendor, serviceLine, region, country, industry, action, risk, automation, bucket, sort, query]);
 
   // State is only set in the request's callbacks; the previous request is aborted when the filters change.
   useEffect(() => {
@@ -114,6 +122,16 @@ export function DealMaker() {
         </p>
       </div>
 
+      <div className="flex gap-1 border-b border-border/50" role="tablist">
+        {([["renewals", "Upcoming renewals"], ["portfolio", "Portfolio assessment"]] as const).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+            className={cn("px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors", tab === k ? "border-emerald-500 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "portfolio" ? <DealMakerPortfolio onSelect={setSelected} /> : <>
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-xl border border-border/50 bg-card/50 p-4">
@@ -160,7 +178,11 @@ export function DealMaker() {
           <Select label="Vendor" value={vendor} options={data?.facets.vendors ?? []} onChange={set(setVendor)} />
           <Select label="Service line" value={serviceLine} options={data?.facets.serviceLines ?? []} onChange={set(setServiceLine)} />
           <Select label="Region" value={region} options={data?.facets.regions ?? []} onChange={set(setRegion)} />
+          <Select label="Country" value={country} options={data?.facets.countries ?? []} onChange={set(setCountry)} />
           <Select label="Industry" value={industry} options={data?.facets.industries ?? []} onChange={set(setIndustry)} />
+          <Select label="Risk" value={risk} options={Object.keys(RISK_LABELS)} onChange={set(setRisk)} render={o => RISK_LABELS[o]} />
+          <Select label="Automation" value={automation} options={[...AUTOMATION_TIERS]} onChange={set(setAutomation)} render={o => AUTOMATION_LABELS[o as AutomationTier]} />
+          <Select label="Value" value={bucket} options={[...TCV_BUCKETS]} onChange={set(setBucket)} />
           <Select label="Suggested play" value={action} options={["pitch", "defend", "monitor"]} onChange={set(setAction)} render={o => ACTION_LABELS[o as "pitch"]} />
           <Select label="Sort" value={sort} options={["risk", "end", "tcv", "displacement", "renewal"]} onChange={set(setSort)}
             render={o => ({ risk: "Sort: risk", end: "Sort: end date", tcv: "Sort: value", displacement: "Sort: displacement risk", renewal: "Sort: renewal propensity" } as Record<string, string>)[o]} />
@@ -175,7 +197,7 @@ export function DealMaker() {
         <table className="w-full text-xs min-w-[960px]">
           <thead className="bg-foreground/[0.03] text-muted-foreground">
             <tr className="text-left">
-              {["Vendor", "Client", "Service line", "Value", "Ends", "Urgency", "Risk", "Renewal", "Displacement", "AI", "Play"].map(h => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
+              {["Vendor", "Client", "Service line", "Value", "Ends", ...(windows.includes("expired30") ? ["New vendor selected"] : []), "Urgency", "Risk", "Renewal", "Displacement", "AI", "Automation", "Play"].map(h => <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-border/30">
@@ -186,25 +208,29 @@ export function DealMaker() {
                 <td className="px-3 py-2 whitespace-nowrap text-foreground/85">{r.serviceLine ?? "—"}</td>
                 <td className="px-3 py-2 font-mono tabular-nums whitespace-nowrap">{money(r.tcvUsd)}{r.tcvUsd && r.tcvIsEstimate ? <span className="text-muted-foreground"> est.</span> : null}</td>
                 <td className="px-3 py-2 whitespace-nowrap tabular-nums">{r.end ?? "—"}{r.endBasis === "estimated" ? <span className="text-muted-foreground"> est.</span> : null}</td>
+                {windows.includes("expired30") && <td className="px-3 py-2 whitespace-nowrap">{r.successor ? <Successor s={r.successor} /> : <span className="text-muted-foreground/50">—</span>}</td>}
                 <td className="px-3 py-2"><Pill k={r.urgency.key} label={r.urgency.label} tip={r.urgency.tip} /></td>
                 <td className="px-3 py-2"><Pill k={r.risk.key} label={r.risk.label} tip={r.risk.tip} /></td>
                 <td className="px-3 py-2"><Score v={r.renewalProb} /></td>
                 <td className="px-3 py-2"><Score v={r.displacementRisk} /></td>
                 <td className="px-3 py-2"><Pill k={r.ai.key} label={r.ai.label} tip={r.ai.tip} /></td>
+                <td className="px-3 py-2"><Pill k={r.automation} label={AUTOMATION_LABELS[r.automation].replace(/ \(.*\)$/, "")} /></td>
                 <td className="px-3 py-2"><ActionTag a={r.action} /></td>
               </tr>
             ))}
-            {data && !data.rows.length && <tr><td colSpan={11} className="px-3 py-8 text-center text-muted-foreground">No contracts match these filters.</td></tr>}
+            {data && !data.rows.length && <tr><td colSpan={13} className="px-3 py-8 text-center text-muted-foreground">No contracts match these filters.</td></tr>}
           </tbody>
         </table>
       </div>
       {data && (
         <p className="text-[11px] text-muted-foreground">
           {data.total > data.rows.length ? `Showing ${data.rows.length} of ${data.total.toLocaleString()}. ` : `${data.total.toLocaleString()} contracts. `}
+          {data.newsFetchedAt ? `Vendor news signals from GDELT, collected ${data.newsFetchedAt.slice(0, 10)}. ` : ""}
           Scores are modelled from {data.model.contracts.toLocaleString()} contracts across {data.model.families.toLocaleString()} client and service-line families
           (incumbents kept {Math.round(data.model.globalRetention * 100)}% of scopes that came back). 50 is a typical contract; treat scores as a prioritisation signal, not a forecast.
         </p>
       )}
+      </>}
 
       <Sheet open={!!selected} onOpenChange={o => { if (!o) setSelected(null); }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
@@ -237,13 +263,53 @@ export function DealMaker() {
                     <ul className="list-disc pl-4 space-y-0.5 text-foreground/85">{selected.factors.map(f => <li key={f}>{f}</li>)}</ul>
                   </section>
                 )}
-                <section>
-                  <h3 className="text-xs font-medium text-muted-foreground mb-1">Incumbent signals</h3>
-                  <p className="text-foreground/85">{selected.vendorSignal ? `${selected.vendorSignal.summary} · signal score ${selected.vendorSignal.score}/100` : "No events recorded for this vendor in the last 12 months."}</p>
+                {selected.successor && (
+                  <section>
+                    <h3 className="text-xs font-medium text-muted-foreground mb-1">New vendor selected</h3>
+                    <p className="text-foreground/85"><Successor s={selected.successor} />{selected.successor.title ? <span className="text-muted-foreground"> — {selected.successor.title}</span> : null}</p>
+                  </section>
+                )}
+                <section className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">AI and renewal insights</h3>
+                  <dl className="grid grid-cols-1 gap-1.5 text-xs">
+                    <div><dt className="text-muted-foreground">Current AI usage</dt><dd className="text-foreground/90">{selected.ai.key === "active" && <><Pill k="active" label="AI active" />{" "}</>}{selected.aiUsage.current}</dd></div>
+                    <div><dt className="text-muted-foreground">AI enhancement potential</dt><dd className="text-foreground/90">{selected.aiUsage.potential}</dd></div>
+                    <div><dt className="text-muted-foreground">Automation potential</dt><dd className="text-foreground/90">{AUTOMATION_LABELS[selected.automation]}</dd></div>
+                  </dl>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">AI deployment opportunities for a new vendor</p>
+                    <ul className="space-y-1">{selected.aiDeployment.map(a => <li key={a} className="flex items-start gap-2 text-foreground/85"><span className="mt-0.5 rounded border border-sky-500/40 px-1 text-[9px] font-semibold text-sky-400">AI</span>{a}</li>)}</ul>
+                  </div>
                 </section>
                 <section>
-                  <h3 className="text-xs font-medium text-muted-foreground mb-1">AI at re-bid</h3>
-                  <p className="text-foreground/85">{selected.ai.label} — {selected.ai.tip}</p>
+                  <h3 className="text-xs font-medium text-muted-foreground mb-1">Incumbent churn intelligence</h3>
+                  <p className="text-foreground/85 leading-relaxed">{selected.churnIntel}</p>
+                </section>
+                <section className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">Risk and legal signals</h3>
+                  <p className="text-foreground/85"><Pill k={selected.risk.key} label={selected.risk.label} /> {selected.risk.tip}</p>
+                  {selected.news ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", selected.news.score >= 60 ? "border-red-500/40 text-red-400" : selected.news.score >= 35 ? "border-amber-500/40 text-amber-400" : "border-emerald-500/40 text-emerald-400")}>news risk · {selected.news.score}</span>
+                        {CATEGORIES.filter(c => (selected.news!.counts[c.key] ?? 0) > 0).map(c => (
+                          <span key={c.key} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-foreground/80">{c.label} · {selected.news!.counts[c.key]}</span>
+                        ))}
+                      </div>
+                      {selected.news.examples.length > 0 && (
+                        <ul className="space-y-1.5">
+                          {selected.news.examples.slice(0, 4).map(h => (
+                            <li key={h.url} className="text-xs">
+                              <a href={h.url} target="_blank" rel="noopener noreferrer" className="text-foreground/90 underline decoration-dotted underline-offset-2 hover:text-foreground">{h.title}</a>
+                              <div className="text-muted-foreground">{CATEGORY_LABEL[h.category]} · {h.date} · {h.domain}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="text-[11px] text-muted-foreground">{selected.news.scanned} headlines scanned · GDELT global news · {selected.news.fetchedAt.slice(0, 10)}</p>
+                    </div>
+                  ) : <p className="text-xs text-muted-foreground">No news signals collected for this vendor yet.</p>}
+                  <p className="text-xs text-muted-foreground">Catalogue: {selected.vendorSignal ? `${selected.vendorSignal.summary} · signal score ${selected.vendorSignal.score}/100` : "no events recorded for this vendor in the last 12 months."}</p>
                 </section>
                 {(selected.writeUp || selected.scope) && (
                   <section>
@@ -263,4 +329,10 @@ export function DealMaker() {
       </Sheet>
     </div>
   );
+}
+
+function Successor({ s }: { s: NonNullable<RenewalRow["successor"]> }) {
+  if (s.status === "retained") return <span className="text-emerald-400 text-xs font-medium">Retained</span>;
+  if (s.status === "new_vendor") return <span className="text-amber-400 text-xs font-medium">New vendor: {s.vendor}</span>;
+  return <span className="text-muted-foreground text-xs">No successor detected</span>;
 }
