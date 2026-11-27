@@ -142,7 +142,7 @@ export async function GET() {
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published' AND ${TCV} IS NOT NULL AND e.id = ANY(${ids}) AND ${won}
+      WHERE cme."publicationStatus"='published' AND cme.family='CONTRACT' AND ${TCV} IS NOT NULL AND e.id = ANY(${ids}) AND ${won}
         AND ${TCV} < 10000000000
       GROUP BY e.id ORDER BY tcv DESC LIMIT 20
     `,
@@ -153,7 +153,7 @@ export async function GET() {
       FROM "Entity" e
       JOIN "ContractDetails" cd ON cd."vendorId" = e.id
       JOIN "CanonicalMarketEvent" cme ON cme.id = cd."canonicalEventId"
-      WHERE cme."publicationStatus"='published' AND e.id = ANY(${ids}) AND ${won}
+      WHERE cme."publicationStatus"='published' AND cme.family='CONTRACT' AND e.id = ANY(${ids}) AND ${won}
       GROUP BY e.id ORDER BY deals DESC LIMIT 20
     `,
     // Service lines

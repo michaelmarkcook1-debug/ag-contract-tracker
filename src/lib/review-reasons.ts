@@ -57,3 +57,14 @@ export function reviewDetail(reason: string | null | undefined): string | null {
   if (low) return `confidence ${Math.round(Number(low[1]) * 100)}%`;
   return null;
 }
+
+/**
+ * What a reviewer can assign to items in the queue, in bulk: one of the six event types (published as that type), a
+ * rumour (published to the Rumours view) or a passing mention (parked). POST /api/events/review, action "assign".
+ */
+export const ASSIGNABLE = ["CONTRACT", "M_AND_A", "PARTNERSHIP", "NEW_OFFERING", "ORG_CHANGE", "FINANCIAL_RESULTS", "RUMOUR", "MENTION"] as const;
+export type Assignable = typeof ASSIGNABLE[number];
+export const ASSIGNABLE_LABELS: Record<Assignable, string> = {
+  CONTRACT: "Contract", M_AND_A: "M&A", PARTNERSHIP: "Partnership", NEW_OFFERING: "New offering", ORG_CHANGE: "Org change",
+  FINANCIAL_RESULTS: "Financial results", RUMOUR: "Rumour", MENTION: "Passing mention (park)",
+};

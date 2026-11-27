@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { displayTitle, EventSummary, formatDate, formatTcvDisplay, tcvEstimateTitle } from "@/lib/types";
-import { reviewGroup, reviewDetail, GROUP_ORDER } from "@/lib/review-reasons";
+import { reviewGroup, reviewDetail, GROUP_ORDER, ASSIGNABLE, ASSIGNABLE_LABELS, type Assignable } from "@/lib/review-reasons";
 import { FamilyBadge } from "./FamilyBadge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,15 +15,15 @@ interface ReviewQueueProps {
   totalCount: number;
 }
 
-type Action = "approve" | "reject";
-interface Done { ids: string[]; action: Action }
+type Action = "approve" | "reject" | "assign";
+interface Done { ids: string[]; action: Action; type?: Assignable }
 
 /** One request for any number of events (POST /api/events/review). */
-async function review(ids: string[], action: Action | "undo"): Promise<string[]> {
+async function review(ids: string[], action: Action | "undo", type?: Assignable): Promise<string[]> {
   const res = await fetch("/api/events/review", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ids, action }),
+    body: JSON.stringify({ ids, action, type }),
   });
   // fetch() does not throw on 4xx/5xx — an unchecked failure would silently
   // drop the card from the UI and bring it back on reload.
@@ -68,20 +68,20 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
   }, [focus, visible]);
 
   /** Optimistic: cards leave at once and come back if the save fails. */
-  const run = useCallback(async (ids: string[], action: Action) => {
+  const run = useCallback(async (ids: string[], action: Action, type?: Assignable) => {
     if (ids.length === 0) return;
     setError(null); setConfirm(null); setBusy(true);
     setDismissed(prev => new Set([...prev, ...ids]));
     setSelected(prev => { const s = new Set(prev); ids.forEach(id => s.delete(id)); return s; });
     try {
-      const changed = await review(ids, action);
-      setLast({ ids: changed, action });
+      const changed = await review(ids, action, type);
+      setLast({ ids: changed, action, type });
       const missed = ids.filter(id => !changed.includes(id));
       if (missed.length) setError(`${missed.length} were no longer in the queue (already reviewed elsewhere).`);
       startTransition(() => router.refresh());
     } catch {
       setDismissed(prev => { const s = new Set(prev); ids.forEach(id => s.delete(id)); return s; });
-      setError(`Could not ${action} ${ids.length === 1 ? "that event" : `${ids.length} events`} — nothing was changed.`);
+      setError(`Could not ${action === "assign" ? "assign a type to" : action} ${ids.length === 1 ? "that event" : `${ids.length} events`} — nothing was changed.`);
     } finally {
       setBusy(false);
     }
@@ -198,13 +198,24 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
             <Button size="sm" variant="outline" disabled={busy} className="h-7 gap-1.5 text-xs border-red-500/30 hover:bg-red-500/10" onClick={() => run([...selected], "reject")}>
               <XCircle className="h-3.5 w-3.5 text-red-400" />Reject {selected.size}
             </Button>
+            {/* Assign a type to every selected item: published as that type, to Rumours, or parked. */}
+            <select
+              aria-label={`Assign a type to ${selected.size} selected`}
+              disabled={busy}
+              value=""
+              onChange={e => { const t = e.target.value as Assignable; if (t) run([...selected], "assign", t); }}
+              className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground hover:bg-foreground/[0.04] focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+            >
+              <option value="">Assign type…</option>
+              {ASSIGNABLE.map(t => <option key={t} value={t}>{ASSIGNABLE_LABELS[t]}</option>)}
+            </select>
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
           {(busy || isPending) && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
           {last && (
             <Button size="sm" variant="ghost" disabled={busy} className="h-7 gap-1.5 text-xs" onClick={undo} title="Undo (u)">
-              <Undo2 className="h-3.5 w-3.5" />Undo {last.action} ({last.ids.length})
+              <Undo2 className="h-3.5 w-3.5" />Undo {last.action === "assign" && last.type ? ASSIGNABLE_LABELS[last.type].replace(/ \(park\)$/, "") : last.action} ({last.ids.length})
             </Button>
           )}
           <span className="hidden lg:flex items-center gap-1 text-[10px] text-zinc-500">
