@@ -184,7 +184,7 @@ export async function getEvents(filters: EventFilters = {}): Promise<EventsRespo
   const { family, vendor, industry, geography, serviceLine, status, search, dateFrom, dateTo, rumours, page = 1, pageSize = 25 } = filters;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const where: Record<string, any> = { publicationStatus: { notIn: ["excluded_noise", "suppressed_duplicate", "excluded_duplicate"] } };
+  const where: Record<string, any> = { publicationStatus: { notIn: ["excluded_noise", "suppressed_duplicate", "excluded_duplicate", "parked"] } };
 
   if (family && family !== "all") where.family = family;
   // The Rumours view lists only rumours, of every family; every other view leaves them out.
