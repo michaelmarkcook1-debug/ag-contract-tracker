@@ -98,7 +98,9 @@ async function runBatch(budget: number) {
   const cache = loadCache();
   const done = Object.values(cache);
   const perItem = done.length ? done.reduce((s, a) => s + a.costUsd, 0) / done.length : 0.03;
-  const todo = items.filter(e => !cache[e.id]);
+  // --skip <file>: a JSON list of ids another stage has already settled (the Sonnet rumours), not read again.
+  const skip = new Set<string>(process.argv.includes("--skip") ? JSON.parse(fs.readFileSync(arg("--skip", ""), "utf8")) : []);
+  const todo = items.filter(e => !cache[e.id] && !skip.has(e.id));
   const projected = todo.length * perItem * 0.5;
   console.log(`queue ${items.length + noText}: ${items.length} with text (${items.length - todo.length} already read), ${noText} without · to read ${todo.length} · projected $${projected.toFixed(2)} at batch price (cap $${budget})`);
   if (projected > budget * 0.9) { console.log("projection exceeds the cap; nothing submitted"); return; }
