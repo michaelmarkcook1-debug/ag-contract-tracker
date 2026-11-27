@@ -43,7 +43,8 @@ console.log("\n=== Reader output cap (§2) ===");
 ok("cap is a named reader-specific constant above the old ceiling", READER_MAX_OUTPUT_TOKENS === 24_000);
 const capSrc = (await import("fs")).readFileSync("src/lib/ingestion/classifier.ts", "utf8");
 ok("the classifier did NOT inherit the reader's allowance", !capSrc.includes("READER_MAX_OUTPUT_TOKENS"));
-ok("policy version moved only for the Sonnet 5.5 model change, not the output-cap change", PROMPT_POLICY_VERSION === "reader/2.3.0-2026-10-20");
+// 2.4.0 (2026-11-27) is the RUMOURED status, a rules change; the output cap still did not move it.
+ok("policy version moved only for rule/model changes, not the output-cap change", PROMPT_POLICY_VERSION === "reader/2.4.0-2026-11-27");
 
 console.log("\n=== Estate state ===");
 const cov = await one<Record<string, bigint>>(`select

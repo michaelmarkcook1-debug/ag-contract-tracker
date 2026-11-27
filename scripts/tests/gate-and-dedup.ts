@@ -31,6 +31,10 @@ ok("rule-based extraction → review", decidePublication(res({ eventStatus: "ann
 ok("tender → review", decidePublication(res({ eventStatus: "opportunity" }), "e").reason === "opportunity_not_award");
 ok("terminated contract publishes (labelled; excluded from deal value)", decidePublication(res({ eventStatus: "terminated" }), "e").status === "published");
 ok("disputed contract publishes (labelled; excluded from deal value)", decidePublication(res({ eventStatus: "disputed" }), "e").status === "published");
+ok("rumoured acquisition publishes (Rumours view; never counted)", decidePublication(res({ family: "M_AND_A", eventType: "acquisition", eventStatus: "rumoured" }), "e").status === "published");
+ok("rumour with no counterparty yet still publishes", decidePublication(res({ family: "M_AND_A", eventType: "divestiture", eventStatus: "rumoured", clientRaw: null }), "e").status === "published");
+ok("rumoured layoffs publish as an org change", decidePublication(res({ family: "ORG_CHANGE", eventType: "restructuring", eventStatus: "rumoured", clientRaw: null }), "e").status === "published");
+ok("rumour with no tracked vendor still goes to review", decidePublication(res({ eventStatus: "rumoured" }), null).reason === "vendor_unresolved");
 ok("terminated contract with no vendor still goes to review", decidePublication(res({ eventStatus: "terminated" }), null).reason?.includes("vendor_unresolved") === true);
 ok("loss to a named competitor publishes as displacement", decidePublication(res({ eventStatus: "terminated", eventType: "incumbent_displacement" }), "e").status === "published");
 ok("no status → review", decidePublication(res({ eventStatus: null }), "e").reason === "no_event_status");

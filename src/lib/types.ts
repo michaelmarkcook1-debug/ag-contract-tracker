@@ -48,7 +48,7 @@ export interface EventSummary {
   publicationStatus: string;
   /** Why the event sits in needs_review (machine-readable); null once published. */
   reviewReason?: string | null;
-  /** ANNOUNCED | COMPLETED | TERMINATED | DISPUTED | … — terminated/disputed are not won business. */
+  /** ANNOUNCED | COMPLETED | RUMOURED | TERMINATED | DISPUTED | … — terminated/disputed/rumoured are not won business. */
   eventStatus?: string | null;
   /** "measured" when confidenceScore was computed; otherwise it carries no information. */
   confidenceBasis?: string | null;
@@ -103,6 +103,8 @@ export interface EventFilters {
   geography?: string;
   serviceLine?: string;
   status?: PublicationStatus | "all";
+  /** Only rumours (eventStatus RUMOURED), of every family. Without it, rumours are left out. */
+  rumours?: boolean;
   search?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -141,6 +143,8 @@ export interface DashboardStats {
   newOfferingCount: number;
   orgChangeCount: number;
   needsReviewCount: number;
+  /** Published rumours: reported, not confirmed by the parties. Not part of totalEvents. */
+  rumoursCount: number;
   last30DaysCount: number;
   latestEventDate: string | null;
   topVendors: { name: string; slug: string; count: number }[];

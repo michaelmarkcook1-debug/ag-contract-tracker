@@ -13,9 +13,14 @@ const STYLES: Record<string, string> = {
   ORG_CHANGE: "bg-rose-500/15 text-rose-400 border-rose-500/30",
 };
 
-/** Shown on events that are not a win: a contract that ended or is in dispute. */
+/** Shown on events that are not a win: a contract that ended or is in dispute, or a rumour nobody has confirmed. */
 export function EventStatusBadge({ status, className }: { status: string | null | undefined; className?: string }) {
   const s = status?.toUpperCase();
+  if (s === "RUMOURED") return (
+    <Badge variant="outline" className={cn("text-[10px] font-medium shrink-0 bg-amber-500/10 text-amber-500 border-amber-500/30", className)} title="Reported but not confirmed by the parties — not counted in totals or contract value">
+      Rumour
+    </Badge>
+  );
   if (s !== "TERMINATED" && s !== "DISPUTED") return null;
   return (
     <Badge variant="outline" className={cn("text-[10px] font-medium shrink-0 bg-red-500/10 text-red-400 border-red-500/30", className)} title="Not won business — excluded from deal counts and contract value">

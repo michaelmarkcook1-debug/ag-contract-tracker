@@ -27,7 +27,7 @@ export default async function AdminPage() {
     (async () => ({
       hasApiKey: !!process.env.ANTHROPIC_API_KEY,
       sourcesTotal: await prisma.sourceRegistryItem.count({ where: { isActive: true } }),
-      needsReview: await prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...(await trackedEventScope()) } }),
+      needsReview: await prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...(await trackedEventScope({ rumours: "include" })) } }),
       lastRun: await prisma.ingestionRun.findFirst({ orderBy: { startedAt: "desc" } }).then(r => r ? {
         ...r,
         errors: JSON.parse(r.errors || "[]"),

@@ -148,7 +148,7 @@ export interface ExtractionResult {
   clientDescriptor?: string | null;
   /** What kind of article the model judged this to be (see ARTICLE_TYPES); null for rule-based results. */
   articleType?: string | null;
-  /** Status of the reported event: announced | completed | opportunity | terminated | disputed | none. */
+  /** Status of the reported event: announced | completed | rumoured | opportunity | terminated | disputed | none. */
   eventStatus?: string | null;
   /** Model-estimated value range (USD) when no value was stated — labelled, never mixed with tcvUsd. */
   tcvEstimateLowUsd?: number | null;
@@ -371,7 +371,8 @@ const READING_RULES = `Read the WHOLE text and judge it the way an analyst would
      supplier (that is the supplier's win, not the vendor's).
      Then family = "EXCLUDED" (never put a status word in "family").
 3. What is the STATUS of the event? "announced" (a new award, deal, launch or
-   appointment), "completed" (closed, delivered, go-live), "opportunity"
+   appointment), "completed" (closed, delivered, go-live), "rumoured"
+   (talks, plans or layoffs reported but not confirmed by the parties), "opportunity"
    (tender, RFP, bid, shortlist — not yet awarded), "terminated" (ended,
    cancelled, insourced, lost), "disputed" (criticism, investigation, legal
    action about an existing contract), "none".
@@ -383,10 +384,10 @@ const READING_RULES = `Read the WHOLE text and judge it the way an analyst would
    invent a link to a tracked vendor.`;
 
 const ARTICLE_TYPES = "announcement|news_report|stock_or_analyst_note|opinion_or_thought_leadership|listicle_or_roundup|tender_or_rfp|award_or_ranking|sponsorship_or_csr|research_or_report|case_study_or_marketing|event_or_webinar|job_or_people_profile|other";
-const EVENT_STATUSES = "announced|completed|opportunity|terminated|disputed|none";
+const EVENT_STATUSES = "announced|completed|rumoured|opportunity|terminated|disputed|none";
 /** Article types that cannot carry a market event, whatever family the model chose. */
 const NON_EVENT_TYPES = new Set(["sponsorship_or_csr", "award_or_ranking", "research_or_report", "case_study_or_marketing", "job_or_people_profile", "event_or_webinar"]);
-const STATUS_WORDS = new Set(["ANNOUNCED", "COMPLETED", "OPPORTUNITY", "TERMINATED", "DISPUTED", "NONE"]);
+const STATUS_WORDS = new Set(["ANNOUNCED", "COMPLETED", "RUMOURED", "OPPORTUNITY", "TERMINATED", "DISPUTED", "NONE"]);
 
 /**
  * Normalise the model's family / status / type trio. Haiku sometimes writes

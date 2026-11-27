@@ -18,7 +18,9 @@ export const READER_MODEL = "claude-sonnet-5-5";
 /** Bump when the reading rules or schema change — recorded on every result (§23). */
 // 2.3.0: reader model moved from Sonnet 5 to Sonnet 5.5 (2026-10-20); rules and schema unchanged. A new version so results
 // read under the new model are never treated as the same read as the old ones.
-export const PROMPT_POLICY_VERSION = "reader/2.3.0-2026-10-20";
+// 2.4.0: RUMOURED event status (deals, acquisitions, partnerships, layoffs reported but not confirmed by the parties) and
+// layoffs named under ORG_CHANGE (2026-11-27).
+export const PROMPT_POLICY_VERSION = "reader/2.4.0-2026-11-27";
 
 /** Output allowance for one reader call. Scales with the number of events an
  *  article reports, not its length — see callModel. */
@@ -31,7 +33,7 @@ const SINGLE_READ_MAX = 14_000;
 
 export const ARTICLE_TYPES = ["NEWS_REPORT", "COMPANY_ANNOUNCEMENT", "CLIENT_ANNOUNCEMENT", "EARNINGS", "FILING", "STOCK_ANALYST_NOTE", "OPINION", "CASE_STUDY", "LISTICLE", "TENDER_RFP", "AWARD_RANKING", "SPONSORSHIP_CSR", "RESEARCH", "EVENT", "PEOPLE_PROFILE", "OTHER"] as const;
 export const COMMERCIAL_EVENT_TYPES = ["NEW_WIN", "RENEWAL", "EXTENSION", "EXPANSION", "SCOPE_REDUCTION", "RECOMPETE", "COMPETITIVE_TAKEAWAY", "REPLACEMENT", "TERMINATION", "CONTRACT_CHANGE", "OTHER_COMMERCIAL_EVENT", "UNKNOWN"] as const;
-export const EVENT_STATUSES = ["ANNOUNCED", "COMPLETED", "OPPORTUNITY", "TERMINATED", "DISPUTED", "UNKNOWN"] as const;
+export const EVENT_STATUSES = ["ANNOUNCED", "COMPLETED", "RUMOURED", "OPPORTUNITY", "TERMINATED", "DISPUTED", "UNKNOWN"] as const;
 export const BUYER_SECTORS = ["PRIVATE_SECTOR", "PUBLIC_SECTOR", "STATE_OWNED_OR_MIXED", "NON_PROFIT", "UNKNOWN"] as const;
 export const AI_RELEVANCE = ["EXPLICIT_AI", "AI_MATERIAL", "AI_ADJACENT", "NOT_AI_SPECIFIC", "UNKNOWN"] as const;
 export const FAMILIES = ["CONTRACT", "PARTNERSHIP", "M_AND_A", "NEW_OFFERING", "ORG_CHANGE", "FINANCIAL_RESULTS"] as const;
@@ -126,9 +128,9 @@ TRACKED PROVIDERS (spell "provider" exactly as listed): ${VENDOR_UNIVERSE}
    The container is not the event: a STOCK_ANALYST_NOTE can report a contract win; a CASE_STUDY can reveal an expansion; a COMPANY_ANNOUNCEMENT can be a mere sponsorship.
 
 2. COMMERCIAL EVENTS — list every distinct event the text reports in which a tracked provider is a PARTY (zero, one or several). For each:
-   - family: CONTRACT (a client buys services from the provider), PARTNERSHIP (delivery/technology alliance), M_AND_A (the provider acquires, merges, divests), NEW_OFFERING, ORG_CHANGE (senior leadership, restructuring), FINANCIAL_RESULTS (the provider's own results/guidance).
+   - family: CONTRACT (a client buys services from the provider), PARTNERSHIP (delivery/technology alliance), M_AND_A (the provider acquires, merges, divests), NEW_OFFERING, ORG_CHANGE (senior leadership, restructuring, layoffs and job cuts), FINANCIAL_RESULTS (the provider's own results/guidance).
    - commercialEventType (CONTRACT family): ${COMMERCIAL_EVENT_TYPES.join(" | ")}. Use the best-supported type; UNKNOWN beats invented precision. A client extending "its five-year relationship for another three years" is an EXTENSION with duration 3 years even if the word contract never appears. A provider replacing a named incumbent is COMPETITIVE_TAKEAWAY; name the incumbent. Other families: OTHER_COMMERCIAL_EVENT.
-   - eventStatus: ${EVENT_STATUSES.join(" | ")}. A tender, RFP, bid or shortlist is OPPORTUNITY, not an award. An opportunity is ONE event for the buyer: list it once, with provider = the named incumbent if there is one (else the tracked provider the text most concerns), never one event per potential bidder. Work the text describes as already delivered, live, deployed or in production (a case study, a results write-up, a retrospective) is COMPLETED, not ANNOUNCED; ANNOUNCED is for work reported as awarded or starting.
+   - eventStatus: ${EVENT_STATUSES.join(" | ")}. A tender, RFP, bid or shortlist is OPPORTUNITY, not an award. RUMOURED is a deal, acquisition, merger, sale, partnership, contract or layoff that is reported but NOT confirmed or agreed by the parties: talks, "in discussions", "exploring a sale", "considering", "weighing a bid", "plans to cut jobs" attributed to unnamed sources or "people familiar with the matter", a report the company declined to confirm, or a party saying only that it is exploring options. List a rumour like any other event (family by what is rumoured: M_AND_A, PARTNERSHIP, CONTRACT, ORG_CHANGE); the counterparty may be unnamed (use buyerDescriptor). Once the parties announce or sign it, it is ANNOUNCED, not RUMOURED; a public tender is OPPORTUNITY, not RUMOURED. An opportunity is ONE event for the buyer: list it once, with provider = the named incumbent if there is one (else the tracked provider the text most concerns), never one event per potential bidder. Work the text describes as already delivered, live, deployed or in production (a case study, a results write-up, a retrospective) is COMPLETED, not ANNOUNCED; ANNOUNCED is for work reported as awarded or starting.
    - provider (tracked, exact spelling) and buyer (the organisation NAME; if unnamed, put the text's description in buyerDescriptor and leave buyer null).
    - buyerSector: ${BUYER_SECTORS.join(" | ")} — judged from what the text says the buyer IS. A named commercial company (an insurer, bank, manufacturer, retailer, telecom operator, airline, pension administrator) is PRIVATE_SECTOR unless the text indicates state ownership. Governments, ministries, departments, agencies, councils, public health bodies, armed forces and public universities are PUBLIC_SECTOR. STATE_OWNED_OR_MIXED when the text says the buyer is state-owned or partly so; NON_PROFIT for charities and foundations. UNKNOWN only when the buyer's nature genuinely cannot be told from the text.
    - aiRelevance: EXPLICIT_AI (the engagement is about AI/GenAI/ML/foundation models), AI_MATERIAL (AI is a substantial part of the scope), AI_ADJACENT (AI mentioned but incidental), NOT_AI_SPECIFIC (cloud, digital, automation, ERP without AI substance), UNKNOWN. Judge by substance, not by the letters "AI".

@@ -8,8 +8,8 @@ import { getTrackedEntityIds, trackedEventScope } from "@/lib/data";
 // extraction model's labelled range — tcv/infer.ts). Older single-number guesses
 // carry other bases and stay out. Every KPI that sums or averages uses this, and
 // reports how many values are disclosed vs estimated.
-/** Prisma filter: not a terminated or disputed contract (see `won` below). */
-const WON_ONLY = { OR: [{ eventStatus: null }, { eventStatus: { notIn: ["TERMINATED", "DISPUTED", "terminated", "disputed"] } }] };
+/** Prisma filter: not a terminated, disputed or rumoured contract (see `won` below). */
+const WON_ONLY = { OR: [{ eventStatus: null }, { eventStatus: { notIn: ["TERMINATED", "DISPUTED", "RUMOURED", "terminated", "disputed", "rumoured"] } }] };
 
 const TCV = Prisma.raw(`COALESCE(cd."tcvCommittedUsd", CASE WHEN cd."tcvIsEstimate" AND (cd."tcvBasis" LIKE 'value_engine_v%' OR cd."tcvBasis" LIKE 'third_party_estimated:%' OR cd."tcvBasis" LIKE 'comparable_inferred_v%' OR cd."tcvBasis" LIKE 'model_estimated_v2%') THEN cd."tcvEstimateMidUsd" END)`);
 
@@ -112,7 +112,8 @@ export async function GET() {
   const ids = await getTrackedEntityIds();
   // Terminated and disputed contracts are published as events but are not
   // won business: they never count towards deal numbers or contract value.
-  const won = Prisma.sql`upper(coalesce(cme."eventStatus", '')) NOT IN ('TERMINATED', 'DISPUTED')`;
+  // Rumours (reported, not confirmed) are not deals either.
+  const won = Prisma.sql`upper(coalesce(cme."eventStatus", '')) NOT IN ('TERMINATED', 'DISPUTED', 'RUMOURED')`;
   const inScope = Prisma.sql`(cme."primaryEntityId" = ANY(${ids}) OR cd."vendorId" = ANY(${ids})) AND ${won}`;
   const [
     totalDeals,
@@ -121,7 +122,7 @@ export async function GET() {
     monthlyRaw, tcvSummary, topGeographies,
   ] = await Promise.all([
     // Total deals
-    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", ...scope, AND: [WON_ONLY] } }),
+    prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", AND: [...scope.AND, WON_ONLY] } }),
     // By year
     prisma.$queryRaw<{ yr: string; deals: bigint; tcv: number; avgtcv: number }[]>`
       SELECT TO_CHAR(cme."announcementDate", 'YYYY') yr,

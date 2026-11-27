@@ -319,7 +319,9 @@ export async function enrichExisting(eventId: string, ev: GroundedEvent, idKey?:
   await db.canonicalMarketEvent.update({ where: { id: eventId }, data: {
     buyerSector: (!cur.buyerSector || cur.buyerSector === "UNKNOWN") && ev.buyerSector !== "UNKNOWN" ? ev.buyerSector : undefined,
     aiRelevance: (!cur.aiRelevance || cur.aiRelevance === "UNKNOWN") && ev.aiRelevance !== "UNKNOWN" ? ev.aiRelevance : undefined,
-    eventStatus: (!cur.eventStatus || cur.eventStatus === "UNKNOWN") && ev.eventStatus !== "UNKNOWN" ? ev.eventStatus : undefined,
+    // A rumour is confirmed when a re-report of the same event says it was announced or completed.
+    eventStatus: ((!cur.eventStatus || cur.eventStatus === "UNKNOWN") && ev.eventStatus !== "UNKNOWN") ||
+      (cur.eventStatus === "RUMOURED" && (ev.eventStatus === "ANNOUNCED" || ev.eventStatus === "COMPLETED")) ? ev.eventStatus : undefined,
     commercialEventType: !cur.commercialEventType && cur.family === "CONTRACT" && ev.commercialEventType !== "UNKNOWN" ? ev.commercialEventType : undefined,
     canonicalContractEventId: assignId,
     readerVersion: cur.readerVersion ?? PROMPT_POLICY_VERSION,
@@ -441,7 +443,8 @@ async function storeArticleEvents(tx: Prisma.TransactionClient, article: RawArti
     const collision = !scoped && await tx.canonicalMarketEvent.findUnique({ where: { canonicalContractEventId: monthKey }, select: { id: true } });
     const idKey = scoped || collision ? observationKey : monthKey;
     const valueUsd = isContractValue(ev.contractValue) && ev.valueIsTcv !== false ? toUsd(ev.contractValue, ev.currency) : null;
-    const estimate = family === "CONTRACT" && valueUsd == null ? await estimateFor(ev, article, text, eventType, when) : null;
+    // A rumoured contract is not valued: it is never counted, and an estimate would read as a fact.
+    const estimate = family === "CONTRACT" && valueUsd == null && ev.eventStatus !== "RUMOURED" ? await estimateFor(ev, article, text, eventType, when) : null;
     const effective = parseDate(ev.effectiveDate);
     const start = effective ?? when;
     const dates = start ? contractDates(effective, start, ev.durationMonths)

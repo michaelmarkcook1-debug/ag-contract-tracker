@@ -14,6 +14,7 @@ import {
   DollarSign, Clock, User, ArrowRight
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 const FAMILIES: { value: MarketEventFamily | "all"; label: string; color?: string }[] = [
   { value: "all", label: "All Types" },
@@ -24,6 +25,8 @@ const FAMILIES: { value: MarketEventFamily | "all"; label: string; color?: strin
   { value: "NEW_OFFERING", label: "New Offerings", color: "bg-violet-500" },
   { value: "ORG_CHANGE", label: "Org Changes", color: "bg-pink-500" },
 ];
+/** Rumours: deals, acquisitions, partnerships and layoffs reported but not confirmed. Every family; kept out of the other views. */
+const RUMOURS_CHIP = { label: "Rumours", color: "bg-amber-400" };
 
 const PAGE_SIZE = 30;
 
@@ -267,15 +270,26 @@ function EventValueCell({ event }: { event: EventSummary }) {
 }
 
 // ── Main Component ───────────────────────────────────────────────────────────
+/** A link into the Tracker (the dashboard's cards, the rumours pill) opens it already filtered. */
+function linkedFilters(sp: URLSearchParams): EventFilters | null {
+  const fam = sp.get("family");
+  if (sp.get("rumours") === "1") return { family: "all", rumours: true, status: "all", page: 1, pageSize: PAGE_SIZE };
+  if (fam && FAMILIES.some(x => x.value === fam)) return { family: fam as MarketEventFamily, status: "all", page: 1, pageSize: PAGE_SIZE };
+  return null;
+}
+
 export function EventsTable() {
-  const [filters, setFilters] = useState<EventFilters>({ family: "all", status: "all", page: 1, pageSize: PAGE_SIZE });
+  // Read once on mount; the page wraps this component in Suspense, so it renders on the client with the URL known.
+  const searchParams = useSearchParams();
+  const [linked] = useState(() => linkedFilters(new URLSearchParams(searchParams.toString())));
+  const [filters, setFilters] = useState<EventFilters>(linked ?? { family: "all", status: "all", page: 1, pageSize: PAGE_SIZE });
   const [data, setData] = useState<EventsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<EventSummary | null>(null);
   // Phones: the dropdown filters fold behind a toggle so results get the screen.
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState("");
-  const [hasSearched, setHasSearched] = useState(false);
+  const [hasSearched, setHasSearched] = useState(linked != null);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -289,6 +303,7 @@ export function EventsTable() {
     const params = new URLSearchParams();
     if (f.family && f.family !== "all") params.set("family", f.family);
     if (f.status && f.status !== "all") params.set("status", f.status);
+    if (f.rumours) params.set("rumours", "1");
     if (f.search) params.set("search", f.search);
     if (f.vendor) params.set("vendor", f.vendor);
     if (f.industry) params.set("industry", f.industry);
@@ -322,8 +337,14 @@ export function EventsTable() {
     setFilters((f) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const next: any = { ...f, [key]: value || undefined, page: key !== "page" ? 1 : (value as number) };
+      // Picking a type leaves the Rumours view.
+      if (key === "family") next.rumours = undefined;
       return next as EventFilters;
     });
+  };
+  const showRumours = () => {
+    setHasSearched(true);
+    setFilters(f => ({ ...f, family: "all", rumours: true, page: 1 }));
   };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -334,6 +355,7 @@ export function EventsTable() {
 
   const activeFilterCount = [
     filters.family && filters.family !== "all",
+    filters.rumours,
     filters.vendor,
     filters.industry,
     filters.geography,
@@ -377,7 +399,7 @@ export function EventsTable() {
                   key={value}
                   onClick={() => setFilter("family", value === "all" ? "all" : value)}
                   className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 md:py-1 rounded-full text-xs font-medium transition-all ${
-                    filters.family === value
+                    filters.family === value && !filters.rumours
                       ? "bg-foreground/10 text-foreground"
                       : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-foreground/[0.04]"
                   }`}
@@ -386,6 +408,19 @@ export function EventsTable() {
                   {label}
                 </button>
               ))}
+              <button
+                onClick={showRumours}
+                aria-pressed={!!filters.rumours}
+                title="Deals, acquisitions, partnerships and layoffs reported but not confirmed. Not counted anywhere else."
+                className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 md:py-1 rounded-full text-xs font-medium transition-all ${
+                  filters.rumours
+                    ? "bg-foreground/10 text-foreground"
+                    : "text-muted-foreground/60 hover:text-muted-foreground hover:bg-foreground/[0.04]"
+                }`}
+              >
+                <span className={`h-2 w-2 rounded-full ${RUMOURS_CHIP.color}`} />
+                {RUMOURS_CHIP.label}
+              </button>
             </div>
 
             {/* Phones: one button reveals the dropdown filters */}

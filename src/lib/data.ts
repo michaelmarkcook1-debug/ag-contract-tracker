@@ -181,12 +181,14 @@ async function shapeEvents(rows: Parameters<typeof shapeEvent>[0][]) {
 }
 
 export async function getEvents(filters: EventFilters = {}): Promise<EventsResponse> {
-  const { family, vendor, industry, geography, serviceLine, status, search, dateFrom, dateTo, page = 1, pageSize = 25 } = filters;
+  const { family, vendor, industry, geography, serviceLine, status, search, dateFrom, dateTo, rumours, page = 1, pageSize = 25 } = filters;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: Record<string, any> = { publicationStatus: { notIn: ["excluded_noise", "suppressed_duplicate", "excluded_duplicate"] } };
 
   if (family && family !== "all") where.family = family;
+  // The Rumours view lists only rumours, of every family; every other view leaves them out.
+  if (rumours) where.eventStatus = { in: RUMOUR_STATUSES };
   if (status && status !== "all") where.publicationStatus = { ...where.publicationStatus, equals: status };
   if (industry) where.industry = { contains: industry };
   if (dateFrom || dateTo) {
@@ -214,7 +216,7 @@ export async function getEvents(filters: EventFilters = {}): Promise<EventsRespo
   }
 
   // Scope to tracked vendors via AND so it composes with the search/vendor ORs.
-  where.AND = [...((where.AND as unknown[]) ?? []), await trackedEventScope()];
+  where.AND = [...((where.AND as unknown[]) ?? []), await trackedEventScope({ rumours: rumours ? "include" : "exclude" })];
 
   const [total, rows] = await Promise.all([
     prisma.canonicalMarketEvent.count({ where }),
@@ -243,7 +245,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const [
     totalEvents, contractsCount, financialResultsCount, maCount, partnershipCount, newOfferingCount, orgChangeCount,
     needsReviewCount, last30DaysCount, topVendorRows, topIndustryRows, recentRows, monthlyRows,
-    latestEventRow,
+    latestEventRow, rumoursCount,
   ] = await Promise.all([
     prisma.canonicalMarketEvent.count({ where: { publicationStatus: "published", ...scope } }),
     prisma.canonicalMarketEvent.count({ where: { family: "CONTRACT", publicationStatus: "published", ...scope } }),
@@ -252,8 +254,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     prisma.canonicalMarketEvent.count({ where: { family: "PARTNERSHIP", publicationStatus: "published", ...scope } }),
     prisma.canonicalMarketEvent.count({ where: { family: "NEW_OFFERING", publicationStatus: "published", ...scope } }),
     prisma.canonicalMarketEvent.count({ where: { family: "ORG_CHANGE", publicationStatus: "published", ...scope } }),
-    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...scope } }),
-    prisma.canonicalMarketEvent.count({ where: { announcementDate: { gte: thirtyDaysAgo }, publicationStatus: "published" } }),
+    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...(await trackedEventScope({ rumours: "include" })) } }),
+    prisma.canonicalMarketEvent.count({ where: { announcementDate: { gte: thirtyDaysAgo }, publicationStatus: "published", ...CONFIRMED_ONLY } }),
     prisma.entity.findMany({
       where: { entityType: { in: ["vendor", "both"] }, ...trackedVendorNameFilter() },
       include: { _count: { select: { primaryEvents: true } } },
@@ -262,7 +264,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     }),
     prisma.canonicalMarketEvent.groupBy({
       by: ["industry"],
-      where: { industry: { not: null }, publicationStatus: "published" },
+      where: { industry: { not: null }, publicationStatus: "published", ...CONFIRMED_ONLY },
       _count: { id: true },
       orderBy: { _count: { id: "desc" } },
       take: 8,
@@ -276,7 +278,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     // Monthly trend - last 18 months
     prisma.canonicalMarketEvent.findMany({
       where: {
-        publicationStatus: "published",
+        publicationStatus: "published", ...CONFIRMED_ONLY,
         announcementDate: { gte: new Date(Date.now() - 548 * 24 * 60 * 60 * 1000) },
       },
       select: { announcementDate: true, family: true },
@@ -287,6 +289,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       orderBy: { announcementDate: { sort: "desc", nulls: "last" } },
       select: { announcementDate: true },
     }),
+    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "published", eventStatus: { in: RUMOUR_STATUSES }, ...(await trackedEventScope({ rumours: "include" })) } }),
   ]);
 
   // Build monthly trend buckets
@@ -314,6 +317,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     newOfferingCount,
     orgChangeCount,
     needsReviewCount,
+    rumoursCount,
     last30DaysCount,
     latestEventDate: latestEventRow?.announcementDate?.toISOString() ?? null,
     topVendors: topVendorRows.map((v) => ({ name: v.canonicalName, slug: v.slug, count: v._count.primaryEvents })),
@@ -342,10 +346,10 @@ export async function getVendorProfile(slug: string): Promise<VendorProfile | nu
   // vendor with 900 events showed "20 tracked events".
   const published = { primaryEntityId: entity.id, publicationStatus: "published" };
   const [familyCounts, disclosed] = await Promise.all([
-    prisma.canonicalMarketEvent.groupBy({ by: ["family"], where: published, _count: { id: true } }),
+    prisma.canonicalMarketEvent.groupBy({ by: ["family"], where: { ...published, ...CONFIRMED_ONLY }, _count: { id: true } }),
     prisma.contractDetails.aggregate({
-      // Terminated or disputed contracts are not won value.
-      where: { canonicalEvent: { ...published, family: "CONTRACT", OR: [{ eventStatus: null }, { eventStatus: { notIn: ["TERMINATED", "DISPUTED", "terminated", "disputed"] } }] }, tcvCommittedUsd: { gt: 0 } },
+      // Terminated, disputed and rumoured contracts are not won value.
+      where: { canonicalEvent: { ...published, family: "CONTRACT", OR: [{ eventStatus: null }, { eventStatus: { notIn: ["TERMINATED", "DISPUTED", "terminated", "disputed", ...RUMOUR_STATUSES] } }] }, tcvCommittedUsd: { gt: 0 } },
       _sum: { tcvCommittedUsd: true },
       _count: { id: true },
     }),
@@ -406,9 +410,18 @@ export async function getTrackedEntityIds(): Promise<string[]> {
   return trackedIdsCache;
 }
 
-export async function trackedEventScope() {
+/** Statuses of events reported but not confirmed by the parties. Shown in the Rumours view, never counted. */
+export const RUMOUR_STATUSES = ["RUMOURED", "rumoured"];
+/** Prisma filter: a confirmed event (any status but rumoured; a null status is confirmed). */
+export const CONFIRMED_ONLY = { OR: [{ eventStatus: null }, { eventStatus: { notIn: RUMOUR_STATUSES } }] };
+
+/**
+ * Events of the tracked vendors. Rumours are left out unless asked for: every
+ * count, total and chart reads confirmed events only.
+ */
+export async function trackedEventScope(opts: { rumours?: "exclude" | "include" } = {}) {
   const ids = await getTrackedEntityIds();
-  return {
+  const tracked = {
     OR: [
       { primaryEntityId: { in: ids } },
       { contractDetails: { vendorId: { in: ids } } },
@@ -417,6 +430,7 @@ export async function trackedEventScope() {
       { partnershipDetails: { entityBId: { in: ids } } },
     ],
   };
+  return { AND: opts.rumours === "include" ? [tracked] : [tracked, CONFIRMED_ONLY] };
 }
 
 export async function getAllVendors() {

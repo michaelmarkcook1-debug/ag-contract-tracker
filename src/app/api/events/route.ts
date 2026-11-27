@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     geography: sp.get("geography") ?? undefined,
     serviceLine: sp.get("serviceLine") ?? undefined,
     status: (sp.get("status") ?? "all") as PublicationStatus | "all",
+    rumours: sp.get("rumours") === "1",
     search: sp.get("search") ?? undefined,
     dateFrom: sp.get("dateFrom") ?? undefined,
     dateTo: sp.get("dateTo") ?? undefined,

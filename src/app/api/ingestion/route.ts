@@ -67,7 +67,7 @@ export async function GET() {
   const [sourcesTotal, lastRun, needsReview, mode] = await Promise.all([
     prisma.sourceRegistryItem.count({ where: { isActive: true } }),
     prisma.ingestionRun.findFirst({ orderBy: { startedAt: "desc" } }),
-    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...(await (await import("@/lib/data")).trackedEventScope()) } }),
+    prisma.canonicalMarketEvent.count({ where: { publicationStatus: "needs_review", ...(await (await import("@/lib/data")).trackedEventScope({ rumours: "include" })) } }),
     getIngestionMode(),
   ]);
   return NextResponse.json({ hasApiKey, sourcesTotal, needsReview, lastRun, mode });

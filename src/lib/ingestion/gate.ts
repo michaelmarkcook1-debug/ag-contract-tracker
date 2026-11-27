@@ -18,8 +18,10 @@ export const COUNTERPARTY_FAMILIES = new Set(["CONTRACT", "M_AND_A", "PARTNERSHI
  * Event statuses the store may publish. Terminated and disputed events publish
  * as what they are (eventStatus is stored and shown); analytics exclude them
  * from deal counts and contract value, so they never read as won business.
+ * Rumoured events (reported, not confirmed by the parties) publish to the
+ * Rumours view on the same terms: shown as rumours, never counted.
  */
-const PUBLISHABLE_STATUS = new Set(["announced", "completed", "terminated", "disputed"]);
+const PUBLISHABLE_STATUS = new Set(["announced", "completed", "terminated", "disputed", "rumoured"]);
 
 export interface GateDecision {
   status: "published" | "needs_review";
@@ -35,9 +37,10 @@ export function decidePublication(result: ExtractionResult, vendorId: string | n
   if (!vendorId) reasons.push("vendor_unresolved");
   // A counterparty the text describes but does not name ("a leading European automotive OEM") is a
   // known pattern in award announcements; the store records it as anonymised, not missing.
-  if (COUNTERPARTY_FAMILIES.has(result.family) && !result.clientRaw?.trim() && !result.clientDescriptor?.trim()) reasons.push("no_counterparty");
-
+  // A rumour often has no counterparty yet ("exploring a sale of its unit"); that is the nature of a rumour, not a gap.
   const status = result.eventStatus ?? "none";
+  if (COUNTERPARTY_FAMILIES.has(result.family) && status !== "rumoured" && !result.clientRaw?.trim() && !result.clientDescriptor?.trim()) reasons.push("no_counterparty");
+
   if (status === "opportunity") {
     reasons.push(result.family === "CONTRACT" ? "opportunity_not_award" : "opportunity_not_event");
   } else if (!PUBLISHABLE_STATUS.has(status)) {

@@ -6,7 +6,7 @@ import { FamilyBadge } from "@/components/market/FamilyBadge";
 import { EventCard } from "@/components/market/EventCard";
 import { FamilyTrendChart, TopVendorsChart } from "@/components/market/DashboardCharts";
 import { formatDate } from "@/lib/types";
-import { Activity, FileText, TrendingUp, GitMerge, Handshake, Lightbulb, Users, ArrowRight, Zap } from "lucide-react";
+import { Activity, FileText, TrendingUp, GitMerge, Handshake, Lightbulb, Users, ArrowRight, Zap, Radio } from "lucide-react";
 import Link from "next/link";
 
 export default async function DashboardPage() {
@@ -45,6 +45,12 @@ export default async function DashboardPage() {
             <Link href="/admin" className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
               <Activity className="h-3 w-3" />
               {stats.needsReviewCount} pending review
+            </Link>
+          )}
+          {stats.rumoursCount > 0 && (
+            <Link href="/events?rumours=1" title="Deals, acquisitions, partnerships and layoffs reported but not confirmed. Not counted in the totals." className="flex items-center gap-1.5 text-xs text-amber-500 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
+              <Radio className="h-3 w-3" />
+              {stats.rumoursCount.toLocaleString()} rumours
             </Link>
           )}
           <Link href="/events" className="flex items-center gap-1.5 text-xs bg-foreground/[0.06] hover:bg-foreground/[0.1] px-3 py-1.5 rounded-full transition-colors font-medium">
