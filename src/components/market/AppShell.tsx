@@ -10,12 +10,14 @@ import {
   LayoutDashboard,
   Search,
   ShieldAlert,
+  Target,
 } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/events", label: "Tracker", icon: FileSearch },
   { href: "/vendors", label: "Vendors", icon: Building2 },
+  { href: "/dealmaker", label: "Deal Maker", icon: Target },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin", label: "Admin", icon: ShieldAlert },
 ];
@@ -74,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         aria-label="Main"
         className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/60 bg-background/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
       >
-        <div className="grid grid-cols-5 h-16">
+        <div className="grid grid-cols-6 h-16">
           {NAV.map(({ href, label, icon: Icon }) => (
             <Link
               key={href}
