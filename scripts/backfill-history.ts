@@ -28,6 +28,11 @@
  * covers all 118.
  *
  *   npx tsx scripts/backfill-history.ts [--runs 5] [--latest 2026-08] [--cohort ag|all] [--vendors "Infosys,Capgemini"] [--concurrency 6] [--max-spend 7] [--dry-run]
+ *
+ * QUEUE-ONLY (--queue-only): crawl and store every article as pending, read nothing. The half-price route: then
+ * fetch page text (scripts/fetch-pending-text.ts) and read through the Batch API (scripts/backlog-batch-read.ts).
+ * Keeps its own state (data/backfill-queue.state.json), never changes the ingestion mode and never counts runs as
+ * "good", so the daily run is not paused and the read-as-you-go history is untouched.
  */
 import fs from "fs";
 import { runPipeline } from "@/lib/ingestion/pipeline";
@@ -40,7 +45,8 @@ import { prisma } from "@/lib/db";
 process.on("unhandledRejection", err => { console.error(`unhandled (continuing): ${err instanceof Error ? err.message.slice(0, 160) : String(err)}`); });
 
 const arg = (n: string, d: string) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
-const STATE = "data/backfill-history.state.json";
+const QUEUE_ONLY = process.argv.includes("--queue-only");
+const STATE = QUEUE_ONLY ? "data/backfill-queue.state.json" : "data/backfill-history.state.json";
 const GOOD_MAX_ERROR_SHARE = 0.05, GOOD_MAX_CAP_SHARE = 0.10;
 
 interface WindowResult { found: number; read: number; published: number; merged: number; capped: boolean; errors: number; costUsd: number; at: string }
@@ -74,7 +80,7 @@ interface State { done: Record<string, WindowResult>; runs: RunResult[]; goodRun
   console.log(`${state.goodRuns}/${targetRuns} good runs so far; ${months.length} months queued (${months.map(m => m.toISOString().slice(0, 7)).join(", ")}) × ${vendors.length} vendors${dryRun ? " — dry run: crawl only, no reads, no mode change" : ` — spend cap $${maxSpend}`}`);
   if (!months.length) { console.log("nothing to do"); await prisma.$disconnect(); return; }
 
-  if (!dryRun) await setIngestionMode("historical", `backfill running: ${state.goodRuns}/${targetRuns} good runs`);
+  if (!dryRun && !QUEUE_ONLY) await setIngestionMode("historical", `backfill running: ${state.goodRuns}/${targetRuns} good runs`);
   let spend = 0, windowsRun = 0, stopped = false;
   for (const month of months) {
     const label = month.toISOString().slice(0, 7);
@@ -99,7 +105,8 @@ interface State { done: Record<string, WindowResult>; runs: RunResult[]; goodRun
         if (error) run.errored++;
         continue;
       }
-      const p = await runPipeline({ sources: [src], maxArticleAgeDays: 0, maxExtractions: Number.MAX_SAFE_INTEGER, concurrency, timeBudgetMs: 24 * 3_600_000, runType: "backfill_history" });
+      // Queue-only: a read budget of 0 makes the pipeline store every selected article as pending.
+      const p = await runPipeline({ sources: [src], maxArticleAgeDays: 0, maxExtractions: QUEUE_ONLY ? 0 : Number.MAX_SAFE_INTEGER, concurrency, timeBudgetMs: 24 * 3_600_000, runType: QUEUE_ONLY ? "backfill_queue" : "backfill_history" });
       let capped = p.articlesFound >= GNEWS_ITEM_CAP;
       if (capped) {
         // The window lost articles at the feed's cap: split it and read the
@@ -115,6 +122,7 @@ interface State { done: Record<string, WindowResult>; runs: RunResult[]; goodRun
     }
     if (stopped) break;
     if (dryRun) { console.log(`  dry run ${label}: ${run.errored} errors, ${run.capped} windows at the cap`); continue; }
+    if (QUEUE_ONLY) { state.runs.push(run); save(); console.log(`  queued ${label}: ${run.windows} windows · errored ${run.errored} · capped ${run.capped}`); continue; }
     run.good = run.errored / run.windows <= GOOD_MAX_ERROR_SHARE && run.capped / run.windows <= GOOD_MAX_CAP_SHARE;
     if (run.good) state.goodRuns++;
     state.runs.push(run); save();
@@ -127,7 +135,7 @@ interface State { done: Record<string, WindowResult>; runs: RunResult[]; goodRun
       break;
     }
   }
-  if (!dryRun && !stopped && state.goodRuns < targetRuns) await setIngestionMode("historical", `backfill paused: ${state.goodRuns}/${targetRuns} good runs`);
+  if (!dryRun && !QUEUE_ONLY && !stopped && state.goodRuns < targetRuns) await setIngestionMode("historical", `backfill paused: ${state.goodRuns}/${targetRuns} good runs`);
   console.log(`\nspend this invocation $${spend.toFixed(2)} over ${windowsRun} windows`);
   await prisma.$disconnect();
   process.exit(0);
