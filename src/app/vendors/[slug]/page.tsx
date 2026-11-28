@@ -55,10 +55,10 @@ export default async function VendorPage({ params }: { params: Promise<{ slug: s
           </Card>
         ))}
         {totalTcv > 0 && (
-          <Card className="bg-emerald-500/5 border-emerald-500/20">
+          <Card className="bg-brand/5 border-brand/20">
             <CardContent className="pt-3 pb-3">
-              <div className="text-[10px] text-emerald-500 font-medium mb-2 uppercase tracking-wide">Disclosed TCV</div>
-              <div className="text-xl font-bold tabular-nums text-emerald-400">{formatTcv(totalTcv, false)}</div>
+              <div className="text-[10px] text-brand font-medium mb-2 uppercase tracking-wide">Disclosed TCV</div>
+              <div className="text-xl font-bold tabular-nums text-brand">{formatTcv(totalTcv, false)}</div>
               <p className="text-xs text-muted-foreground">{disclosedCount} disclosed contract{disclosedCount !== 1 ? "s" : ""}</p>
             </CardContent>
           </Card>

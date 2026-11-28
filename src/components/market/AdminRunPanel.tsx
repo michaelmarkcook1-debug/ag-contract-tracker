@@ -98,10 +98,10 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
   const to = run ? (run.sourcesTotal ? Math.min(run.offset + 30, run.sourcesTotal) : run.offset + 30) : 0;
 
   const statusColor = (s: string) => {
-    if (s === "completed") return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-    if (s === "running") return "bg-blue-500/15 text-blue-400 border-blue-500/30";
+    if (s === "completed") return "bg-brand/15 text-brand border-brand/30";
+    if (s === "running") return "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30";
     if (s === "partial") return "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
-    return "bg-red-500/15 text-red-400 border-red-500/30";
+    return "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30";
   };
 
   return (
@@ -109,9 +109,9 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
       {/* API key warning */}
       {!status.hasApiKey && (
         <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm">
-          <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+          <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <p className="font-medium text-amber-400">No Anthropic API key detected</p>
+            <p className="font-medium text-amber-600 dark:text-amber-400">No Anthropic API key detected</p>
             <p className="text-amber-400/70 text-xs mt-0.5">
               Add <code className="bg-amber-500/20 px-1 rounded">ANTHROPIC_API_KEY=sk-ant-...</code> to your <code className="bg-amber-500/20 px-1 rounded">.env</code> file for LLM extraction.
               Without it, rule-based classification is used — lower accuracy but still functional.
@@ -120,7 +120,7 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
         </div>
       )}
       {status.hasApiKey && (
-        <div className="flex items-center gap-2 text-xs text-emerald-400">
+        <div className="flex items-center gap-2 text-xs text-brand">
           <CheckCircle2 className="h-3.5 w-3.5" />
           Reading enabled · Sonnet 5.5 reads every article in full
         </div>
@@ -181,12 +181,12 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
                 </Button>
               )}
               <Button variant="outline" size="sm" onClick={() => send("end")} disabled={sending || ending} className="h-9 gap-1.5 text-xs border-red-500/30 hover:bg-red-500/10" title="Stop now. Everything read up to this point is stored.">
-                <Square className="h-3 w-3 text-red-400" />End run
+                <Square className="h-3 w-3 text-red-600 dark:text-red-400" />End run
               </Button>
             </div>
           )}
 
-          {runError && <p className="text-xs text-red-400">{runError}</p>}
+          {runError && <p className="text-xs text-red-600 dark:text-red-400">{runError}</p>}
 
           {active && run && (
             <div className="p-3 rounded-md text-xs space-y-1.5 bg-blue-500/10 border border-blue-500/20">
@@ -207,12 +207,12 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
           )}
 
           {!active && run && (
-            <div className={`p-3 rounded-md text-xs space-y-1 ${run.state === "failed" ? "bg-red-500/10 border border-red-500/20" : "bg-emerald-500/10 border border-emerald-500/20"}`}>
-              <p className={`font-medium ${run.state === "failed" ? "text-red-400" : "text-emerald-400"}`}>{run.message ?? (run.state === "failed" ? "Run failed" : "Run complete")}</p>
-              <div className="grid grid-cols-3 gap-2 mt-2 text-emerald-400/80">
-                <div><div className="font-mono font-bold text-base text-emerald-400">{run.totals.articlesTriaged}</div>articles read</div>
-                <div><div className="font-mono font-bold text-base text-emerald-400">{run.totals.eventsPublished}</div>published</div>
-                <div><div className="font-mono font-bold text-base text-amber-400">{run.totals.eventsQueued}</div>for review</div>
+            <div className={`p-3 rounded-md text-xs space-y-1 ${run.state === "failed" ? "bg-red-500/10 border border-red-500/20" : "bg-brand/10 border border-brand/20"}`}>
+              <p className={`font-medium ${run.state === "failed" ? "text-red-600 dark:text-red-400" : "text-brand"}`}>{run.message ?? (run.state === "failed" ? "Run failed" : "Run complete")}</p>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-brand/80">
+                <div><div className="font-mono font-bold text-base text-brand">{run.totals.articlesTriaged}</div>articles read</div>
+                <div><div className="font-mono font-bold text-base text-brand">{run.totals.eventsPublished}</div>published</div>
+                <div><div className="font-mono font-bold text-base text-amber-600 dark:text-amber-400">{run.totals.eventsQueued}</div>for review</div>
               </div>
               <p className="text-muted-foreground mt-1 font-mono">
                 {run.totals.articlesFound} in the feeds · {run.totals.articlesDuped} seen before · {run.totals.articlesExcluded} read with no event · {run.totals.articlesMerged} added to existing events · ${run.totals.costUsd.toFixed(2)}
@@ -255,20 +255,20 @@ export function AdminRunPanel({ initialStatus }: { initialStatus: IngestionStatu
             {status.mode && (
               <div className="flex justify-between" title={status.mode.note ?? undefined}>
                 <span>Ingestion mode</span>
-                <span className={`font-mono ${status.mode.mode === "historical" ? "text-amber-400" : "text-emerald-400"}`}>{status.mode.mode === "historical" ? "historical fill — cron paused" : "current — cron active"}</span>
+                <span className={`font-mono ${status.mode.mode === "historical" ? "text-amber-600 dark:text-amber-400" : "text-brand"}`}>{status.mode.mode === "historical" ? "historical fill — cron paused" : "current — cron active"}</span>
               </div>
             )}
             {status.lastRun.articlesTriaged != null && (
               <div className="flex justify-between" title="Whole article read by the model in this run. A run reads for about three minutes; the rest wait for the next run."><span>Read this run</span><span className="font-mono">{status.lastRun.articlesTriaged}</span></div>
             )}
             {status.lastRun.articlesExcluded != null && (
-              <div className="flex justify-between" title="Read in full and found to report no contract, deal, partnership, launch, leadership change or results. Normal for news feeds; recorded so it is never paid for again."><span>Read, no event in it</span><span className="font-mono text-zinc-500">{status.lastRun.articlesExcluded}</span></div>
+              <div className="flex justify-between" title="Read in full and found to report no contract, deal, partnership, launch, leadership change or results. Normal for news feeds; recorded so it is never paid for again."><span>Read, no event in it</span><span className="font-mono text-muted-foreground">{status.lastRun.articlesExcluded}</span></div>
             )}
             {status.lastRun.articlesMerged != null && status.lastRun.articlesMerged > 0 && (
               <div className="flex justify-between" title="A second report of an event already stored; attached to it as another source"><span>Added to an existing event</span><span className="font-mono">{status.lastRun.articlesMerged}</span></div>
             )}
-            <div className="flex justify-between"><span>New events published</span><span className="font-mono text-emerald-400">{status.lastRun.eventsPublished}</span></div>
-            <div className="flex justify-between"><span>New events held for review</span><span className="font-mono text-amber-400">{status.lastRun.eventsQueued}</span></div>
+            <div className="flex justify-between"><span>New events published</span><span className="font-mono text-brand">{status.lastRun.eventsPublished}</span></div>
+            <div className="flex justify-between"><span>New events held for review</span><span className="font-mono text-amber-600 dark:text-amber-400">{status.lastRun.eventsQueued}</span></div>
             {status.lastRun.articlesDeferred != null && status.lastRun.articlesDeferred > 0 && (
               <div className="flex justify-between" title="Not reached in this run's reading time. Nothing is dropped: they stay queued for the next run."><span>Not reached, queued for next run</span><span className="font-mono">{status.lastRun.articlesDeferred}</span></div>
             )}

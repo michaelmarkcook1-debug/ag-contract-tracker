@@ -53,10 +53,10 @@ export default async function AnalyticsPage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 [&>*]:min-w-0">
-        <KpiCard label="Total Visible TCV" value={`$${data.totalTcvBn.toFixed(1)}bn`} sub={`${tcvCoverage}% of deals valued · ${data.dealsDisclosed} disclosed, ${data.dealsEstimated} estimated`} icon={DollarSign} color="text-emerald-400" />
-        <KpiCard label="Total Deals" value={data.totalDeals.toLocaleString()} sub="published contract records" icon={FileText} color="text-blue-400" />
-        <KpiCard label="Avg Deal Value" value={`$${data.avgTcvM.toFixed(0)}m`} sub={`median $${data.medianTcvM.toFixed(0)}m`} icon={TrendingUp} color="text-amber-400" />
-        <KpiCard label="Top Vendor by TCV" value={data.topVendorsByTcv[0] ? `$${data.topVendorsByTcv[0].tcvBn.toFixed(1)}bn` : "—"} sub={data.topVendorsByTcv[0] ? `${data.topVendorsByTcv[0].vendor} · disclosed + estimated` : "—"} icon={BarChart3} color="text-violet-400" />
+        <KpiCard label="Total Visible TCV" value={`$${data.totalTcvBn.toFixed(1)}bn`} sub={`${tcvCoverage}% of deals valued · ${data.dealsDisclosed} disclosed, ${data.dealsEstimated} estimated`} icon={DollarSign} color="text-brand" />
+        <KpiCard label="Total Deals" value={data.totalDeals.toLocaleString()} sub="published contract records" icon={FileText} color="text-blue-600 dark:text-blue-400" />
+        <KpiCard label="Avg Deal Value" value={`$${data.avgTcvM.toFixed(0)}m`} sub={`median $${data.medianTcvM.toFixed(0)}m`} icon={TrendingUp} color="text-amber-600 dark:text-amber-400" />
+        <KpiCard label="Top Vendor by TCV" value={data.topVendorsByTcv[0] ? `$${data.topVendorsByTcv[0].tcvBn.toFixed(1)}bn` : "—"} sub={data.topVendorsByTcv[0] ? `${data.topVendorsByTcv[0].vendor} · disclosed + estimated` : "—"} icon={BarChart3} color="text-violet-600 dark:text-violet-400" />
       </div>
 
       {/* Annual trend */}
@@ -67,7 +67,7 @@ export default async function AnalyticsPage() {
         </CardHeader>
         <CardContent>
           <AnnualTrendChart data={data.byYear.filter((y) => Number(y.year) >= 2020 && Number(y.year) <= new Date().getFullYear())} />
-          <p className="text-[10px] text-zinc-600 mt-2">Note: annual TCV is dominated by a handful of very large cloud and AI-infrastructure contracts. Deal count is the more representative trend.</p>
+          <p className="text-[10px] text-muted-foreground mt-2">Note: annual TCV is dominated by a handful of very large cloud and AI-infrastructure contracts. Deal count is the more representative trend.</p>
         </CardContent>
       </Card>
 

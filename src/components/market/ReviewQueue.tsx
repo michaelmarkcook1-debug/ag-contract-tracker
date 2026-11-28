@@ -135,7 +135,7 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
     const left = Math.max(0, totalCount - dismissed.size);
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <CheckCircle2 className="h-8 w-8 text-emerald-400 mb-3" />
+        <CheckCircle2 className="h-8 w-8 text-brand mb-3" />
         <p className="text-sm font-medium">{left > 0 ? "This batch is cleared" : "Review queue is clear"}</p>
         {last && <Button size="sm" variant="outline" className="mt-3 gap-1.5 text-xs" onClick={undo} disabled={busy}><Undo2 className="h-3 w-3" />Undo last ({last.ids.length})</Button>}
         {left > 0 && (
@@ -171,11 +171,11 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
             </div>
           ) : (
             <div className="flex items-center gap-1.5 shrink-0">
-              <Button size="sm" variant="outline" disabled={busy} className="h-7 gap-1.5 text-xs border-emerald-500/30 hover:bg-emerald-500/10" onClick={() => setConfirm("approve")}>
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />Approve all {groupIds.length}
+              <Button size="sm" variant="outline" disabled={busy} className="h-7 gap-1.5 text-xs border-brand/30 hover:bg-brand/10" onClick={() => setConfirm("approve")}>
+                <CheckCircle2 className="h-3.5 w-3.5 text-brand" />Approve all {groupIds.length}
               </Button>
               <Button size="sm" variant="outline" disabled={busy} className="h-7 gap-1.5 text-xs border-red-500/30 hover:bg-red-500/10" onClick={() => setConfirm("reject")}>
-                <XCircle className="h-3.5 w-3.5 text-red-400" />Reject all {groupIds.length}
+                <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />Reject all {groupIds.length}
               </Button>
             </div>
           )}
@@ -192,11 +192,11 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
         </label>
         {selected.size > 0 && (
           <div className="flex items-center gap-1.5">
-            <Button size="sm" variant="outline" disabled={busy} className="h-7 gap-1.5 text-xs border-emerald-500/30 hover:bg-emerald-500/10" onClick={() => run([...selected], "approve")}>
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />Approve {selected.size}
+            <Button size="sm" variant="outline" disabled={busy} className="h-7 gap-1.5 text-xs border-brand/30 hover:bg-brand/10" onClick={() => run([...selected], "approve")}>
+              <CheckCircle2 className="h-3.5 w-3.5 text-brand" />Approve {selected.size}
             </Button>
             <Button size="sm" variant="outline" disabled={busy} className="h-7 gap-1.5 text-xs border-red-500/30 hover:bg-red-500/10" onClick={() => run([...selected], "reject")}>
-              <XCircle className="h-3.5 w-3.5 text-red-400" />Reject {selected.size}
+              <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />Reject {selected.size}
             </Button>
             {/* Assign a type to every selected item: published as that type, to Rumours, or parked. */}
             <select
@@ -204,7 +204,7 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
               disabled={busy}
               value=""
               onChange={e => { const t = e.target.value as Assignable; if (t) run([...selected], "assign", t); }}
-              className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground hover:bg-foreground/[0.04] focus:outline-none focus:ring-1 focus:ring-emerald-500/40"
+              className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground hover:bg-foreground/[0.04] focus:outline-none focus:ring-1 focus:ring-brand/40"
             >
               <option value="">Assign type…</option>
               {ASSIGNABLE.map(t => <option key={t} value={t}>{ASSIGNABLE_LABELS[t]}</option>)}
@@ -218,7 +218,7 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
               <Undo2 className="h-3.5 w-3.5" />Undo {last.action === "assign" && last.type ? ASSIGNABLE_LABELS[last.type].replace(/ \(park\)$/, "") : last.action} ({last.ids.length})
             </Button>
           )}
-          <span className="hidden lg:flex items-center gap-1 text-[10px] text-zinc-500">
+          <span className="hidden lg:flex items-center gap-1 text-[10px] text-muted-foreground">
             <Keyboard className="h-3 w-3" />
             <Kbd>j</Kbd>/<Kbd>k</Kbd> move · <Kbd>a</Kbd> approve · <Kbd>r</Kbd> reject · <Kbd>x</Kbd> select · <Kbd>o</Kbd> source · <Kbd>u</Kbd> undo
           </span>
@@ -226,7 +226,7 @@ export function ReviewQueue({ initialEvents, totalCount }: ReviewQueueProps) {
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+        <div className="flex items-start gap-2 p-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400">
           <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
@@ -257,7 +257,7 @@ function readable(s: string | null): string | null {
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
-  return <kbd className="rounded bg-foreground/[0.08] px-1 font-mono text-[10px] text-zinc-400">{children}</kbd>;
+  return <kbd className="rounded bg-foreground/[0.08] px-1 font-mono text-[10px] text-muted-foreground">{children}</kbd>;
 }
 
 function GroupChip({ active, onClick, label, n }: { active: boolean; onClick: () => void; label: string; n: number }) {
@@ -270,7 +270,7 @@ function GroupChip({ active, onClick, label, n }: { active: boolean; onClick: ()
       )}
     >
       {label}
-      <span className={cn("tabular-nums text-[10px]", active ? "text-background/70" : "text-zinc-500")}>{n}</span>
+      <span className={cn("tabular-nums text-[10px]", active ? "text-background/70" : "text-muted-foreground")}>{n}</span>
     </button>
   );
 }
@@ -291,7 +291,7 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
   // A score is shown only when something measured it; an asserted 1.0 means
   // "nobody computed this", not "certain" (gate.ts).
   const measured = event.confidenceBasis === "measured";
-  const confColor = event.confidenceScore >= 0.75 ? "text-emerald-400" : event.confidenceScore >= 0.55 ? "text-yellow-400" : "text-red-400";
+  const confColor = event.confidenceScore >= 0.75 ? "text-brand" : event.confidenceScore >= 0.55 ? "text-yellow-400" : "text-red-600 dark:text-red-400";
   const context = readable(event.scopeSummary) ?? readable(event.analystInsight);
 
   return (
@@ -300,7 +300,7 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
       onClick={onFocus}
       className={cn(
         "p-3 rounded-lg border bg-card transition-colors scroll-mt-32 scroll-mb-4",
-        isSelected ? "border-emerald-500/40 bg-emerald-500/[0.03]" : "border-border",
+        isSelected ? "border-brand/40 bg-brand/[0.03]" : "border-border",
         focused && "ring-1 ring-foreground/40",
       )}
     >
@@ -321,16 +321,16 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
 
           <p className="text-sm font-medium leading-snug line-clamp-2">{displayTitle(event.canonicalTitle)}</p>
           {context && <p className="text-xs text-muted-foreground line-clamp-2">{context}</p>}
-          {detail && <p className="text-[11px] text-zinc-500 italic line-clamp-2">{detail}</p>}
+          {detail && <p className="text-[11px] text-muted-foreground italic line-clamp-2">{detail}</p>}
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
             {event.vendorName && <span className="font-medium text-foreground/70">{event.vendorName}</span>}
             {event.clientName && !event.clientAnonymised && <span>→ {event.clientName}</span>}
-            {tcvLabel !== "Not reliably estimable" && <span className="font-mono text-emerald-400/80" title={tcvEstimateTitle(event)}>{tcvLabel}</span>}
+            {tcvLabel !== "Not reliably estimable" && <span className="font-mono text-brand/80" title={tcvEstimateTitle(event)}>{tcvLabel}</span>}
             {event.primaryMacroServiceLine && <span>{event.primaryMacroServiceLine}</span>}
-            <span className="text-zinc-600">{formatDate(event.announcementDate)}</span>
+            <span className="text-muted-foreground">{formatDate(event.announcementDate)}</span>
             {event.originalArticleUrl && (
-              <a href={event.originalArticleUrl} target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-foreground flex items-center gap-0.5 transition-colors" onClick={e => e.stopPropagation()}>
+              <a href={event.originalArticleUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground flex items-center gap-0.5 transition-colors" onClick={e => e.stopPropagation()}>
                 source <ExternalLink className="h-2.5 w-2.5" />
               </a>
             )}
@@ -338,11 +338,11 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
         </div>
 
         <div className="flex flex-col gap-1.5 shrink-0">
-          <Button size="icon" variant="outline" className="h-8 w-8 md:h-7 md:w-7 border-emerald-500/30 hover:bg-emerald-500/10 hover:border-emerald-500/50" onClick={e => { e.stopPropagation(); onApprove(); }} title="Approve (a)">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+          <Button size="icon" variant="outline" className="h-8 w-8 md:h-7 md:w-7 border-brand/30 hover:bg-brand/10 hover:border-brand/50" onClick={e => { e.stopPropagation(); onApprove(); }} title="Approve (a)">
+            <CheckCircle2 className="h-3.5 w-3.5 text-brand" />
           </Button>
           <Button size="icon" variant="outline" className="h-8 w-8 md:h-7 md:w-7 border-red-500/30 hover:bg-red-500/10 hover:border-red-500/50" onClick={e => { e.stopPropagation(); onReject(); }} title="Reject (r)">
-            <XCircle className="h-3.5 w-3.5 text-red-400" />
+            <XCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
           </Button>
         </div>
       </div>

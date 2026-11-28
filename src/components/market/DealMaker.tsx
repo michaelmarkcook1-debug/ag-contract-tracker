@@ -28,8 +28,8 @@ const WINDOW_LABEL: Record<string, string> = Object.fromEntries(WINDOWS.map(w =>
 /** Tones for grade keys: text tokens stay neutral; the dot carries the colour. */
 const TONE: Record<string, string> = {
   critical: "bg-red-500", urgent: "bg-orange-500", expired: "bg-zinc-400", near: "bg-amber-500", mid: "bg-sky-500", early: "bg-zinc-500", unknown: "bg-zinc-600",
-  concern: "bg-amber-500", standard: "bg-zinc-500", positive: "bg-emerald-500", elevated: "bg-orange-500", moderate: "bg-sky-500", low: "bg-zinc-500",
-  active: "bg-emerald-500", high: "bg-violet-500", limited: "bg-zinc-600",
+  concern: "bg-amber-500", standard: "bg-zinc-500", positive: "bg-brand", elevated: "bg-orange-500", moderate: "bg-sky-500", low: "bg-zinc-500",
+  active: "bg-brand", high: "bg-violet-500", limited: "bg-zinc-600",
   "high-potential": "bg-violet-500", "low-potential": "bg-zinc-600",
 };
 const RISK_LABELS: Record<string, string> = { critical: "Critical", urgent: "Urgent", concern: "Some concerns", standard: "Standard", positive: "Positive" };
@@ -47,7 +47,7 @@ function Score({ v, invert }: { v: number; invert?: boolean }) {
 }
 function ActionTag({ a }: { a: RenewalRow["action"] }) {
   if (!a) return <span className="text-muted-foreground/50 text-xs">—</span>;
-  const cls = a === "pitch" ? "border-emerald-500/40 text-emerald-400" : a === "defend" ? "border-sky-500/40 text-sky-400" : "border-zinc-500/40 text-muted-foreground";
+  const cls = a === "pitch" ? "border-brand/40 text-brand" : a === "defend" ? "border-sky-500/40 text-sky-600 dark:text-sky-400" : "border-zinc-500/40 text-muted-foreground";
   return <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap", cls)}>{ACTION_LABELS[a]}</span>;
 }
 
@@ -61,7 +61,7 @@ function Bars({ title, data }: { title: string; data: { name: string; tcv: numbe
         {data.map(d => (
           <li key={d.name} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-2 text-xs" title={`${d.name}: ${money(d.tcv)}`}>
             <span className="truncate text-foreground/85">{d.name}</span>
-            <span className="h-2 rounded-full bg-foreground/[0.06] overflow-hidden"><span className="block h-full rounded-full bg-emerald-500/70" style={{ width: `${(d.tcv / max) * 100}%` }} /></span>
+            <span className="h-2 rounded-full bg-foreground/[0.06] overflow-hidden"><span className="block h-full rounded-full bg-brand/70" style={{ width: `${(d.tcv / max) * 100}%` }} /></span>
             <span className="font-mono tabular-nums text-muted-foreground">{money(d.tcv)}</span>
           </li>
         ))}
@@ -74,7 +74,7 @@ function Bars({ title, data }: { title: string; data: { name: string; tcv: numbe
 function Select({ label, value, options, onChange, render }: { label: string; value: string; options: string[]; onChange: (v: string) => void; render?: (o: string) => string }) {
   return (
     <select aria-label={label} value={value} onChange={e => onChange(e.target.value)}
-      className="h-8 max-w-[12rem] rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500/40">
+      className="h-8 max-w-[12rem] rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-brand/40">
       <option value="">{label}</option>
       {options.map(o => <option key={o} value={o}>{render ? render(o) : o}</option>)}
     </select>
@@ -116,7 +116,7 @@ export function DealMaker() {
   return (
     <div className="px-4 py-5 md:px-6 md:py-8 space-y-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><Target className="h-5 w-5 text-emerald-400" />Deal Maker</h1>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2"><Target className="h-5 w-5 text-brand" />Deal Maker</h1>
         <p className="text-sm text-muted-foreground max-w-3xl">
           What&apos;s winnable: contracts coming up for renewal, scored for how likely the scope is to come back to market and how exposed the incumbent is.
         </p>
@@ -125,7 +125,7 @@ export function DealMaker() {
       <div className="flex gap-1 border-b border-border/50" role="tablist">
         {([["renewals", "Upcoming renewals"], ["portfolio", "Portfolio assessment"]] as const).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-            className={cn("px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors", tab === k ? "border-emerald-500 text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            className={cn("px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors", tab === k ? "border-brand text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
             {label}
           </button>
         ))}
@@ -190,7 +190,7 @@ export function DealMaker() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       {/* Table */}
       <div className="rounded-xl border border-border/50 overflow-x-auto">
@@ -278,7 +278,7 @@ export function DealMaker() {
                   </dl>
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">AI deployment opportunities for a new vendor</p>
-                    <ul className="space-y-1">{selected.aiDeployment.map(a => <li key={a} className="flex items-start gap-2 text-foreground/85"><span className="mt-0.5 rounded border border-sky-500/40 px-1 text-[9px] font-semibold text-sky-400">AI</span>{a}</li>)}</ul>
+                    <ul className="space-y-1">{selected.aiDeployment.map(a => <li key={a} className="flex items-start gap-2 text-foreground/85"><span className="mt-0.5 rounded border border-sky-500/40 px-1 text-[9px] font-semibold text-sky-600 dark:text-sky-400">AI</span>{a}</li>)}</ul>
                   </div>
                 </section>
                 <section>
@@ -291,7 +291,7 @@ export function DealMaker() {
                   {selected.news ? (
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", selected.news.score >= 60 ? "border-red-500/40 text-red-400" : selected.news.score >= 35 ? "border-amber-500/40 text-amber-400" : "border-emerald-500/40 text-emerald-400")}>news risk · {selected.news.score}</span>
+                        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", selected.news.score >= 60 ? "border-red-500/40 text-red-600 dark:text-red-400" : selected.news.score >= 35 ? "border-amber-500/40 text-amber-600 dark:text-amber-400" : "border-brand/40 text-brand")}>news risk · {selected.news.score}</span>
                         {CATEGORIES.filter(c => (selected.news!.counts[c.key] ?? 0) > 0).map(c => (
                           <span key={c.key} className="rounded-full border border-border px-2 py-0.5 text-[10px] text-foreground/80">{c.label} · {selected.news!.counts[c.key]}</span>
                         ))}
@@ -332,7 +332,7 @@ export function DealMaker() {
 }
 
 function Successor({ s }: { s: NonNullable<RenewalRow["successor"]> }) {
-  if (s.status === "retained") return <span className="text-emerald-400 text-xs font-medium">Retained</span>;
-  if (s.status === "new_vendor") return <span className="text-amber-400 text-xs font-medium">New vendor: {s.vendor}</span>;
+  if (s.status === "retained") return <span className="text-brand text-xs font-medium">Retained</span>;
+  if (s.status === "new_vendor") return <span className="text-amber-600 dark:text-amber-400 text-xs font-medium">New vendor: {s.vendor}</span>;
   return <span className="text-muted-foreground text-xs">No successor detected</span>;
 }

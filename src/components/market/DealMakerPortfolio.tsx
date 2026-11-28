@@ -18,7 +18,7 @@ interface Portfolio {
 const money = (v: number | null | undefined) => v == null || v <= 0 ? "—" : v >= 1e9 ? `$${(v / 1e9).toFixed(1)}bn` : v >= 1e6 ? `$${(v / 1e6).toFixed(0)}m` : `$${(v / 1e3).toFixed(0)}k`;
 const RISK: { key: string; label: string; cls: string }[] = [
   { key: "critical", label: "Critical", cls: "bg-red-500" }, { key: "urgent", label: "Urgent", cls: "bg-orange-500" },
-  { key: "concern", label: "Some concerns", cls: "bg-amber-500" }, { key: "standard", label: "Standard", cls: "bg-zinc-500" }, { key: "positive", label: "Positive", cls: "bg-emerald-500" },
+  { key: "concern", label: "Some concerns", cls: "bg-amber-500" }, { key: "standard", label: "Standard", cls: "bg-zinc-500" }, { key: "positive", label: "Positive", cls: "bg-brand" },
 ];
 const AI_LABEL: Record<string, string> = { active: "AI active", high: "High potential", moderate: "Moderate", low: "Low potential", limited: "Limited" };
 
@@ -42,7 +42,7 @@ function Bars({ data }: { data: { label: string; value: number; display: string 
       {data.map(d => (
         <li key={d.label} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-2 text-xs" title={`${d.label}: ${d.display}`}>
           <span className="truncate text-foreground/85">{d.label}</span>
-          <span className="h-2 rounded-full bg-foreground/[0.06] overflow-hidden"><span className="block h-full rounded-full bg-emerald-500/70" style={{ width: `${(d.value / max) * 100}%` }} /></span>
+          <span className="h-2 rounded-full bg-foreground/[0.06] overflow-hidden"><span className="block h-full rounded-full bg-brand/70" style={{ width: `${(d.value / max) * 100}%` }} /></span>
           <span className="font-mono tabular-nums text-muted-foreground">{d.display}</span>
         </li>
       ))}
@@ -62,7 +62,7 @@ export function DealMakerPortfolio({ onSelect }: { onSelect: (r: RenewalRow) => 
     return () => ac.abort();
   }, []);
 
-  if (error) return <p className="text-sm text-red-400">{error}</p>;
+  if (error) return <p className="text-sm text-red-600 dark:text-red-400">{error}</p>;
   if (!data) return <p className="flex items-center gap-2 text-sm text-muted-foreground"><RefreshCw className="h-3.5 w-3.5 animate-spin" />Loading the portfolio…</p>;
   const k = data.kpis;
   const total = Math.max(1, data.riskMix.reduce((s, r) => s + r.count, 0));

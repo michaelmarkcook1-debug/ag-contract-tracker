@@ -21,7 +21,7 @@ const FAMILIES: { value: MarketEventFamily | "all"; label: string; color?: strin
   { value: "CONTRACT", label: "Contracts", color: "bg-blue-500" },
   { value: "FINANCIAL_RESULTS", label: "Financial Results", color: "bg-cyan-600" },
   { value: "M_AND_A", label: "M&A", color: "bg-orange-500" },
-  { value: "PARTNERSHIP", label: "Partnerships", color: "bg-emerald-500" },
+  { value: "PARTNERSHIP", label: "Partnerships", color: "bg-brand" },
   { value: "NEW_OFFERING", label: "New Offerings", color: "bg-violet-500" },
   { value: "ORG_CHANGE", label: "Org Changes", color: "bg-pink-500" },
 ];
@@ -38,7 +38,7 @@ interface FilterOptions {
 
 function ConfidenceBadge({ score }: { score: number }) {
   const pct = Math.round(score * 100);
-  const color = pct >= 85 ? "text-emerald-400" : pct >= 70 ? "text-amber-400" : "text-zinc-500";
+  const color = pct >= 85 ? "text-brand" : pct >= 70 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground";
   return <span className={`text-[10px] font-mono font-medium ${color}`}>{pct}%</span>;
 }
 
@@ -79,7 +79,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
                 <PairedRow l1="Provider" v1={event.vendorName} l2="Industry" v2={event.industry} />
                 <PairedRow l1="Macro Service" v1={event.primaryMacroServiceLine} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
                 <PairedRow l1="Micro Service" v1={event.primaryMicroServiceLine} l2="Country" v2={null} />
-                <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcvLabel} v2Class="text-emerald-400 font-mono font-semibold" />
+                <PairedRow l1="Client" v1={event.clientAnonymised ? event.clientDescriptor : event.clientName} l2="TCV" v2={tcvLabel} v2Class="text-brand font-mono font-semibold" />
                 <PairedRow l1="Contract Type" v1={event.contractEventType ? (CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType) : null} l2="Length" v2={event.contractLengthMonths ? `${event.contractLengthMonths} months` : null} />
                 <PairedRow l1="Announced" v1={formatDate(event.announcementDate)} l2="Value basis" v2={valueBasisLabel(event.tcvBasis, event.tcvCommittedUsd != null)} />
                 <PairedRow l1="Source" v1={event.originalArticleUrl ? "See link below" : null} l2="" v2={null} />
@@ -89,7 +89,7 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
               <>
                 <PairedRow l1="Acquirer" v1={event.acquirerName} l2="Industry" v2={event.industry} />
                 <PairedRow l1="Target" v1={event.targetName} l2="Geography" v2={event.geography.length > 0 ? event.geography.join(", ") : null} />
-                <PairedRow l1="Deal Value" v1={event.dealValueUsd ? formatTcv(event.dealValueUsd, false) : null} v1Class="text-violet-400 font-mono font-semibold" l2="Deal Type" v2={event.maEventType ? (MA_EVENT_TYPE_LABELS[event.maEventType] ?? event.maEventType) : null} />
+                <PairedRow l1="Deal Value" v1={event.dealValueUsd ? formatTcv(event.dealValueUsd, false) : null} v1Class="text-violet-600 dark:text-violet-400 font-mono font-semibold" l2="Deal Type" v2={event.maEventType ? (MA_EVENT_TYPE_LABELS[event.maEventType] ?? event.maEventType) : null} />
                 <PairedRow l1="Status" v1={event.maStatus} l2="Date" v2={formatDate(event.announcementDate)} />
               </>
             )}
@@ -136,8 +136,8 @@ function EventDetailPanel({ event }: { event: EventSummary }) {
 
       {/* Analyst Insight */}
       {event.analystInsight && (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4">
-          <h3 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <div className="rounded-xl border border-brand/20 bg-brand/[0.04] p-4">
+          <h3 className="text-xs font-semibold text-brand uppercase tracking-wider mb-2 flex items-center gap-1.5">
             <FileText className="h-3 w-3" />
             Analyst Insight
           </h3>
@@ -259,12 +259,12 @@ function EventValueCell({ event }: { event: EventSummary }) {
     const tcvLabel = formatTcvDisplay(event);   // §16: disclosed | Est. range | Not reliably estimable
     // §16 — withheld values render honestly rather than disappearing.
     if (tcvLabel === "Not reliably estimable") {
-      return <span className="font-mono text-xs text-zinc-600">—</span>;
+      return <span className="font-mono text-xs text-muted-foreground">—</span>;
     }
-    return <span className="font-mono text-xs font-semibold text-emerald-400" title={tcvEstimateTitle(event)}>{tcvLabel}</span>;
+    return <span className="font-mono text-xs font-semibold text-brand" title={tcvEstimateTitle(event)}>{tcvLabel}</span>;
   }
   if (event.family === "M_AND_A" && event.dealValueUsd) {
-    return <span className="font-mono text-xs font-semibold text-violet-400">{formatTcv(event.dealValueUsd, false)}</span>;
+    return <span className="font-mono text-xs font-semibold text-violet-600 dark:text-violet-400">{formatTcv(event.dealValueUsd, false)}</span>;
   }
   return null;
 }
@@ -384,7 +384,7 @@ export function EventsTable() {
               placeholder="Search events, vendors, clients, industries…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-12 h-11 md:h-12 bg-foreground/[0.05] border-border/50 text-base font-medium placeholder:text-muted-foreground/40 focus-visible:ring-emerald-500/30 rounded-xl"
+              className="pl-12 h-11 md:h-12 bg-foreground/[0.05] border-border/50 text-base font-medium placeholder:text-muted-foreground/40 focus-visible:ring-brand/30 rounded-xl"
             />
             <kbd className="absolute right-4 top-1/2 -translate-y-1/2 hidden sm:inline text-[10px] text-muted-foreground/30 bg-foreground/[0.06] px-1.5 py-0.5 rounded font-mono">⌘K</kbd>
           </form>
@@ -432,7 +432,7 @@ export function EventsTable() {
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               {showFilters ? "Hide filters" : "Filters"}
-              {activeFilterCount > 0 && <span className="rounded-full bg-emerald-500/15 text-emerald-400 px-1.5 text-[10px] tabular-nums">{activeFilterCount}</span>}
+              {activeFilterCount > 0 && <span className="rounded-full bg-brand/15 text-brand px-1.5 text-[10px] tabular-nums">{activeFilterCount}</span>}
             </button>
 
             {/* Dropdown filters */}
@@ -537,8 +537,8 @@ export function EventsTable() {
       <div className="px-4 md:px-6 pt-4 pb-8">
         {!hasSearched ? (
           <div className="text-center py-16 md:py-28">
-            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-emerald-500/10 mb-4">
-              <Search className="h-8 w-8 text-emerald-500/50" />
+            <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-brand/10 mb-4">
+              <Search className="h-8 w-8 text-brand/50" />
             </div>
             <h2 className="text-lg font-semibold mb-1">Search IT Services Market Events</h2>
             <p className="text-sm text-muted-foreground/60 max-w-md mx-auto">

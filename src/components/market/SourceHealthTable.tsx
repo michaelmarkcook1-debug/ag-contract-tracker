@@ -20,22 +20,22 @@ interface SourceItem {
 export function SourceHealthTable({ sources }: { sources: SourceItem[] }) {
   const tierColor = (tier: string) =>
     tier === "tier_1_primary"
-      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-      : "bg-zinc-500/15 text-zinc-400 border-zinc-500/30";
+      ? "bg-brand/15 text-brand border-brand/30"
+      : "bg-zinc-500/15 text-muted-foreground border-zinc-500/30";
 
   const healthIndicator = (item: SourceItem) => {
     if (!item.isActive) return { color: "bg-zinc-500", label: "Inactive" };
     if (item.consecutiveErrors >= 3) return { color: "bg-red-500", label: `${item.consecutiveErrors} errors` };
     if (item.consecutiveErrors > 0) return { color: "bg-yellow-500", label: "1 error" };
     if (!item.lastCrawledAt) return { color: "bg-zinc-600", label: "Not yet crawled" };
-    return { color: "bg-emerald-500", label: "OK" };
+    return { color: "bg-brand", label: "OK" };
   };
 
   return (
     <div className="rounded-md border border-border overflow-x-auto">
       <table className="w-full min-w-[560px] text-xs">
         <thead>
-          <tr className="border-b border-border bg-zinc-900/50">
+          <tr className="border-b border-border bg-muted/50">
             <th className="text-left px-3 py-2 text-muted-foreground font-medium w-2"></th>
             <th className="text-left px-3 py-2 text-muted-foreground font-medium">Source</th>
             <th className="text-left px-3 py-2 text-muted-foreground font-medium">Tier</th>
@@ -47,13 +47,13 @@ export function SourceHealthTable({ sources }: { sources: SourceItem[] }) {
           {sources.map(src => {
             const health = healthIndicator(src);
             return (
-              <tr key={src.id} className="border-b border-border/50 hover:bg-zinc-900/30 transition-colors">
+              <tr key={src.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                 <td className="px-3 py-2">
                   <div className={cn("h-2 w-2 rounded-full", health.color)} title={health.label} />
                 </td>
                 <td className="px-3 py-2">
                   <div className="font-medium text-foreground/80">{src.provider}</div>
-                  <div className="text-zinc-600">{src.name}</div>
+                  <div className="text-muted-foreground">{src.name}</div>
                 </td>
                 <td className="px-3 py-2">
                   <Badge variant="outline" className={cn("text-[10px] py-0 h-4", tierColor(src.tier))}>
@@ -63,7 +63,7 @@ export function SourceHealthTable({ sources }: { sources: SourceItem[] }) {
                 <td className="px-3 py-2 text-muted-foreground">
                   {src.lastCrawledAt ? formatDate(src.lastCrawledAt) : "—"}
                   {src.lastError && (
-                    <div className="text-red-400 text-[10px] truncate max-w-32" title={src.lastError}>
+                    <div className="text-red-600 dark:text-red-400 text-[10px] truncate max-w-32" title={src.lastError}>
                       {src.lastError.slice(0, 40)}
                     </div>
                   )}

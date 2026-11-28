@@ -54,12 +54,12 @@ export default async function AdminPage() {
 
       <Tabs defaultValue="pipeline">
         <div className="-mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <TabsList className="bg-zinc-900 border border-border w-max">
+        <TabsList className="bg-muted border border-border w-max">
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="review" className="relative">
             Review Queue
             {ingestionStatus.needsReview > 0 && (
-              <span className="ml-1.5 bg-amber-500/20 text-amber-400 text-[10px] font-mono px-1.5 py-0.5 rounded-full">
+              <span className="ml-1.5 bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-mono px-1.5 py-0.5 rounded-full">
                 {ingestionStatus.needsReview}
               </span>
             )}
@@ -90,13 +90,13 @@ export default async function AdminPage() {
                     ["6. Gate + store", "Publishes when the vendor is tracked, the counterparty is named, and the event is announced, completed, terminated or disputed. Tenders, unnamed counterparties, possible duplicates and unsupported events go to review with the reason."],
                   ].map(([step, desc]) => (
                     <div key={step} className="flex flex-col sm:flex-row gap-0.5 sm:gap-3">
-                      <span className="text-zinc-500 font-mono sm:w-28 shrink-0">{step}</span>
+                      <span className="text-muted-foreground font-mono sm:w-28 shrink-0">{step}</span>
                       <span>{desc}</span>
                     </div>
                   ))}
                 </div>
                 <Separator />
-                <p className="text-[10px] text-zinc-600">
+                <p className="text-[10px] text-muted-foreground">
                   Every published record links to its source URL. No hallucinated data.
                   Confidence scores reflect extraction quality, not commercial significance.
                 </p>
@@ -134,7 +134,7 @@ export default async function AdminPage() {
           <div className="rounded-md border border-border overflow-x-auto">
             <table className="w-full min-w-[820px] text-xs">
               <thead>
-                <tr className="border-b border-border bg-zinc-900/50">
+                <tr className="border-b border-border bg-muted/50">
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Started</th>
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Type</th>
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Status</th>
@@ -156,17 +156,17 @@ export default async function AdminPage() {
                     </td>
                     <td className="px-3 py-2 capitalize text-muted-foreground">{run.runType}</td>
                     <td className="px-3 py-2">
-                      <span className={`font-medium ${run.status === "completed" ? "text-emerald-400" : run.status === "running" ? "text-blue-400" : run.status === "partial" ? "text-yellow-400" : "text-red-400"}`}>
+                      <span className={`font-medium ${run.status === "completed" ? "text-brand" : run.status === "running" ? "text-blue-600 dark:text-blue-400" : run.status === "partial" ? "text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
                         {run.status}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesFound}</td>
-                    <td className="px-3 py-2 text-right font-mono text-zinc-500">{run.articlesDuped}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesDuped}</td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesRelevant}</td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesTriaged}</td>
-                    <td className="px-3 py-2 text-right font-mono text-zinc-500">{run.articlesExcluded}</td>
-                    <td className="px-3 py-2 text-right font-mono text-emerald-400">{run.eventsPublished}</td>
-                    <td className="px-3 py-2 text-right font-mono text-amber-400">{run.eventsQueued}</td>
+                    <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesExcluded}</td>
+                    <td className="px-3 py-2 text-right font-mono text-brand">{run.eventsPublished}</td>
+                    <td className="px-3 py-2 text-right font-mono text-amber-600 dark:text-amber-400">{run.eventsQueued}</td>
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground">{run.articlesDeferred}</td>
                   </tr>
                 ))}

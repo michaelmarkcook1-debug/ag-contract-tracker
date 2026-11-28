@@ -25,15 +25,15 @@ function EventMeta({ event }: { event: EventSummary }) {
           <span>→ {event.clientDescriptor}</span>
         )}
         {tcvLabel !== "Not reliably estimable" && (
-          <span className="font-mono font-semibold text-emerald-400" title={tcvEstimateTitle(event)}>{tcvLabel}</span>
+          <span className="font-mono font-semibold text-brand" title={tcvEstimateTitle(event)}>{tcvLabel}</span>
         )}
         {event.contractEventType && (
-          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-zinc-400">
+          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-muted-foreground">
             {CONTRACT_EVENT_TYPE_LABELS[event.contractEventType] ?? event.contractEventType}
           </Badge>
         )}
         {event.primaryMacroServiceLine && (
-          <span className="text-zinc-500">{event.primaryMacroServiceLine}</span>
+          <span className="text-muted-foreground">{event.primaryMacroServiceLine}</span>
         )}
       </div>
     );
@@ -45,15 +45,15 @@ function EventMeta({ event }: { event: EventSummary }) {
         {event.acquirerName && <span className="font-medium text-foreground/80">{event.acquirerName}</span>}
         {event.targetName && <span>acquires {event.targetName}</span>}
         {event.dealValueUsd && (
-          <span className="font-mono font-semibold text-violet-400">{formatTcv(event.dealValueUsd, false)}</span>
+          <span className="font-mono font-semibold text-violet-600 dark:text-violet-400">{formatTcv(event.dealValueUsd, false)}</span>
         )}
         {event.maEventType && (
-          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-zinc-400">
+          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-muted-foreground">
             {MA_EVENT_TYPE_LABELS[event.maEventType] ?? event.maEventType}
           </Badge>
         )}
         {event.maStatus && event.maStatus !== "announced" && (
-          <span className={cn("capitalize", event.maStatus === "completed" ? "text-emerald-400" : "text-red-400")}>
+          <span className={cn("capitalize", event.maStatus === "completed" ? "text-brand" : "text-red-600 dark:text-red-400")}>
             {event.maStatus}
           </span>
         )}
@@ -67,7 +67,7 @@ function EventMeta({ event }: { event: EventSummary }) {
         {event.partnerAName && <span className="font-medium text-foreground/80">{event.partnerAName}</span>}
         {event.partnerBName && <span>× {event.partnerBName}</span>}
         {event.partnershipType && (
-          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-zinc-400 capitalize">
+          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-muted-foreground capitalize">
             {event.partnershipType.replace(/_/g, " ")}
           </Badge>
         )}
@@ -81,7 +81,7 @@ function EventMeta({ event }: { event: EventSummary }) {
         {event.primaryEntityName && <span className="font-medium text-foreground/80">{event.primaryEntityName}</span>}
         {event.personName && <span>{event.personName}</span>}
         {event.orgEventType && (
-          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-zinc-400">
+          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-muted-foreground">
             {ORG_EVENT_TYPE_LABELS[event.orgEventType] ?? event.orgEventType}
           </Badge>
         )}
@@ -94,7 +94,7 @@ function EventMeta({ event }: { event: EventSummary }) {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
         {event.primaryEntityName && <span className="font-medium text-foreground/80">{event.primaryEntityName}</span>}
         {event.eventType && (
-          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-zinc-400 capitalize">
+          <Badge variant="outline" className="text-[10px] py-0 h-4 border-zinc-600 text-muted-foreground capitalize">
             {event.eventType.replace(/_/g, " ")}
           </Badge>
         )}
@@ -149,7 +149,7 @@ export function EventCard({ event, className }: EventCardProps) {
           {event.primaryEntitySlug && (
             <Link
               href={`/vendors/${event.primaryEntitySlug}`}
-              className="text-xs text-zinc-500 hover:text-foreground flex items-center gap-0.5 transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-0.5 transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
               {event.primaryEntityName}

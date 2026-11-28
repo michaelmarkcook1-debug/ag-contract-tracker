@@ -81,7 +81,7 @@ export default async function VendorsPage() {
                         <span className="text-[10px] text-muted-foreground">{count}</span>
                       </div>
                     ))}
-                    {total === 0 && <span className="text-xs text-zinc-600">No events yet</span>}
+                    {total === 0 && <span className="text-xs text-muted-foreground">No events yet</span>}
                   </div>
                 </CardContent>
               </Card>

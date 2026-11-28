@@ -19,7 +19,7 @@ export default async function DashboardPage() {
     { family: "CONTRACT", count: stats.contractsCount, icon: FileText, label: "Contracts", color: "from-blue-500/20 to-blue-500/5 border-blue-500/20" },
     { family: "FINANCIAL_RESULTS", count: stats.financialResultsCount, icon: TrendingUp, label: "Financial Results", color: "from-cyan-500/20 to-cyan-500/5 border-cyan-500/20" },
     { family: "M_AND_A", count: stats.maCount, icon: GitMerge, label: "M&A", color: "from-orange-500/20 to-orange-500/5 border-orange-500/20" },
-    { family: "PARTNERSHIP", count: stats.partnershipCount, icon: Handshake, label: "Partnerships", color: "from-emerald-500/20 to-emerald-500/5 border-emerald-500/20" },
+    { family: "PARTNERSHIP", count: stats.partnershipCount, icon: Handshake, label: "Partnerships", color: "from-brand/20 to-brand/5 border-brand/20" },
     { family: "NEW_OFFERING", count: stats.newOfferingCount, icon: Lightbulb, label: "New Offerings", color: "from-violet-500/20 to-violet-500/5 border-violet-500/20" },
     { family: "ORG_CHANGE", count: stats.orgChangeCount, icon: Users, label: "Org Changes", color: "from-pink-500/20 to-pink-500/5 border-pink-500/20" },
   ];
@@ -33,7 +33,7 @@ export default async function DashboardPage() {
           <p className="text-sm text-muted-foreground">
             Tracking {stats.totalEvents.toLocaleString()} events across {TRACKED_VENDORS.length} IT services providers
             {stats.last30DaysCount > 0 && (
-              <span className="inline-flex items-center gap-1 ml-2 text-emerald-400">
+              <span className="inline-flex items-center gap-1 ml-2 text-brand">
                 <Zap className="h-3 w-3" />
                 {stats.last30DaysCount} new this month
               </span>
@@ -42,7 +42,7 @@ export default async function DashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
           {stats.needsReviewCount > 0 && (
-            <Link href="/admin" className="flex items-center gap-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
+            <Link href="/admin" className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full hover:bg-amber-500/15 transition-colors">
               <Activity className="h-3 w-3" />
               {stats.needsReviewCount} pending review
             </Link>
@@ -130,7 +130,7 @@ export default async function DashboardPage() {
                     </div>
                     <div className="mt-1 h-1 rounded-full bg-foreground/[0.06] overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-emerald-500/40"
+                        className="h-full rounded-full bg-brand/40"
                         style={{ width: `${(count / (stats.topIndustries[0]?.count || 1)) * 100}%` }}
                       />
                     </div>

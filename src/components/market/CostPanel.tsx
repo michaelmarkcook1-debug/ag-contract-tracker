@@ -48,7 +48,7 @@ export function CostPanel() {
     </div>;
   }
   if (error) {
-    return <div className="p-3 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-400">{error}</div>;
+    return <div className="p-3 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400">{error}</div>;
   }
   if (!data) return null;
 
@@ -65,7 +65,7 @@ export function CostPanel() {
       <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Layers className="h-4 w-4 text-cyan-400" />Model tiers
+            <Layers className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />Model tiers
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -92,7 +92,7 @@ export function CostPanel() {
       <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Calculator className="h-4 w-4 text-emerald-400" />Estimate a run
+            <Calculator className="h-4 w-4 text-brand" />Estimate a run
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -103,17 +103,17 @@ export function CostPanel() {
           </div>
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="p-2 rounded-md bg-muted/30">
-              <div className="font-mono text-sm text-emerald-400">{usd(lo)}</div>
+              <div className="font-mono text-sm text-brand">{usd(lo)}</div>
               <div className="text-[10px] text-muted-foreground">min (all filtered at triage)</div>
             </div>
-            <div className="p-2 rounded-md bg-emerald-500/10 border border-emerald-500/20">
-              <div className="font-mono text-base font-bold text-emerald-400">{usd(mid)}</div>
+            <div className="p-2 rounded-md bg-brand/10 border border-brand/20">
+              <div className="font-mono text-base font-bold text-brand">{usd(mid)}</div>
               <div className="text-[10px] text-muted-foreground">
                 {data.perArticle.measured != null ? "expected (measured)" : "expected (modelled)"}
               </div>
             </div>
             <div className="p-2 rounded-md bg-muted/30">
-              <div className="font-mono text-sm text-amber-400">{usd(hi)}</div>
+              <div className="font-mono text-sm text-amber-600 dark:text-amber-400">{usd(hi)}</div>
               <div className="text-[10px] text-muted-foreground">max (all deep-analysed)</div>
             </div>
           </div>
@@ -129,12 +129,12 @@ export function CostPanel() {
       <Card className="bg-card border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Coins className="h-4 w-4 text-amber-400" />Spend to date
+            <Coins className="h-4 w-4 text-amber-600 dark:text-amber-400" />Spend to date
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-4 gap-2 text-center text-xs">
-            <div><div className="font-mono text-base font-bold text-amber-400">{usd(data.totals.costUsd)}</div>total</div>
+            <div><div className="font-mono text-base font-bold text-amber-600 dark:text-amber-400">{usd(data.totals.costUsd)}</div>total</div>
             <div><div className="font-mono text-base">{num(data.totals.extractions)}</div>extractions</div>
             <div><div className="font-mono text-base">{num(data.totals.inputTokens)}</div>input tokens</div>
             <div><div className="font-mono text-base">{num(data.totals.outputTokens)}</div>output tokens</div>
@@ -170,7 +170,7 @@ export function CostPanel() {
                 <div className="flex items-center gap-3 shrink-0 font-mono">
                   <span className="text-muted-foreground">{r.eventsExtracted} ext</span>
                   <span className="text-muted-foreground">{num(r.inputTokens + r.outputTokens)} tok</span>
-                  <span className="text-amber-400 w-16 text-right">{usd(r.costUsd)}</span>
+                  <span className="text-amber-600 dark:text-amber-400 w-16 text-right">{usd(r.costUsd)}</span>
                 </div>
               </div>
             ))}
