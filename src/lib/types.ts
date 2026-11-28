@@ -176,8 +176,9 @@ export function formatTcvDisplay(e: {
   tcvEstimateHighUsd: number | null;
   tcvEstimateMethod?: string | null;
 }): string {
-  if (e.tcvCommittedUsd != null) return formatTcv(e.tcvCommittedUsd, false);
-  if (e.tcvEstimateLowUsd != null && e.tcvEstimateHighUsd != null) {
+  // A stated value of 0 is an empty field, not a $0 contract.
+  if (e.tcvCommittedUsd != null && e.tcvCommittedUsd > 0) return formatTcv(e.tcvCommittedUsd, false);
+  if (e.tcvEstimateLowUsd != null && e.tcvEstimateHighUsd != null && e.tcvEstimateHighUsd > 0) {
     // A third party's point estimate has no range of its own; say whose it is.
     if (e.tcvEstimateMethod === "third_party" && e.tcvEstimateLowUsd === e.tcvEstimateHighUsd) return `Est. ${formatTcv(e.tcvEstimateLowUsd, false)} (GlobalData)`;
     return `Est. ${formatTcv(e.tcvEstimateLowUsd, false)}–${formatTcv(e.tcvEstimateHighUsd, false)}`;

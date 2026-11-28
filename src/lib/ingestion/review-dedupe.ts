@@ -112,7 +112,8 @@ export function toEv(e: EvRow): Ev | null {
   if (!vendorKey) return null;
   // The other party: whichever named side is not the provider itself.
   const other = (...names: (string | null | undefined)[]) => names.find(n => !!n && clientSim(n, provider) < 0.5) ?? null;
-  const positive = (v: number | null | undefined) => v && v > 0 ? v : null;   // a stated value of exactly 0 is an empty field
+  // A stated value under $100k is an empty or junk field (0, or a few dollars mis-parsed), never a real IT-services deal.
+  const positive = (v: number | null | undefined) => v && v >= 100_000 ? v : null;
   let label = "client", client: string | null = null, type: string | null = e.eventType, stated: number | null = null, scope: string | null = null;
   if (e.family === "CONTRACT") { client = cd?.clientRaw ?? e.counterpartyRaw ?? null; type = cd?.contractEventType ?? e.eventType; stated = positive(cd?.tcvCommittedUsd); scope = cd?.scopeSummary ?? null; }
   else if (e.family === "M_AND_A") { label = "other party"; client = other(ma?.targetRaw, ma?.acquirerRaw, e.counterpartyRaw); type = [ma?.maEventType ?? e.eventType, ma?.statusAtAnnouncement].filter(Boolean).join("/"); stated = positive(ma?.dealValueUsd); scope = ma?.rationale ?? null; }
@@ -136,7 +137,7 @@ export const before = (a: Ev, b: Ev) => { const x = rank(a), y = rank(b); for (l
  * Up to six better-ranked records in the same provider+family group, within the window, that share a counterparty, a
  * stated value or enough of a title to be worth asking about.
  */
-export function candidatesFor(e: Ev, group: Ev[], windowDays: (family: string) => number): Ev[] {
+export function candidatesFor(e: Ev, group: Ev[], windowDays: (family: string) => number, opts: { loose?: boolean } = {}): Ev[] {
   if (!e.date) return [];
   const vendorWords = new Set(words(group[0]?.title.split("|")[0] ?? ""));
   const tokens = (x: Ev) => new Set(words(x.title + " " + (x.scope ?? "").slice(0, 200)).filter(w => !STOP.has(w) && !vendorWords.has(w) && w.length > 1));
@@ -153,7 +154,11 @@ export function candidatesFor(e: Ev, group: Ev[], windowDays: (family: string) =
     if (gap > windowDays(e.family) * DAY && !(sameValue && c >= 0.5)) continue;
     const t = jaccard(mine, tokens(o));
     const bothNamed = !!e.client && !!o.client;
-    const plausible = c >= 0.5 || sameValue || t >= 0.4 || (!bothNamed && t >= 0.25) || (bothNamed && t >= 0.3);
+    // Loose (review items, where the model makes the call and there are few of them): a little shared wording within
+    // 30 days is enough to ask. The same tender named "Catalan Government" and "CTTI (Generalitat de Catalunya)"
+    // shares only "Catalan" and "cloud".
+    const plausible = c >= 0.5 || sameValue || t >= 0.4 || (!bothNamed && t >= 0.25) || (bothNamed && t >= 0.3)
+      || (!!opts.loose && t >= 0.12 && gap <= 30 * DAY);
     if (plausible) scored.push([o, c * 1.5 + t + (sameValue ? 0.5 : 0)]);
   }
   return scored.sort((a, b) => b[1] - a[1]).slice(0, 6).map(s => s[0]);
@@ -224,7 +229,7 @@ export async function dedupeReviewItems(ids: string[], opts: { model: string; ac
       select: { id: true }, take: 400,
     })).map(r => r.id);
     const group = [e, ...await loadEvs(peerIds)];
-    const cands = candidatesFor(e, group, windowDays);
+    const cands = candidatesFor(e, group, windowDays, { loose: true });
     if (!cands.length) continue;
     const v = await judgeSame(e, cands, { model: opts.model, system: SYSTEM_REVIEW, withFamily: true });
     if (!v) continue;

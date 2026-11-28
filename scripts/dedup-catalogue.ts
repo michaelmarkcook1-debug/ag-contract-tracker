@@ -89,7 +89,7 @@ async function main() {
     if (group.length < 2) continue;
     for (const e of group) {
       if (SCOPE === "review" && e.status !== "needs_review") continue;   // only the queue is judged; the catalogue is what it is judged against
-      const cands = candidatesFor(e, group, windowDays);
+      const cands = candidatesFor(e, group, windowDays, { loose: SCOPE === "review" });
       if (cands.length) jobs.push({ e, cands });
     }
   }
