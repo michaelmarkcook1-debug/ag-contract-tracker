@@ -6,7 +6,7 @@ import { FamilyBadge } from "@/components/market/FamilyBadge";
 import { EventCard } from "@/components/market/EventCard";
 import { FamilyTrendChart, TopVendorsChart } from "@/components/market/DashboardCharts";
 import { formatDate } from "@/lib/types";
-import { Activity, FileText, TrendingUp, GitMerge, Handshake, Lightbulb, Users, ArrowRight, Zap, Radio } from "lucide-react";
+import { Activity, FileText, TrendingUp, GitMerge, Handshake, Lightbulb, Users, ArrowRight, Radio } from "lucide-react";
 import Link from "next/link";
 
 export default async function DashboardPage() {
@@ -28,16 +28,21 @@ export default async function DashboardPage() {
     <div className="px-4 py-5 md:px-6 md:py-8 space-y-6 md:space-y-8">
       {/* Hero header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Market Intelligence</h1>
-          <p className="text-sm text-muted-foreground">
-            Tracking {stats.totalEvents.toLocaleString()} events across {TRACKED_VENDORS.length} IT services providers
-            {stats.last30DaysCount > 0 && (
-              <span className="inline-flex items-center gap-1 ml-2 text-brand">
-                <Zap className="h-3 w-3" />
-                {stats.last30DaysCount} new this month
-              </span>
-            )}
+        <div className="space-y-3 max-w-3xl">
+          <div className="space-y-1">
+            <h1 className="text-3xl md:text-4xl font-semibold">Market Intelligence</h1>
+            <p className="text-sm text-muted-foreground">
+              {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+              {stats.latestEventDate && <> · latest event {formatDate(stats.latestEventDate)}</>}
+            </p>
+          </div>
+          {/* The reading first, as a sentence: the numbers in bold, the context muted. */}
+          <p className="text-base md:text-lg leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">{stats.contractsCount.toLocaleString()} contracts</span>,{" "}
+            <span className="font-semibold text-foreground">{stats.maCount.toLocaleString()} acquisitions</span> and{" "}
+            <span className="font-semibold text-foreground">{stats.partnershipCount.toLocaleString()} partnerships</span> across{" "}
+            {TRACKED_VENDORS.length} IT services providers, from public sources only.
+            {stats.last30DaysCount > 0 && <>{" "}<span className="font-semibold text-brand">{stats.last30DaysCount.toLocaleString()}</span> new in the last 30 days.</>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 shrink-0">
@@ -82,7 +87,7 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 bg-card/50 border-border/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Event Volume by Month</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Event Volume by Month</CardTitle>
           </CardHeader>
           <CardContent>
             <FamilyTrendChart stats={stats} />
@@ -90,7 +95,7 @@ export default async function DashboardPage() {
         </Card>
         <Card className="bg-card/50 border-border/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Top Vendors</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Top Vendors</CardTitle>
           </CardHeader>
           <CardContent>
             <TopVendorsChart stats={stats} />
@@ -117,7 +122,7 @@ export default async function DashboardPage() {
         <div className="space-y-4">
           <Card className="bg-card/50 border-border/40">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Top Industries</CardTitle>
+              <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Top Industries</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2.5">
               {stats.topIndustries.map(({ industry, count }, i) => (
@@ -142,7 +147,7 @@ export default async function DashboardPage() {
 
           <Card className="bg-card/50 border-border/40">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Most Active Vendors</CardTitle>
+              <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Most Active Vendors</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {stats.topVendors.slice(0, 8).map(({ name, slug, count }, i) => (

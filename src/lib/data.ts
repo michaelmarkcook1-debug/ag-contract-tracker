@@ -285,7 +285,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     }),
     // Latest event date for freshness indicator
     prisma.canonicalMarketEvent.findFirst({
-      where: { publicationStatus: "published", announcementDate: { not: null } },
+      where: { publicationStatus: "published", announcementDate: { not: null, lte: new Date() } },
       orderBy: { announcementDate: { sort: "desc", nulls: "last" } },
       select: { announcementDate: true },
     }),

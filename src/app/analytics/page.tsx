@@ -62,7 +62,7 @@ export default async function AnalyticsPage() {
       {/* Annual trend */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Annual Deal Volume & TCV</CardTitle>
+          <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Annual Deal Volume & TCV</CardTitle>
           <p className="text-xs text-muted-foreground">Deals per year beside contract value per year (disclosed + estimated), on the same years</p>
         </CardHeader>
         <CardContent>
@@ -74,7 +74,7 @@ export default async function AnalyticsPage() {
       {/* Monthly momentum */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Monthly Momentum — Last 24 Months</CardTitle>
+          <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Monthly Momentum — Last 24 Months</CardTitle>
         </CardHeader>
         <CardContent>
           <MonthlyMomentumChart data={data.monthlyMomentum} />
@@ -85,7 +85,7 @@ export default async function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Top Vendors by Contract Value</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Top Vendors by Contract Value</CardTitle>
             <p className="text-xs text-muted-foreground">Disclosed + labelled estimates · $bn, all years</p>
           </CardHeader>
           <CardContent>
@@ -94,7 +94,7 @@ export default async function AnalyticsPage() {
         </Card>
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Top Vendors by Deal Count</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Top Vendors by Deal Count</CardTitle>
             <p className="text-xs text-muted-foreground">All published contracts, all years</p>
           </CardHeader>
           <CardContent>
@@ -107,7 +107,7 @@ export default async function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Service Line Mix</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Service Line Mix</CardTitle>
             <p className="text-xs text-muted-foreground">Deal count by primary macro service line</p>
           </CardHeader>
           <CardContent>
@@ -116,7 +116,7 @@ export default async function AnalyticsPage() {
         </Card>
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Deal Size Distribution</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Deal Size Distribution</CardTitle>
             <p className="text-xs text-muted-foreground">Number of contracts by TCV band</p>
           </CardHeader>
           <CardContent>
@@ -129,7 +129,7 @@ export default async function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Geographic Coverage</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Geographic Coverage</CardTitle>
             <p className="text-xs text-muted-foreground">Events by signing region</p>
           </CardHeader>
           <CardContent>
@@ -138,7 +138,7 @@ export default async function AnalyticsPage() {
         </Card>
         <Card className="bg-card border-border">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Contract Event Types</CardTitle>
+            <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Contract Event Types</CardTitle>
           </CardHeader>
           <CardContent>
             <EventTypePie data={data.eventTypes} />
@@ -149,7 +149,7 @@ export default async function AnalyticsPage() {
       {/* Industry breakdown */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Industry Breakdown</CardTitle>
+          <CardTitle className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">Industry Breakdown</CardTitle>
           <p className="text-xs text-muted-foreground">Deals by buyer industry</p>
         </CardHeader>
         <CardContent>
