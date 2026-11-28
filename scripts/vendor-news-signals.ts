@@ -95,6 +95,8 @@ async function main() {
     examples.sort((x, y) => order.indexOf(x.category) - order.indexOf(y.category) || y.date.localeCompare(x.date));
     const v: VendorNews = { score: scoreCounts(counts), counts, examples: examples.slice(0, 6), scanned: uniq.length, fetchedAt: new Date().toISOString() };
     out.vendors[vendor] = v; ok++;
+    // Saved after every vendor, so an interrupted run keeps what it has collected.
+    if (!dry) { out.fetchedAt = new Date().toISOString(); await saveNewsSignals(out); }
     console.log(`  ${vendor.padEnd(24)} risk ${String(v.score).padStart(3)} · ${uniq.length} headlines · ${Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(", ") || "no signals"}`);
   }
   console.log(`vendors: ${ok} updated, ${failed} kept previous · Haiku $${cost.toFixed(3)}`);
