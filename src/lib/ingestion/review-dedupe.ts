@@ -71,6 +71,8 @@ export interface Ev {
   title: string; date: Date | null; status: string; vendorKey: string; client: string | null; anon: boolean;
   type: string | null; eventStatus: string | null; stated: number | null; estimate: number | null; origValue: number | null; origCcy: string | null;
   term: number | null; scope: string | null; sources: number; created: Date;
+  /** The provider's name, for matching a deal recorded from each party's side. */
+  provider: string;
 }
 
 export function line(e: Ev, withFamily: boolean): string {
@@ -122,7 +124,7 @@ export function toEv(e: EvRow): Ev | null {
     id: e.id, family: e.family, reason: e.reviewReason, label,
     title: e.canonicalTitle, date: e.announcementDate, status: e.publicationStatus, vendorKey: vendorKey + "|" + e.family, client, anon: !!cd?.clientAnonymised,
     type, eventStatus: e.eventStatus, stated, estimate: cd?.tcvEstimateMidUsd ?? null, origValue: cd?.tcvOriginalValue ?? null, origCcy: cd?.tcvOriginalCurrency ?? null,
-    term: cd?.contractLengthMonths ?? null, scope, sources: e._count.sourceEvents, created: e.createdAt,
+    term: cd?.contractLengthMonths ?? null, scope, sources: e._count.sourceEvents, created: e.createdAt, provider: provider.trim(),
   };
 }
 
@@ -189,10 +191,12 @@ export async function judgeSame(e: Ev, cands: Ev[], opts: { model: string; syste
  * duplicate too, so an undo needs nothing else. An article that only mentions the event in passing does not support
  * it, so it is not handed over.
  */
-export async function foldDuplicate(loser: Pick<Ev, "id" | "reason">, keepId: string, why: string, action: string): Promise<boolean> {
+export async function foldDuplicate(loser: Pick<Ev, "id" | "reason">, keepId: string, why: string, action: string, opts: { fillCounterparty?: string } = {}): Promise<boolean> {
   return prisma.$transaction(async tx => {
     const cur = await tx.canonicalMarketEvent.findUnique({ where: { id: loser.id }, select: { publicationStatus: true, sourceEvents: { select: { id: true } } } });
     if (!cur || cur.publicationStatus === "excluded_noise") return false;
+    // A deal recorded from each party's side: the duplicate's provider is the survivor's missing counterparty.
+    if (opts.fillCounterparty) await fillCounterparty(tx, keepId, opts.fillCounterparty);
     const donate = !(loser.reason ?? "").includes("event_source_mismatch");
     if (donate && cur.sourceEvents.length) await tx.canonicalMarketEvent.update({ where: { id: keepId }, data: { sourceEvents: { connect: cur.sourceEvents.map(s => ({ id: s.id })) } } });
     await tx.canonicalMarketEvent.update({ where: { id: loser.id }, data: { publicationStatus: "excluded_noise", humanReviewRequired: false, reviewReason: `duplicate_of:${keepId}` } });
@@ -227,5 +231,91 @@ export async function dedupeReviewItems(ids: string[], opts: { model: string; ac
     judged++; costUsd += v.costUsd;
     if (v.same && await foldDuplicate(e, cands[v.same - 1].id, v.why, opts.action)) folded.push(e.id);
   }
+  // The same deal recorded from the other party's side (a different provider, so the check above never sees it).
+  for (const e of items) {
+    if (folded.includes(e.id) || !e.date || !MIRROR_FAMILIES.has(e.family)) continue;
+    const party = otherParty(e);
+    if (!party) continue;
+    const from = new Date(e.date.getTime() - (REVIEW_WINDOW[e.family] ?? 45) * DAY), to = new Date(e.date.getTime() + (REVIEW_WINDOW[e.family] ?? 45) * DAY);
+    const peers = await loadEvs((await prisma.canonicalMarketEvent.findMany({
+      where: { id: { not: e.id }, family: e.family, publicationStatus: { in: ["published", "needs_review"] }, announcementDate: { gte: from, lte: to },
+        primaryEntity: { canonicalName: { contains: party.split(/\s+/)[0], mode: "insensitive" } } },
+      select: { id: true }, take: 200,
+    })).map(r => r.id));
+    const cands = mirrorCandidates(e, indexByProvider(peers), f => REVIEW_WINDOW[f] ?? 45);
+    if (!cands.length) continue;
+    const v = await judgeSame(e, cands, { model: opts.model, system: SYSTEM_MIRROR, withFamily: true });
+    if (!v) continue;
+    judged++; costUsd += v.costUsd;
+    if (v.same) { const keep = cands[v.same - 1]; if (await foldDuplicate(e, keep.id, v.why, opts.action, { fillCounterparty: otherParty(keep) ? undefined : e.provider })) folded.push(e.id); }
+  }
   return { folded, judged, costUsd };
+}
+
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** Name the survivor's counterparty when it has none, and lift a no_counterparty hold that only that caused. */
+async function fillCounterparty(tx: Tx, id: string, name: string): Promise<void> {
+  const e = await tx.canonicalMarketEvent.findUnique({ where: { id }, select: { counterpartyRaw: true, reviewReason: true, publicationStatus: true,
+    contractDetails: { select: { clientRaw: true } }, maDetails: { select: { targetRaw: true } }, partnershipDetails: { select: { entityBRaw: true } } } });
+  if (!e) return;
+  const reasons = (e.reviewReason ?? "").split(",").map(r => r.trim()).filter(Boolean);
+  const rest = reasons.filter(r => r !== "no_counterparty");
+  await tx.canonicalMarketEvent.update({ where: { id }, data: {
+    counterpartyRaw: e.counterpartyRaw ?? name,
+    ...(e.publicationStatus === "needs_review" && rest.length < reasons.length ? (rest.length ? { reviewReason: rest.join(",") } : { reviewReason: null, publicationStatus: "published", humanReviewRequired: false }) : {}),
+  } });
+  if (e.contractDetails && !e.contractDetails.clientRaw) await tx.contractDetails.update({ where: { canonicalEventId: id }, data: { clientRaw: name, clientAnonymised: false } });
+  if (e.maDetails && !e.maDetails.targetRaw) await tx.maDetails.update({ where: { canonicalEventId: id }, data: { targetRaw: name } });
+  if (e.partnershipDetails && !e.partnershipDetails.entityBRaw) await tx.partnershipDetails.update({ where: { canonicalEventId: id }, data: { entityBRaw: name } });
+}
+
+/** The other party as a record names it: its counterparty, else the third field of its "Provider | Type | Party | Scope" title. */
+export function otherParty(e: Pick<Ev, "client" | "title">): string | null {
+  if (e.client) return e.client;
+  const seg = e.title.split("|").map(x => x.trim());
+  return seg.length >= 3 && seg[2] && !/^(n\/a|none|internal|unnamed|undisclosed)/i.test(seg[2]) ? seg[2] : null;
+}
+
+export const SYSTEM_MIRROR = [
+  "You compare records in an IT-services market tracker that tracks many providers. The same deal between two tracked providers is often recorded twice, once from each side: provider A with partner B, and provider B with partner A.",
+  "Decide whether RECORD describes the same event as one of the numbered CANDIDATES, allowing for the two parties being swapped.",
+  "Same event: the same specific partnership, alliance, acquisition or contract between the same two organisations, announced at about the same time, even when worded from the other party's point of view.",
+  "NOT the same: a different deal between the same two organisations (an earlier alliance and a later expansion, an announced acquisition and its completion); a different scope or programme; dates far apart with no sign it is the same announcement.",
+  "If you are not sure, answer 0.",
+  "Reply with JSON only: {\"same\": <candidate number, or 0 for none>, \"why\": \"<12 words>\"}",
+].join("\n");
+
+/** Families where both parties can be tracked providers, so a deal can appear once per side. */
+export const MIRROR_FAMILIES = new Set(["PARTNERSHIP", "M_AND_A", "CONTRACT"]);
+
+/**
+ * Records that may be this one seen from the other side: same family, close in date, the candidate's provider is this
+ * record's other party and the candidate's other party (when it names one) is this record's provider. Only
+ * better-ranked candidates are returned, so the better record survives.
+ */
+export function mirrorCandidates(e: Ev, byProvider: Map<string, Ev[]>, windowDays: (family: string) => number): Ev[] {
+  if (!e.date || !MIRROR_FAMILIES.has(e.family)) return [];
+  const party = otherParty(e);
+  if (!party) return [];
+  const out: [Ev, number][] = [];
+  for (const [prov, group] of byProvider) {
+    if (clientSim(party, prov) < 0.5) continue;
+    for (const o of group) {
+      if (o.id === e.id || o.family !== e.family || !o.date || !before(o, e)) continue;
+      if (Math.abs(o.date.getTime() - e.date.getTime()) > windowDays(e.family) * DAY) continue;
+      const theirs = otherParty(o);
+      const back = theirs ? clientSim(theirs, e.provider) : (o.title.toLowerCase().includes(e.provider.toLowerCase()) ? 0.6 : 0);
+      if (back < 0.5) continue;
+      out.push([o, back - Math.abs(o.date.getTime() - e.date.getTime()) / (365 * DAY)]);
+    }
+  }
+  return out.sort((a, b) => b[1] - a[1]).slice(0, 4).map(x => x[0]);
+}
+
+/** Provider name -> records, for mirrorCandidates. */
+export function indexByProvider(evs: Ev[]): Map<string, Ev[]> {
+  const m = new Map<string, Ev[]>();
+  for (const e of evs) if (e.provider && MIRROR_FAMILIES.has(e.family)) (m.get(e.provider) ?? m.set(e.provider, []).get(e.provider)!).push(e);
+  return m;
 }
