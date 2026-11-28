@@ -29,7 +29,11 @@ export const CATEGORIES = [
 export type Category = typeof CATEGORIES[number]["key"];
 
 export interface Headline { title: string; url: string; date: string; domain: string; category: Category }
-export interface VendorNews { score: number; counts: Partial<Record<Category, number>>; examples: Headline[]; scanned: number; fetchedAt: string }
+export interface VendorNews {
+  score: number; counts: Partial<Record<Category, number>>; examples: Headline[]; scanned: number; fetchedAt: string;
+  /** How the headlines were sorted: "model" (Haiku) or "keywords" (FedSpend's rules, used when the model is unavailable). */
+  method?: "model" | "keywords";
+}
 export interface NewsSignals { version: string; fetchedAt: string; months: number; vendors: Record<string, VendorNews> }
 
 export function scoreCounts(counts: Partial<Record<Category, number>>): number {

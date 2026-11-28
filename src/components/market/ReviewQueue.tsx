@@ -7,7 +7,7 @@ import { reviewGroup, reviewDetail, GROUP_ORDER, ASSIGNABLE, ASSIGNABLE_LABELS, 
 import { FamilyBadge } from "./FamilyBadge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { CheckCircle2, XCircle, MapPin, Building2, ExternalLink, AlertCircle, RefreshCw, Undo2, Keyboard } from "lucide-react";
+import { CheckCircle2, XCircle, MapPin, Building2, ExternalLink, AlertCircle, RefreshCw, Undo2, Keyboard, FileText, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ReviewQueueProps {
@@ -291,8 +291,9 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
   // A score is shown only when something measured it; an asserted 1.0 means
   // "nobody computed this", not "certain" (gate.ts).
   const measured = event.confidenceBasis === "measured";
-  const confColor = event.confidenceScore >= 0.75 ? "text-brand" : event.confidenceScore >= 0.55 ? "text-yellow-400" : "text-red-600 dark:text-red-400";
+  const confColor = event.confidenceScore >= 0.75 ? "text-brand" : event.confidenceScore >= 0.55 ? "text-amber-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400";
   const context = readable(event.scopeSummary) ?? readable(event.analystInsight);
+  const [reading, setReading] = useState(false);
 
   return (
     <div
@@ -309,7 +310,7 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <FamilyBadge family={event.family} />
-            <span className="text-[10px] font-medium text-amber-400/90 bg-amber-500/10 rounded px-1.5 py-0.5" title={event.reviewReason ?? undefined}>{g.label}</span>
+            <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 rounded px-1.5 py-0.5" title={event.reviewReason ?? undefined}>{g.label}</span>
             {event.industry && (
               <span className="text-[10px] text-muted-foreground flex items-center gap-0.5"><Building2 className="h-2.5 w-2.5" />{event.industry}</span>
             )}
@@ -334,7 +335,12 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
                 source <ExternalLink className="h-2.5 w-2.5" />
               </a>
             )}
+            <button type="button" onClick={e => { e.stopPropagation(); setReading(r => !r); }} aria-expanded={reading}
+              className="flex items-center gap-1 font-medium text-brand hover:underline underline-offset-2">
+              <FileText className="h-3 w-3" />{reading ? "Hide article" : "Read article"}<ChevronDown className={cn("h-3 w-3 transition-transform", reading && "rotate-180")} />
+            </button>
           </div>
+          {reading && <ArticlePanel eventId={event.id} />}
         </div>
 
         <div className="flex flex-col gap-1.5 shrink-0">
@@ -348,4 +354,67 @@ function ReviewCard({ cardRef, event, focused, isSelected, onFocus, onToggleSele
       </div>
     </div>
   );
+}
+
+interface ArticleSource { id: string; title: string | null; url: string | null; publisher: string | null; date: string | null; text: string | null }
+
+/**
+ * The full stored text of the event's articles, read in place. The passage the extractor relied on is highlighted, so
+ * a reviewer can see at once whether the article reports the event or only mentions it.
+ */
+function ArticlePanel({ eventId }: { eventId: string }) {
+  const [data, setData] = useState<{ quote: string | null; sources: ArticleSource[] } | null>(null);
+  const [error, setError] = useState(false);
+  const [which, setWhich] = useState(0);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch(`/api/events/${eventId}/article`, { signal: ac.signal })
+      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(setData)
+      .catch(e => { if ((e as Error).name !== "AbortError") setError(true); });
+    return () => ac.abort();
+  }, [eventId]);
+
+  if (error) return <p className="text-xs text-red-600 dark:text-red-400">Could not load the article.</p>;
+  if (!data) return <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" />Loading the article…</p>;
+  const src = data.sources[which];
+  if (!src) return <p className="text-xs text-muted-foreground">No article is stored for this event.</p>;
+
+  return (
+    <div className="mt-2 rounded-xl border border-border bg-background/60 p-3 space-y-2" onClick={e => e.stopPropagation()}>
+      {data.sources.length > 1 && (
+        <div className="flex flex-wrap gap-1">
+          {data.sources.map((s, i) => (
+            <button key={s.id} type="button" onClick={() => setWhich(i)}
+              className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", i === which ? "bg-brand-soft text-brand" : "text-muted-foreground hover:bg-foreground/[0.04]")}>
+              {s.publisher ?? `Source ${i + 1}`}
+            </button>
+          ))}
+        </div>
+      )}
+      <div>
+        <p className="text-sm font-semibold leading-snug">{src.title ?? "Untitled article"}</p>
+        <p className="text-[11px] text-muted-foreground">
+          {[src.publisher, src.date].filter(Boolean).join(" · ")}
+          {src.url && <> · <a href={src.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">open original</a></>}
+        </p>
+      </div>
+      {src.text ? (
+        <div className="max-h-[28rem] overflow-y-auto pr-1 text-[13px] leading-relaxed text-foreground/90 whitespace-pre-wrap">
+          <Highlighted text={src.text} quote={data.quote} />
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">Only the headline was captured for this article; open the original to read it.</p>
+      )}
+    </div>
+  );
+}
+
+/** The text with the extractor's passage marked (whitespace-insensitive match). */
+function Highlighted({ text, quote }: { text: string; quote: string | null }) {
+  if (!quote) return <>{text}</>;
+  const pattern = quote.trim().slice(0, 300).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const m = pattern ? new RegExp(pattern, "i").exec(text) : null;
+  if (!m) return <>{text}</>;
+  return <>{text.slice(0, m.index)}<mark className="rounded bg-brand-soft px-0.5 text-foreground">{m[0]}</mark>{text.slice(m.index + m[0].length)}</>;
 }

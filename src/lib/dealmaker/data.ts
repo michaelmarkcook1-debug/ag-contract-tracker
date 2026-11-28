@@ -39,6 +39,12 @@ export interface VendorSignal { score: number; counts: Record<string, number>; s
 
 interface Cache { at: number; rows: ContractRow[]; scores: Map<string, Scores>; signals: Map<string, VendorSignal>; model: ReturnType<typeof fitModel>; news: NewsSignals | null; stats: ReturnType<typeof fitModel>["stats"] }
 let cache: Cache | null = null;
+let newsCache: { at: number; value: NewsSignals | null } | null = null;
+/** News signals, re-read at most every five minutes (one small row). */
+async function freshNews(): Promise<NewsSignals | null> {
+  if (!newsCache || Date.now() - newsCache.at > 5 * 60_000) newsCache = { at: Date.now(), value: await getNewsSignals() };
+  return newsCache.value;
+}
 
 async function load(): Promise<Cache> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache;
@@ -146,7 +152,9 @@ export async function getRenewals(f: RenewalFilters) {
 
 /** Every live contract with a known end (ended at most 30 days ago), graded. Shared by Renewals and Portfolio. */
 async function shapedPipeline() {
-  const { rows, scores, signals, stats, news, model } = await load();
+  const { rows, scores, signals, stats, model } = await load();
+  // News signals change while the model cache is warm (the collector saves vendor by vendor): read them fresh.
+  const news = await freshNews();
   const today = new Date();
   // Contracts with a known end, not ended more than 30 days ago, and still live.
   const pipeline = rows.filter(r => LIVE(r) && r.end && daysToEnd(r, today)! >= -30);

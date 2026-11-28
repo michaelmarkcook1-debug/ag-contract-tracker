@@ -194,10 +194,10 @@ export function DealMaker() {
 
       {/* Table */}
       <div className="rounded-xl border border-border/50 overflow-x-auto">
-        <table className="w-full text-xs min-w-[960px]">
+        <table className="w-full text-xs min-w-[1100px]">
           <thead className="bg-foreground/[0.03] text-muted-foreground">
             <tr className="text-left">
-              {["Vendor", "Client", "Service line", "Value", "Ends", ...(windows.includes("expired30") ? ["New vendor selected"] : []), "Urgency", "Risk", "Renewal", "Displacement", "AI", "Automation", "Play"].map(h => <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>)}
+              {["Vendor", "Client", "Value", "Ends", ...(windows.includes("expired30") ? ["New vendor selected"] : []), "Play", "Risk", "Legal & incidents", "Automation", "AI", "Renewal", "Displacement", "Urgency", "Service line"].map(h => <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-border/30">
@@ -205,20 +205,21 @@ export function DealMaker() {
               <tr key={r.id} onClick={() => setSelected(r)} className="cursor-pointer hover:bg-foreground/[0.03]">
                 <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{r.vendor}</td>
                 <td className="px-3 py-2 max-w-[14rem] truncate" title={r.client ?? ""}>{r.client ?? "—"}{r.clientAnonymised && r.client ? <span className="text-muted-foreground"> (undisclosed)</span> : null}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-foreground/85">{r.serviceLine ?? "—"}</td>
                 <td className="px-3 py-2 font-mono tabular-nums whitespace-nowrap">{money(r.tcvUsd)}{r.tcvUsd && r.tcvIsEstimate ? <span className="text-muted-foreground"> est.</span> : null}</td>
                 <td className="px-3 py-2 whitespace-nowrap tabular-nums">{r.end ?? "—"}{r.endBasis === "estimated" ? <span className="text-muted-foreground"> est.</span> : null}</td>
                 {windows.includes("expired30") && <td className="px-3 py-2 whitespace-nowrap">{r.successor ? <Successor s={r.successor} /> : <span className="text-muted-foreground/50">—</span>}</td>}
-                <td className="px-3 py-2"><Pill k={r.urgency.key} label={r.urgency.label} tip={r.urgency.tip} /></td>
+                <td className="px-3 py-2"><ActionTag a={r.action} /></td>
                 <td className="px-3 py-2"><Pill k={r.risk.key} label={r.risk.label} tip={r.risk.tip} /></td>
+                <td className="px-3 py-2"><LegalCell news={r.news} /></td>
+                <td className="px-3 py-2"><Pill k={r.automation} label={AUTOMATION_LABELS[r.automation].replace(/ \(.*\)$/, "")} /></td>
+                <td className="px-3 py-2"><Pill k={r.ai.key} label={r.ai.label} tip={r.ai.tip} /></td>
                 <td className="px-3 py-2"><Score v={r.renewalProb} /></td>
                 <td className="px-3 py-2"><Score v={r.displacementRisk} /></td>
-                <td className="px-3 py-2"><Pill k={r.ai.key} label={r.ai.label} tip={r.ai.tip} /></td>
-                <td className="px-3 py-2"><Pill k={r.automation} label={AUTOMATION_LABELS[r.automation].replace(/ \(.*\)$/, "")} /></td>
-                <td className="px-3 py-2"><ActionTag a={r.action} /></td>
+                <td className="px-3 py-2"><Pill k={r.urgency.key} label={r.urgency.label} tip={r.urgency.tip} /></td>
+                <td className="px-3 py-2 whitespace-nowrap text-foreground/85">{r.serviceLine ?? "—"}</td>
               </tr>
             ))}
-            {data && !data.rows.length && <tr><td colSpan={13} className="px-3 py-8 text-center text-muted-foreground">No contracts match these filters.</td></tr>}
+            {data && !data.rows.length && <tr><td colSpan={14} className="px-3 py-8 text-center text-muted-foreground">No contracts match these filters.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -335,4 +336,22 @@ function Successor({ s }: { s: NonNullable<RenewalRow["successor"]> }) {
   if (s.status === "retained") return <span className="text-brand text-xs font-medium">Retained</span>;
   if (s.status === "new_vendor") return <span className="text-amber-600 dark:text-amber-400 text-xs font-medium">New vendor: {s.vendor}</span>;
   return <span className="text-muted-foreground text-xs">No successor detected</span>;
+}
+
+/**
+ * The incumbent's legal and incident signals from the news (GDELT): the news risk score and the adverse categories,
+ * litigation first. Contract wins and M&A are left to the detail panel.
+ */
+function LegalCell({ news }: { news: RenewalRow["news"] }) {
+  if (!news) return <span className="text-muted-foreground/50" title="No news signals collected for this vendor yet">—</span>;
+  const order = ["legal", "security", "contract_loss", "financial", "leadership"] as const;
+  const hits = order.filter(k => (news.counts[k] ?? 0) > 0).map(k => `${CATEGORY_LABEL[k].split(" ")[0]} ${news.counts[k]}`);
+  const tone = news.score >= 60 ? "critical" : news.score >= 35 ? "concern" : "positive";
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px]" title={`News risk ${news.score}/100 from ${news.scanned} headlines (${news.fetchedAt.slice(0, 10)})`}>
+      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", TONE[tone])} />
+      <span className="font-mono tabular-nums">{news.score}</span>
+      <span className="text-muted-foreground">{hits.length ? hits.slice(0, 2).join(" · ") : "no adverse news"}</span>
+    </span>
+  );
 }

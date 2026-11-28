@@ -5,7 +5,7 @@
  * then one Haiku call that places each headline in a category or "none" (not about this company, or no signal).
  * Results replace SystemSetting "dealmaker.newsSignals"; vendors that fail keep their previous entry.
  *
- *   npx tsx scripts/vendor-news-signals.ts [--months 6] [--delay 6] [--only "Accenture,IBM"] [--dry]
+ *   npx tsx scripts/vendor-news-signals.ts [--months 6] [--delay 6] [--only "Accenture,IBM"] [--keywords] [--dry]
  */
 import { TRACKED_VENDORS } from "@/lib/ingestion/sources";
 import { prisma } from "@/lib/db";
@@ -16,6 +16,8 @@ const MONTHS = Number(arg("--months", "6"));
 const DELAY = Number(arg("--delay", "6")) * 1000;
 const ONLY = arg("--only", "").split(",").map(s => s.trim()).filter(Boolean);
 const dry = process.argv.includes("--dry");
+/** --keywords: sort headlines with FedSpend's keyword rules only (no model calls). */
+const KEYWORDS_ONLY = process.argv.includes("--keywords");
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 /** Haiku 5.5, USD per million tokens (platform.claude.com/docs/en/about-claude/pricing, read 2026-11-27). */
 const HAIKU = { id: "claude-haiku-5-5", input: 0.1, output: 0.5 };
@@ -52,6 +54,24 @@ ${CATEGORIES.map(c => `- ${c.key}: ${c.label}`).join("\n")}
 legal = lawsuits, bid protests, investigations, fines, settlements, regulatory action. security = data breaches, ransomware, cyber attacks, outages. financial = layoffs, job cuts, losses, downgrades, restructuring, profit warnings. leadership = a senior executive leaving or replaced. contract_loss = a lost re-compete, a terminated, cancelled or not-renewed contract.
 Reply with JSON only: {"c": ["<category for headline 1>", "<category for headline 2>", ...]}`;
 
+/**
+ * FedSpend's own SIGNAL_RULES (enrich_signals_gdelt.py), used only when the model is unavailable (an outage or the
+ * account's usage limit). Order matters: the first rule that matches wins, as in FedSpend's per-article tally of the
+ * strongest signal. A rerun with the model replaces these.
+ */
+const KEYWORD_RULES: [Category, RegExp][] = [
+  ["legal", /\b(lawsuit|sue[sd]?|suing|litigation|bid protest|protest(ed|s)? the award|gao protest|investigat(ion|ing|ed)|subpoena|indict|fraud|false claims|settlement|fine[sd]?|penalt(y|ies)|whistleblow|debarment|suspended from contracting|class action|antitrust|regulator)\b/i],
+  ["security", /\b(data breach|breached|ransomware|cyber ?attack|hacked|hackers|security incident|data leak|exposed records|malware|outage|systems? down|compromised)\b/i],
+  ["contract_loss", /\b(los(e|es|ing|t))\b[^.]{0,30}?\bcontract\b|\bcontract\b[^.]{0,25}?\b(terminated|cancelled|canceled|not renewed|scrapped)\b|\b(ousted from|dropped by|stripped of|fail(s|ed) to retain|loses? out to|beaten by)\b/i],
+  ["financial", /\b(lay ?offs?|laying off|job cuts?|cuts? [\d,]+ jobs|redundanc|restructur|profit warning|downgrade[sd]?|missed (earnings|estimates)|loss(es)? widen|revenue (decline[sd]?|drops?|fell)|write-?downs?|impairment|credit rating cut)\b/i],
+  ["leadership", /\b(ceo|cfo|cio|cto|president|managing director|chair(man|woman|person)?)\b[^.]{0,40}?\b(steps? down|stepping down|resign(s|ed|ation)?|departs?|departure|exits?|to leave|ousted|fired|replaced)\b|\b(names?|named|appoints?|appointed)\b[^.]{0,25}?\b(new )?(ceo|cfo|cio|cto)\b/i],
+  ["ma", /\b(acquir(e|es|ed|ing)|acquisition|merger|merges? with|to buy|takeover|divest(s|ed|ing|iture)?|sells? (its|the) .{0,30}(unit|division|business))\b/i],
+  ["contract_win", /\b(wins?|won|awarded|secures?|lands?|selected (to|for|as)|receives? .{0,20}contract|new contract)\b/i],
+];
+function classifyByKeywords(titles: string[]): (Category | "none")[] {
+  return titles.map(t => KEYWORD_RULES.find(([, re]) => re.test(t))?.[0] ?? "none");
+}
+
 async function classify(vendor: string, titles: string[]): Promise<{ cats: (Category | "none")[]; costUsd: number } | null> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST", headers: { "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -80,8 +100,11 @@ async function main() {
     if (!arts) { failed++; console.log(`  ${vendor}: GDELT unavailable (kept previous)`); continue; }
     const seen = new Set<string>();
     const uniq = arts.filter(a => { const k = a.title.toLowerCase().replace(/\W+/g, " ").trim(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
-    const res = uniq.length ? await classify(vendor, uniq.map(a => a.title.slice(0, 200))) : { cats: [], costUsd: 0 };
-    if (!res) { failed++; console.log(`  ${vendor}: classification failed (kept previous)`); continue; }
+    const titles = uniq.map(a => a.title.slice(0, 200));
+    // The model sorts the headlines; if it is unavailable, FedSpend's keyword rules do, and the result says so.
+    let method: "model" | "keywords" = "model";
+    let res = !uniq.length ? { cats: [] as (Category | "none")[], costUsd: 0 } : KEYWORDS_ONLY ? null : await classify(vendor, titles).catch(() => null);
+    if (!res) { method = "keywords"; res = { cats: classifyByKeywords(titles), costUsd: 0 }; }
     cost += res.costUsd;
     const counts: Partial<Record<Category, number>> = {};
     const examples: Headline[] = [];
@@ -93,11 +116,11 @@ async function main() {
     });
     const order: Category[] = ["legal", "security", "contract_loss", "financial", "leadership"];
     examples.sort((x, y) => order.indexOf(x.category) - order.indexOf(y.category) || y.date.localeCompare(x.date));
-    const v: VendorNews = { score: scoreCounts(counts), counts, examples: examples.slice(0, 6), scanned: uniq.length, fetchedAt: new Date().toISOString() };
+    const v: VendorNews = { score: scoreCounts(counts), counts, examples: examples.slice(0, 6), scanned: uniq.length, fetchedAt: new Date().toISOString(), method };
     out.vendors[vendor] = v; ok++;
     // Saved after every vendor, so an interrupted run keeps what it has collected.
     if (!dry) { out.fetchedAt = new Date().toISOString(); await saveNewsSignals(out); }
-    console.log(`  ${vendor.padEnd(24)} risk ${String(v.score).padStart(3)} · ${uniq.length} headlines · ${Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(", ") || "no signals"}`);
+    console.log(`  ${vendor.padEnd(24)} risk ${String(v.score).padStart(3)} · ${uniq.length} headlines (${method}) · ${Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(", ") || "no signals"}`);
   }
   console.log(`vendors: ${ok} updated, ${failed} kept previous · Haiku $${cost.toFixed(3)}`);
   if (!dry) { await saveNewsSignals(out); console.log("saved to SystemSetting dealmaker.newsSignals"); }
