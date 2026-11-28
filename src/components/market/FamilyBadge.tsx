@@ -3,15 +3,8 @@
 import { Badge } from "@/components/ui/badge";
 import { FAMILY_LABELS } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { FAMILY_SERIES } from "@/lib/chart-theme";
 
-const STYLES: Record<string, string> = {
-  CONTRACT: "bg-brand/15 text-brand border-brand/30",
-  FINANCIAL_RESULTS: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 border-cyan-500/30",
-  M_AND_A: "bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30",
-  PARTNERSHIP: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
-  NEW_OFFERING: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-  ORG_CHANGE: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30",
-};
 
 /** Shown on events that are not a win: a contract that ended or is in dispute, or a rumour nobody has confirmed. */
 export function EventStatusBadge({ status, className }: { status: string | null | undefined; className?: string }) {
@@ -30,8 +23,10 @@ export function EventStatusBadge({ status, className }: { status: string | null 
 }
 
 export function FamilyBadge({ family, className }: { family: string; className?: string }) {
+  // The type's chart colour marks identity on a dot; the label stays in text ink (text never wears a series colour).
   return (
-    <Badge variant="outline" className={cn("text-xs font-medium shrink-0", STYLES[family] ?? "bg-zinc-500/15 text-muted-foreground border-zinc-500/30", className)}>
+    <Badge variant="outline" className={cn("text-xs font-medium shrink-0 gap-1.5 border-border bg-card text-foreground/80", className)}>
+      <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: FAMILY_SERIES[family] ?? "var(--series-other)" }} />
       {FAMILY_LABELS[family as keyof typeof FAMILY_LABELS] ?? family}
     </Badge>
   );

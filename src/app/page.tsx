@@ -16,12 +16,12 @@ export default async function DashboardPage() {
   const stats = await getDashboardStats();
 
   const familyCounts = [
-    { family: "CONTRACT", count: stats.contractsCount, icon: FileText, label: "Contracts", color: "from-blue-500/20 to-blue-500/5 border-blue-500/20" },
-    { family: "FINANCIAL_RESULTS", count: stats.financialResultsCount, icon: TrendingUp, label: "Financial Results", color: "from-cyan-500/20 to-cyan-500/5 border-cyan-500/20" },
-    { family: "M_AND_A", count: stats.maCount, icon: GitMerge, label: "M&A", color: "from-orange-500/20 to-orange-500/5 border-orange-500/20" },
-    { family: "PARTNERSHIP", count: stats.partnershipCount, icon: Handshake, label: "Partnerships", color: "from-brand/20 to-brand/5 border-brand/20" },
-    { family: "NEW_OFFERING", count: stats.newOfferingCount, icon: Lightbulb, label: "New Offerings", color: "from-violet-500/20 to-violet-500/5 border-violet-500/20" },
-    { family: "ORG_CHANGE", count: stats.orgChangeCount, icon: Users, label: "Org Changes", color: "from-pink-500/20 to-pink-500/5 border-pink-500/20" },
+    { family: "CONTRACT", count: stats.contractsCount, icon: FileText, label: "Contracts" },
+    { family: "FINANCIAL_RESULTS", count: stats.financialResultsCount, icon: TrendingUp, label: "Financial Results" },
+    { family: "M_AND_A", count: stats.maCount, icon: GitMerge, label: "M&A" },
+    { family: "PARTNERSHIP", count: stats.partnershipCount, icon: Handshake, label: "Partnerships" },
+    { family: "NEW_OFFERING", count: stats.newOfferingCount, icon: Lightbulb, label: "New Offerings" },
+    { family: "ORG_CHANGE", count: stats.orgChangeCount, icon: Users, label: "Org Changes" },
   ];
 
   return (
@@ -62,9 +62,9 @@ export default async function DashboardPage() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-        {familyCounts.map(({ family, count, icon: Icon, label, color }) => (
+        {familyCounts.map(({ family, count, icon: Icon, label }) => (
           <Link key={family} href={`/events?family=${family}`}>
-            <Card className={`bg-gradient-to-b ${color} border hover:border-foreground/10 transition-all cursor-pointer group`}>
+            <Card className="border hover:border-brand/40 transition-colors cursor-pointer group">
               <CardContent className="pt-4 pb-3">
                 <div className="flex items-center justify-between mb-3">
                   <FamilyBadge family={family} className="text-[10px]" />

@@ -2,26 +2,24 @@
 
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  ComposedChart, Line, CartesianGrid, Cell, PieChart, Pie, Legend,
+  CartesianGrid, Cell, PieChart, Pie, Legend,
 } from "recharts";
 import type { AnalyticsData } from "@/app/api/analytics/route";
 import Link from "next/link";
+import { SERIES, SERIES_OTHER, MAGNITUDE, TICK as THEME_TICK, TOOLTIP, GRID, capCategories } from "@/lib/chart-theme";
 
+// Theme-aware (globals.css): the brand for magnitude, validated categorical slots for identity.
 const CHART_COLORS = {
-  primary: "#34d399",
-  secondary: "#60a5fa",
-  accent: "#a78bfa",
-  warn: "#fbbf24",
-  muted: "#71717a",
+  primary: MAGNITUDE,
+  secondary: "var(--series-4)",
+  accent: "var(--series-3)",
+  warn: "var(--series-6)",
+  muted: "var(--muted-foreground)",
 };
 
-const TOOLTIP_STYLE = {
-  contentStyle: { background: "#18181b", border: "1px solid #27272a", borderRadius: 6, fontSize: 11 },
-  labelStyle: { color: "#a1a1aa" },
-  cursor: { fill: "rgba(255,255,255,0.04)" },
-};
+const TOOLTIP_STYLE = TOOLTIP;
 
-const TICK = { fontSize: 10, fill: "#71717a" };
+const TICK = THEME_TICK;
 const AXIS = { axisLine: false, tickLine: false };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,18 +30,34 @@ export function AnnualTrendChart({ data }: { data: AnalyticsData["byYear"] }) {
   const fmt: AnyFormatter = (v, name) =>
     name === "tcvBn" ? [`$${Number(v).toFixed(1)}bn`, "TCV"] :
     name === "deals" ? [v, "Deals"] : [v, name];
+  // Two measures of different scale get two charts on the same years, never two y-axes on one.
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <ComposedChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-        <XAxis dataKey="year" tick={TICK} {...AXIS} />
-        <YAxis yAxisId="deals" tick={TICK} {...AXIS} />
-        <YAxis yAxisId="tcv" orientation="right" tick={TICK} {...AXIS} tickFormatter={(v: number) => `$${Number(v).toFixed(0)}bn`} />
-        <Tooltip {...TOOLTIP_STYLE} formatter={fmt} />
-        <Bar yAxisId="deals" dataKey="deals" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} name="Deals" />
-        <Line yAxisId="tcv" dataKey="tcvBn" stroke={CHART_COLORS.warn} dot={false} strokeWidth={2} name="TCV" />
-      </ComposedChart>
-    </ResponsiveContainer>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="min-w-0">
+        <p className="eyebrow mb-1">Deals per year</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+            <XAxis dataKey="year" tick={TICK} {...AXIS} />
+            <YAxis tick={TICK} {...AXIS} />
+            <Tooltip {...TOOLTIP_STYLE} formatter={fmt} />
+            <Bar dataKey="deals" fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} name="deals" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="min-w-0">
+        <p className="eyebrow mb-1">Contract value per year · $bn</p>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={data} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
+            <XAxis dataKey="year" tick={TICK} {...AXIS} />
+            <YAxis tick={TICK} {...AXIS} tickFormatter={(v: number) => `$${Number(v).toFixed(0)}bn`} />
+            <Tooltip {...TOOLTIP_STYLE} formatter={fmt} />
+            <Bar dataKey="tcvBn" fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} name="tcvBn" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   );
 }
 
@@ -54,10 +68,10 @@ export function VendorTcvChart({ data }: { data: AnalyticsData["topVendorsByTcv"
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={top} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }}>
         <XAxis type="number" tick={TICK} {...AXIS} tickFormatter={v => `$${v.toFixed(1)}bn`} />
-        <YAxis type="category" dataKey="vendor" tick={{ fontSize: 10, fill: "#a1a1aa" }} {...AXIS} width={110} />
+        <YAxis type="category" dataKey="vendor" tick={{ fontSize: 10, fill: "var(--foreground)" }} {...AXIS} width={110} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown) => [`$${Number(v).toFixed(2)}bn`, "TCV"]) as AnyFormatter} />
         <Bar dataKey="tcvBn" radius={[0, 3, 3, 0]} name="TCV">
-          {top.map((_, i) => <Cell key={i} fill={`hsl(${160 - i * 8}, 55%, ${52 - i * 2}%)`} />)}
+          {top.map((_, i) => <Cell key={i} fill={MAGNITUDE} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -71,10 +85,10 @@ export function VendorCountChart({ data }: { data: AnalyticsData["topVendorsByDe
     <ResponsiveContainer width="100%" height={260}>
       <BarChart data={top} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }}>
         <XAxis type="number" tick={TICK} {...AXIS} />
-        <YAxis type="category" dataKey="vendor" tick={{ fontSize: 10, fill: "#a1a1aa" }} {...AXIS} width={110} />
+        <YAxis type="category" dataKey="vendor" tick={{ fontSize: 10, fill: "var(--foreground)" }} {...AXIS} width={110} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown) => [v, "Deals"]) as AnyFormatter} />
         <Bar dataKey="deals" radius={[0, 3, 3, 0]} name="Deals">
-          {top.map((_, i) => <Cell key={i} fill={`hsl(${220 - i * 6}, 55%, ${52 - i * 2}%)`} />)}
+          {top.map((_, i) => <Cell key={i} fill={MAGNITUDE} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -82,19 +96,18 @@ export function VendorCountChart({ data }: { data: AnalyticsData["topVendorsByDe
 }
 
 // ── Service line breakdown ────────────────────────────────────────────────────
-const SL_COLORS = ["#34d399", "#60a5fa", "#a78bfa", "#fbbf24", "#fb7185", "#34d3d3", "#f97316"];
 export function ServiceLineChart({ data }: { data: AnalyticsData["serviceLines"] }) {
   return (
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 24 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
         <XAxis dataKey="line" tick={{ ...TICK, fontSize: 9 }} {...AXIS} angle={-25} textAnchor="end" interval={0} />
         <YAxis tick={TICK} {...AXIS} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown, name: unknown) =>
           name === "deals" ? [v, "Deals"] : [`$${Number(v).toFixed(1)}bn`, "TCV"]
         ) as AnyFormatter} />
         <Bar dataKey="deals" name="deals" radius={[3, 3, 0, 0]}>
-          {data.map((_, i) => <Cell key={i} fill={SL_COLORS[i % SL_COLORS.length]} />)}
+          {data.map((_, i) => <Cell key={i} fill={MAGNITUDE} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -107,12 +120,12 @@ export function DealSizeChart({ data }: { data: AnalyticsData["dealSizeBuckets"]
   return (
     <ResponsiveContainer width="100%" height={180}>
       <BarChart data={sorted} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
         <XAxis dataKey="bucket" tick={{ ...TICK, fontSize: 9 }} {...AXIS} />
         <YAxis tick={TICK} {...AXIS} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown) => [Number(v).toLocaleString(), "Deals"]) as AnyFormatter} />
         <Bar dataKey="count" radius={[3, 3, 0, 0]} name="Deals">
-          {sorted.map((_, i) => <Cell key={i} fill={`hsl(${200 + i * 15}, 60%, ${45 + i * 3}%)`} />)}
+          {sorted.map((_, i) => <Cell key={i} fill={MAGNITUDE} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -125,10 +138,10 @@ export function GeographyChart({ data }: { data: AnalyticsData["topGeographies"]
     <ResponsiveContainer width="100%" height={200}>
       <BarChart data={data.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }}>
         <XAxis type="number" tick={TICK} {...AXIS} />
-        <YAxis type="category" dataKey="region" tick={{ fontSize: 10, fill: "#a1a1aa" }} {...AXIS} width={130} />
+        <YAxis type="category" dataKey="region" tick={{ fontSize: 10, fill: "var(--foreground)" }} {...AXIS} width={130} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown) => [Number(v).toLocaleString(), "Events"]) as AnyFormatter} />
         <Bar dataKey="count" radius={[0, 3, 3, 0]} name="Events">
-          {data.map((_, i) => <Cell key={i} fill={`hsl(${270 - i * 12}, 55%, ${50 - i * 2}%)`} />)}
+          {data.map((_, i) => <Cell key={i} fill={MAGNITUDE} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -141,18 +154,18 @@ const TYPE_LABELS: Record<string, string> = {
   expansion: "Expansion", rebid_win: "Rebid Win",
   framework_award: "Framework", incumbent_displacement: "Displacement", unknown: "Unknown",
 };
-const PIE_COLORS = ["#34d399", "#60a5fa", "#a78bfa", "#fbbf24", "#fb7185", "#34d3d3", "#f97316"];
 
 export function EventTypePie({ data }: { data: AnalyticsData["eventTypes"] }) {
-  const pieData = data.map(d => ({ ...d, name: TYPE_LABELS[d.type] ?? d.type }));
+  // Six coloured slots at most (validated); further types fold into Other.
+  const pieData = capCategories([...data].sort((a, b) => b.count - a.count).map(d => ({ ...d, name: TYPE_LABELS[d.type] ?? d.type })), "name", "count");
   return (
     <ResponsiveContainer width="100%" height={200}>
       <PieChart>
         <Pie data={pieData} dataKey="count" cx="40%" cy="50%" outerRadius={70} innerRadius={35}>
-          {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+          {pieData.map((d, i) => <Cell key={i} fill={d.name === "Other" ? SERIES_OTHER : SERIES[i]} stroke="var(--card)" strokeWidth={2} />)}
         </Pie>
         <Tooltip contentStyle={TOOLTIP_STYLE.contentStyle} formatter={((v: unknown) => [Number(v).toLocaleString(), "Deals"]) as AnyFormatter} />
-        <Legend iconSize={8} iconType="circle" formatter={(value) => <span style={{ fontSize: 10, color: "#a1a1aa" }}>{value}</span>} />
+        <Legend iconSize={8} iconType="circle" formatter={(value) => <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{value}</span>} />
       </PieChart>
     </ResponsiveContainer>
   );
@@ -167,7 +180,7 @@ export function MonthlyMomentumChart({ data }: { data: AnalyticsData["monthlyMom
   return (
     <ResponsiveContainer width="100%" height={160}>
       <BarChart data={formatted} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
         <XAxis dataKey="label" tick={TICK} {...AXIS} interval={2} />
         <YAxis tick={TICK} {...AXIS} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown) => [v, "Deals"]) as AnyFormatter} />
@@ -183,12 +196,12 @@ export function IndustryChart({ data }: { data: AnalyticsData["topIndustries"] }
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={data.slice(0, 10)} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }}>
         <XAxis type="number" tick={TICK} {...AXIS} />
-        <YAxis type="category" dataKey="industry" tick={{ fontSize: 10, fill: "#a1a1aa" }} {...AXIS} width={130} />
+        <YAxis type="category" dataKey="industry" tick={{ fontSize: 10, fill: "var(--foreground)" }} {...AXIS} width={130} />
         <Tooltip {...TOOLTIP_STYLE} formatter={((v: unknown, name: unknown) =>
           name === "deals" ? [v, "Deals"] : [`$${Number(v).toFixed(1)}bn`, "TCV"]
         ) as AnyFormatter} />
         <Bar dataKey="deals" radius={[0, 3, 3, 0]}>
-          {data.map((_, i) => <Cell key={i} fill={`hsl(${30 + i * 14}, 65%, ${52 - i}%)`} />)}
+          {data.map((_, i) => <Cell key={i} fill={MAGNITUDE} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

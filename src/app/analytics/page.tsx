@@ -63,7 +63,7 @@ export default async function AnalyticsPage() {
       <Card className="bg-card border-border">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Annual Deal Volume & TCV</CardTitle>
-          <p className="text-xs text-muted-foreground">Bars = deal count (left axis) · Line = total TCV per year in $bn, disclosed + estimated (right axis)</p>
+          <p className="text-xs text-muted-foreground">Deals per year beside contract value per year (disclosed + estimated), on the same years</p>
         </CardHeader>
         <CardContent>
           <AnnualTrendChart data={data.byYear.filter((y) => Number(y.year) >= 2020 && Number(y.year) <= new Date().getFullYear())} />

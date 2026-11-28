@@ -8,9 +8,7 @@ import {
   Building2,
   FileSearch,
   LayoutDashboard,
-  Moon,
   Search,
-  Sun,
   ShieldAlert,
   Target,
 } from "lucide-react";
@@ -64,7 +62,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="ml-auto flex items-center gap-3">
             <span className="text-[11px] text-muted-foreground/60 hidden lg:block">Public sources only</span>
-            <ThemeToggle />
           </div>
         </div>
       </header>
@@ -97,25 +94,5 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </nav>
     </div>
-  );
-}
-
-/**
- * Light or dark, remembered per visitor (localStorage "theme"); the layout's inline script applies it before paint.
- * Both icons are rendered and CSS shows the right one, so server and client markup always match.
- */
-function ThemeToggle() {
-  const toggle = () => {
-    const dark = !document.documentElement.classList.contains("dark");
-    document.documentElement.classList.toggle("dark", dark);
-    document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch { /* private mode: the choice lasts for this page */ }
-  };
-  return (
-    <button type="button" onClick={toggle} aria-label="Switch between light and dark mode" title="Light / dark"
-      className="h-8 w-8 rounded-lg flex items-center justify-center text-brand hover:bg-brand-soft transition-colors">
-      <Moon className="h-4 w-4 dark:hidden" />
-      <Sun className="h-4 w-4 hidden dark:block" />
-    </button>
   );
 }
